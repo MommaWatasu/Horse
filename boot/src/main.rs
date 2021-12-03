@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![feature(asm)]
 #![feature(abi_efiapi)]
 
 // uefi-servicesを明示的にリンク対象に含める
@@ -7,11 +8,13 @@ extern crate uefi_services;
 
 use core::fmt::Write;
 //use core::panic::PanicInfo;
-use uefi::prelude::*;
-use uefi::table::boot::{MemoryType, MemoryAttribute};
-use uefi::proto::loaded_image::LoadedImage;
-use uefi::proto::media::fs::SimpleFileSystem;
-use uefi::proto::media::file::{File, RegularFile, Directory, FileMode, FileAttribute};
+use uefi::{
+    prelude::*,
+    proto::media::file::{File, FileAttribute, FileInfo, FileMode, FileType, RegularFile, Directory},
+    proto::media::fs::SimpleFileSystem,
+    proto::console::gop::{GraphicsOutput, PixelFormat},
+    table::boot::{AllocateType, MemoryType}
+};
 
 fn u64_2_ascii(number: u64) -> [u8; 16] {
     let mut result: [u8; 16] = [0; 16];
@@ -44,6 +47,7 @@ fn efi_main(handle: Handle, mut st: SystemTable<Boot>) -> Status {
     st.stdout().reset(false).unwrap_success();
     writeln!(st.stdout(), "Running bootloader...").unwrap();
 
+    //==========MEMORY MAP==========//
     //get a memory map
     let memory_map_buffer: &mut [u8] = &mut [0; 4096*4];
     //return map_key and iterator of discriptor
@@ -147,7 +151,10 @@ fn efi_main(handle: Handle, mut st: SystemTable<Boot>) -> Status {
         memory_map_file.write(buffer).unwrap_success();
     }
     memory_map_file.flush().unwrap_success();
+    //==========MEMORY MAP==========//
 
+    //==========BOOT KERNEL==========//
+    //==========BOOT KERNEL==========//
     writeln!(st.stdout(), "Kernel didn't execute").unwrap();
 
     loop {}
