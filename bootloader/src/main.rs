@@ -89,7 +89,7 @@ fn efi_main(handle: Handle, st: SystemTable<Boot>) -> Status {
         set_gop_mode(gop);
     }
 
-    writeln!(stdout, "booting horseOS...").unwrap();
+    writeln!(stdout, "booting HorseOS...").unwrap();
 
     // open file protocol
     let sfs = if let Ok(sfs) = bt.locate_protocol::<SimpleFileSystem>() {
@@ -170,12 +170,14 @@ fn efi_main(handle: Handle, st: SystemTable<Boot>) -> Status {
     let kernel_first = kernel_first as usize / 0x1000 * 0x1000;
     let load_size = kernel_last as usize - kernel_first;
     let n_of_pages = (load_size + 0xfff) / 0x1000;
+    /*
     writeln!(
         stdout,
         "kernel_first {:x}, last {:x}, pages {:?}",
         kernel_first, kernel_last, n_of_pages
     )
     .unwrap();
+    */
     bt.allocate_pages(
         AllocateType::Address(kernel_first),
         MemoryType::LOADER_DATA,
@@ -212,6 +214,7 @@ fn efi_main(handle: Handle, st: SystemTable<Boot>) -> Status {
     // exit boot service
     let max_mmap_size = bt.memory_map_size() + 8 * core::mem::size_of::<MemoryDescriptor>();
     let mut mmap_storage = vec![0; max_mmap_size].into_boxed_slice();
+    writeln!(stdout, "booting kernel and exiting boot-services...").unwrap();
     let (_st, _iter) = st
         .exit_boot_services(handle, &mut mmap_storage[..])
         .expect_success("Failed to exit boot services");
