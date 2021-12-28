@@ -61,7 +61,7 @@ fn efi_main(handle: Handle, st: SystemTable<Boot>) -> Status {
         let gop = gop.expect("Warnings encountered while opening GOP");
         unsafe { &mut *gop.get() }
     } else {
-        panic!("no ogp");
+        panic!("no gop");
     };
 
     //    uefi_services::init(&st).expect_success("Failed to initialize utilities");
@@ -93,7 +93,7 @@ fn efi_main(handle: Handle, st: SystemTable<Boot>) -> Status {
 
     // open file protocol
     let sfs = if let Ok(sfs) = bt.locate_protocol::<SimpleFileSystem>() {
-        let sfs = sfs.expect("cant open filesystem protocol");
+        let sfs = sfs.expect("can't open filesystem protocol");
         unsafe { &mut *sfs.get() }
     } else {
         writeln!(stdout, "no simple filesystem protocol").unwrap();
@@ -170,14 +170,6 @@ fn efi_main(handle: Handle, st: SystemTable<Boot>) -> Status {
     let kernel_first = kernel_first as usize / 0x1000 * 0x1000;
     let load_size = kernel_last as usize - kernel_first;
     let n_of_pages = (load_size + 0xfff) / 0x1000;
-    /*
-    writeln!(
-        stdout,
-        "kernel_first {:x}, last {:x}, pages {:?}",
-        kernel_first, kernel_last, n_of_pages
-    )
-    .unwrap();
-    */
     bt.allocate_pages(
         AllocateType::Address(kernel_first),
         MemoryType::LOADER_DATA,

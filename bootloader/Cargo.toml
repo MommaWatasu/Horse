@@ -6,9 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-#uefi-services = "0.9"
-#rlibc = "1"
-#byteorder = { version = "1", default-features = false }
 uefi = { version = "0.10.0", features = ["exts", "alloc", "logger"] }
 log = { version = "0.4.11", default-features = false }
 elf_rs = "0.1"
