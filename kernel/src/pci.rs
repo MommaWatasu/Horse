@@ -1,19 +1,36 @@
+use core::fmt::Display;
 use x86_64::instructions::port::{PortReadOnly, PortWriteOnly};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ClassCode {
     pub base: u8,
     pub sub: u8,
     pub interface: u8
 }
 
+impl Display for ClassCode {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "(0x{:02x}, 0x{:02x}, 0x{:02x})",
+            self.base, self.sub, self.interface
+        )
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Device {
-    bus: u8,
-    device: u8,
-    function: u8,
-    header_type: u8,
-    class_code: ClassCode
+    pub bus: u8,
+    pub device: u8,
+    pub function: u8,
+    pub header_type: u8,
+    pub class_code: ClassCode
+}
+
+impl Device {
+    pub fn get_vendor_id(&self) -> u16 {
+        read_vendor_id(self.bus, self.device, self.function)
+    }
 }
 
 const EMPTY_DEVICE: Device = Device{
@@ -33,6 +50,11 @@ static PCI_PORT: spin::Mutex<PciIOPort> = spin::Mutex::new(PciIOPort::new());
 pub struct PciDevices {
     devices: [Device; 32],
     count: usize
+}
+
+pub struct PciDevicesIter<'a> {
+    devices: &'a [Device],
+    index: usize,
 }
 
 impl PciDevices {
@@ -91,6 +113,27 @@ impl PciDevices {
         }
         Ok(())
     }
+
+    pub fn iter(&self) -> PciDevicesIter {
+        PciDevicesIter {
+            devices: &self.devices[..self.count],
+            index: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for PciDevicesIter<'a> {
+    type Item = Device;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index == self.devices.len() {
+            None
+        } else {
+            let r = self.devices[self.index];
+            self.index += 1;
+            Some(r)
+        }
+    }
 }
 
 struct PciIOPort {
@@ -121,6 +164,10 @@ impl PciIOPort {
             self.data_port.read()
         }
     }
+
+    pub fn read_dev(&mut self, dev: &Device, reg_addr: u8) -> u32 {
+        self.read(dev.bus, dev.device, dev.function, reg_addr)
+    }
 }
 
 pub fn read_vendor_id(bus: u8, device: u8, function: u8) -> u16 {
@@ -142,6 +189,33 @@ pub fn read_class_code(bus: u8, device: u8, function: u8) -> ClassCode {
 
 pub fn read_bus_numbers(bus: u8, device: u8, function: u8) -> u32 {
     PCI_PORT.lock().read(bus, device, function, 0x18)
+}
+
+fn calc_bar_address(bar_index: usize) -> u8 {
+    (0x10 + 4 * bar_index) as u8
+}
+
+fn read_conf_reg(dev: &Device, reg_addr: u8) -> u32 {
+    PCI_PORT.lock().read_dev(dev, reg_addr)
+}
+
+pub fn read_bar(device: &Device, bar_index: usize) -> Result<u64, u32> {
+    if bar_index >= 6 {
+        return Err(2);
+    }
+    let addr: u8 = calc_bar_address(bar_index);
+    let bar: u32 = read_conf_reg(device, addr);
+
+    if (bar & 4) == 0 {
+        return Ok(bar.into());
+    }
+
+    if bar_index >= 5 {
+        return Err(2);
+    }
+
+    let bar_upper: u32 = PCI_PORT.lock().read(device.bus, device.device, device.function, u8::from(addr+4));
+    return Ok(bar as u64 | (bar_upper as u64) << 32);
 }
 
 pub fn is_singleton_function_device(header_type: u8) -> bool {

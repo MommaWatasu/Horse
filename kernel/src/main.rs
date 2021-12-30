@@ -15,7 +15,7 @@ use console::Console;
 use core::panic::PanicInfo;
 use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
 use pci::Device;
-use pci::{scan_all_bus, read_class_code, PciDevices};
+use pci::{read_bar, scan_all_bus, read_class_code, read_vendor_id, ClassCode, PciDevices};
 
 const BG_COLOR: PixelColor = PixelColor(0, 80, 80);
 const FG_COLOR: PixelColor = PixelColor(255, 128, 0);
@@ -88,11 +88,75 @@ fn initialize(fb: *mut FrameBuffer, mi: *mut ModeInfo) {
     Graphics::instance().clear(&BG_COLOR);
 }
 
+fn list_pci_devices() -> PciDevices {
+    let pci_devices: PciDevices;
+    match scan_all_bus() {
+        Ok(v) => {
+            pci_devices = v;
+            info!("ScanBus: Success");
+        },
+        Err(_code) => {
+            panic!("ScanBus: Failed")
+        }
+    }
+    debug!("scanned pci devices.");
+    for dev in pci_devices.iter() {
+        let vendor_id = read_vendor_id(dev.bus, dev.device, dev.function);
+        let class_code = read_class_code(dev.bus, dev.device, dev.function);
+        info!(
+            "{}.{}.{}:, vend {:04x}, class {}, head {:02x}",
+            dev.bus,
+            dev.device,
+            dev.function,
+            vendor_id,
+            class_code,
+            dev.header_type
+        );
+    }
+    pci_devices
+}
+
+fn find_xhc(pci_devices: &PciDevices) -> Option<Device> {
+    let mut xhc_dev = None;
+    const XHC_CLASS: ClassCode = ClassCode {
+        base: 0x0c,
+        sub: 0x03,
+        interface: 0x30
+    };
+    for dev in pci_devices.iter() {
+        if dev.class_code == XHC_CLASS {
+            xhc_dev = Some(dev);
+            if dev.get_vendor_id() == 0x8086 {
+                break;
+            }
+        }
+    }
+    xhc_dev
+}
+
 #[no_mangle]
 extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     initialize(fb, mi);
     welcome_message();
+
+    let pci_devices = list_pci_devices();
+    let xhc = find_xhc(&pci_devices);
+    let xhc = match xhc {
+        Some(xhc) => {
+            info!(
+                "xHC has been found: {}.{}.{}",
+                xhc.bus, xhc.device, xhc.function
+            );
+            xhc
+        }
+        None => {
+            panic!("no xHC device");
+        }
+    };
+    let xhc_bar = read_bar(&xhc, 0).unwrap();
+
     draw_mouse_cursor();
+
     loop {
         unsafe {
             asm!("hlt")
