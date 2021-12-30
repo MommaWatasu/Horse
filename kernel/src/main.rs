@@ -7,20 +7,21 @@ mod ascii_font;
 pub mod log;
 pub mod graphics;
 pub mod console;
+pub mod pci;
 
 use log::*;
 
 use console::Console;
 use core::panic::PanicInfo;
 use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
-//use pci::PciDevices;
-//use pci::{read_bar, read_class_code, read_vendor_id, scan_all_bus, ClassCode, Device};
+use pci::Device;
+use pci::{scan_all_bus, read_class_code, PciDevices};
 
 const BG_COLOR: PixelColor = PixelColor(0, 80, 80);
 const FG_COLOR: PixelColor = PixelColor(255, 128, 0);
 
-const kMouseCursorHeight: usize = 24;
-const mouse_cursor_shape: [&str; kMouseCursorHeight] = [
+const K_MOUSE_CURSOR_HEIGHT: usize = 24;
+const MOUSE_CURSOR_SHAPE: [&str; K_MOUSE_CURSOR_HEIGHT] = [
 "@              ",
 "@@             ",
 "@.@            ",
@@ -49,7 +50,7 @@ const mouse_cursor_shape: [&str; kMouseCursorHeight] = [
 
 fn draw_mouse_cursor() {
     let graphics = Graphics::instance();
-    for (dy, l) in mouse_cursor_shape.iter().enumerate() {
+    for (dy, l) in MOUSE_CURSOR_SHAPE.iter().enumerate() {
         for (dx, c) in l.chars().enumerate() {
             let x = 200+dx;
             let y = 100+dy;
