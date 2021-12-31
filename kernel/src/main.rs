@@ -4,13 +4,15 @@
 #![feature(abi_efiapi)]
 
 mod ascii_font;
+pub mod bit_macros;
 pub mod log;
 pub mod graphics;
 pub mod console;
 pub mod pci;
+pub mod usb;
+pub mod volatile;
 
 use log::*;
-
 use console::Console;
 use core::panic::PanicInfo;
 use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
@@ -88,7 +90,7 @@ fn initialize(fb: *mut FrameBuffer, mi: *mut ModeInfo) {
     Graphics::instance().clear(&BG_COLOR);
 }
 
-fn list_pci_devices() -> PciDevices {
+fn find_pci_devices() -> PciDevices {
     let pci_devices: PciDevices;
     match scan_all_bus() {
         Ok(v) => {
@@ -99,11 +101,10 @@ fn list_pci_devices() -> PciDevices {
             panic!("ScanBus: Failed")
         }
     }
-    debug!("scanned pci devices.");
     for dev in pci_devices.iter() {
         let vendor_id = read_vendor_id(dev.bus, dev.device, dev.function);
         let class_code = read_class_code(dev.bus, dev.device, dev.function);
-        info!(
+        trace!(
             "{}.{}.{}:, vend {:04x}, class {}, head {:02x}",
             dev.bus,
             dev.device,
@@ -134,12 +135,28 @@ fn find_xhc(pci_devices: &PciDevices) -> Option<Device> {
     xhc_dev
 }
 
+fn switch_echi_to_xhci(_xhc_dev: &Device, pci_devices: &PciDevices) {
+    let ehciclass = ClassCode {
+        base: 0x0c,
+        sub: 0x03,
+        interface: 0x20,
+    };
+    let ehci = pci_devices
+        .iter()
+        .find(|&dev| dev.class_code == ehciclass && dev.get_vendor_id() == 0x8086);
+    if ehci.is_none() {
+        info!("no ehci");
+    } else {
+        panic!("ehci found, but do nothing for the present");
+    }
+}
+
 #[no_mangle]
 extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     initialize(fb, mi);
     welcome_message();
 
-    let pci_devices = list_pci_devices();
+    let pci_devices = find_pci_devices();
     let xhc = find_xhc(&pci_devices);
     let xhc = match xhc {
         Some(xhc) => {
@@ -153,8 +170,13 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
             panic!("no xHC device");
         }
     };
+    switch_echi_to_xhci(&xhc, &pci_devices);
     let xhc_bar = read_bar(&xhc, 0).unwrap();
-
+    let xhc_mmio_base = (xhc_bar & !0xf) as usize;
+    unsafe {
+        usb::Controller::new(xhc_mmio_base);
+    };
+    info!("done");
     draw_mouse_cursor();
 
     loop {
