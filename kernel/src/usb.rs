@@ -1,16 +1,16 @@
-use crate::debug;
 mod context;
 mod devicemgr;
 mod registers;
 mod memory;
 
 use registers::*;
-
-use self::memory::SimpleAlloc;
+use crate::debug;
+use crate::status::StatusCode;
+use self::memory::Allocator;
 
 const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
-static ALLOC: spin::Mutex<memory::SimpleAlloc<MEM_POOL_SIZE>> =
-    spin::Mutex::new(SimpleAlloc::new());
+static ALLOC: spin::Mutex<Allocator<MEM_POOL_SIZE>> =
+    spin::Mutex::new(Allocator::new());
 
 pub struct Controller<'a> {
     cap_regs: &'a mut CapabilityRegisters,
@@ -34,12 +34,12 @@ impl<'a> Controller<'a> {
             usbcmd.set_host_system_error_enable(false);
             usbcmd.set_enable_wrap_event(false);
         });
-        if !op_regs.usbsts.read().hc_halted() {
+        if !op_regs.usbsts.read().host_controller_halted() {
             debug!("hc not halted");
             op_regs.usbcmd.modify(|usbcmd| usbcmd.set_run_stop(false));
         }
 
-        while !op_regs.usbsts.read().hc_halted() {}
+        while !op_regs.usbsts.read().host_controller_halted() {}
         debug!("hc halted");
 
         // reset controller
@@ -59,12 +59,23 @@ impl<'a> Controller<'a> {
         op_regs
             .config
             .modify(|config| config.set_max_device_slots_enabled(max_slots));
-        let alloc = ALLOC.lock();
+        //let alloc = ALLOC.lock();
 
         Controller {
             cap_regs,
             op_regs,
             doorbell_first,
         }
+    }
+
+    pub fn run(&mut self) -> Result<StatusCode, StatusCode> {
+        let usbcmd = self.op_regs.usbcmd.read();
+        usbcmd.run_stop();
+        self.op_regs.usbcmd.write(usbcmd);
+        self.op_regs.usbcmd.read();
+
+        while self.op_regs.usbsts.read().host_controller_halted() {};
+
+        Ok(StatusCode::KSuccess)
     }
 }
