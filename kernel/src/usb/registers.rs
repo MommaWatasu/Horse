@@ -145,7 +145,7 @@ pub struct UsbSts {
 }
 
 impl UsbSts {
-    bit_getter!(data:u32; 0, pub hc_halted);
+    bit_getter!(data:u32; 0, pub host_controller_halted);
     bit_getter!(data:u32; 11, pub controller_not_ready);
 }
 

@@ -5,6 +5,7 @@
 
 mod ascii_font;
 pub mod bit_macros;
+pub mod status;
 pub mod log;
 pub mod graphics;
 pub mod console;
@@ -18,6 +19,7 @@ use core::panic::PanicInfo;
 use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
 use pci::Device;
 use pci::{read_bar, scan_all_bus, read_class_code, read_vendor_id, ClassCode, PciDevices};
+use usb::Controller;
 
 const BG_COLOR: PixelColor = PixelColor(0, 80, 80);
 const FG_COLOR: PixelColor = PixelColor(255, 128, 0);
@@ -157,26 +159,29 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     welcome_message();
 
     let pci_devices = find_pci_devices();
-    let xhc = find_xhc(&pci_devices);
-    let xhc = match xhc {
-        Some(xhc) => {
+    let xhc_dev = find_xhc(&pci_devices);
+    let xhc_dev = match xhc_dev {
+        Some(xhc_dev) => {
             info!(
                 "xHC has been found: {}.{}.{}",
-                xhc.bus, xhc.device, xhc.function
+                xhc_dev.bus, xhc_dev.device, xhc_dev.function
             );
-            xhc
+            xhc_dev
         }
         None => {
             panic!("no xHC device");
         }
     };
-    switch_echi_to_xhci(&xhc, &pci_devices);
-    let xhc_bar = read_bar(&xhc, 0).unwrap();
+    switch_echi_to_xhci(&xhc_dev, &pci_devices);
+    let xhc_bar = read_bar(&xhc_dev, 0).unwrap();
     let xhc_mmio_base = (xhc_bar & !0xf) as usize;
+    let mut xhc: Controller;
     unsafe {
-        usb::Controller::new(xhc_mmio_base);
+        xhc = usb::Controller::new(xhc_mmio_base);
     };
-    info!("done");
+    info!("xHC starting...");
+    xhc.run();
+    info!("DONE ALL PROCESSING");
     draw_mouse_cursor();
 
     loop {
