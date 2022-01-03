@@ -1,5 +1,4 @@
 #![feature(abi_efiapi)]
-#![feature(asm)]
 #![feature(alloc_error_handler)]
 #![no_std]
 #![no_main]
@@ -7,6 +6,7 @@
 #[macro_use]
 extern crate alloc;
 use alloc::string::ToString;
+use core::arch::asm;
 use console::gop;
 use log;
 use core::fmt::Write;

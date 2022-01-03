@@ -16,6 +16,7 @@ pub mod volatile;
 use log::*;
 use console::Console;
 use core::panic::PanicInfo;
+use core::arch::asm;
 use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
 use pci::Device;
 use pci::{read_bar, scan_all_bus, read_class_code, read_vendor_id, ClassCode, PciDevices};
