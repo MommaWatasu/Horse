@@ -69,8 +69,8 @@ impl<'a> Controller<'a> {
     }
 
     pub fn run(&mut self) -> Result<StatusCode, StatusCode> {
-        let usbcmd = self.op_regs.usbcmd.read();
-        usbcmd.run_stop();
+        let mut usbcmd = self.op_regs.usbcmd.read();
+        usbcmd.set_run_stop(true);
         self.op_regs.usbcmd.write(usbcmd);
         self.op_regs.usbcmd.read();
 
