@@ -1,7 +1,5 @@
-use super::{
-    context::DeviceContext,
-    memory::Allocator
-};
+use crate::usb::xhci::context::DeviceContext;
+use crate::usb::memory::Allocator;
 use crate::status::StatusCode;
 
 const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;

@@ -1,12 +1,11 @@
 mod context;
-mod devicemgr;
+mod devmgr;
 mod registers;
-mod memory;
 
 use registers::*;
 use crate::debug;
 use crate::status::StatusCode;
-use self::memory::Allocator;
+use crate::usb::memory::Allocator;
 
 const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
 static ALLOC: spin::Mutex<Allocator<MEM_POOL_SIZE>> =

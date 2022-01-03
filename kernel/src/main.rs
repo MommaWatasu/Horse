@@ -20,7 +20,7 @@ use core::arch::asm;
 use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
 use pci::Device;
 use pci::{read_bar, scan_all_bus, read_class_code, read_vendor_id, ClassCode, PciDevices};
-use usb::Controller;
+use usb::xhci::Controller;
 
 const BG_COLOR: PixelColor = PixelColor(0, 80, 80);
 const FG_COLOR: PixelColor = PixelColor(255, 128, 0);
@@ -178,7 +178,7 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     let xhc_mmio_base = (xhc_bar & !0xf) as usize;
     let mut xhc: Controller;
     unsafe {
-        xhc = usb::Controller::new(xhc_mmio_base);
+        xhc = Controller::new(xhc_mmio_base);
     };
     info!("xHC starting...");
     xhc.run();
