@@ -1,8 +1,10 @@
 mod context;
 mod devmgr;
 mod registers;
+mod port;
 
 use registers::*;
+use port::*;
 use crate::debug;
 use crate::status::StatusCode;
 use crate::usb::memory::Allocator;
@@ -76,5 +78,26 @@ impl<'a> Controller<'a> {
         while self.op_regs.usbsts.read().host_controller_halted() {};
 
         Ok(StatusCode::KSuccess)
+    }
+
+    pub fn PortAt(&mut self, port_num: u8) -> Port {
+        return Port::new(
+            port_num,
+            self.PortRegisterSets()[(port_num-1).into()]
+        );
+    }
+
+    pub fn max_ports(&self) -> u8 {
+        return self.cap_regs.hcs_params1.read().max_ports();
+    }
+
+    fn PortRegisterSets(&mut self) -> PortRegisterSets {
+        let p_op_regs: *mut OperationalRegisters = &mut *(self.op_regs);
+        unsafe {
+            return PortRegisterSets::new(
+                p_op_regs as usize + 0x400usize,
+                self.max_ports() as usize
+            );
+        };
     }
 }

@@ -12,6 +12,7 @@ pub mod console;
 pub mod pci;
 pub mod usb;
 pub mod volatile;
+pub mod register;
 
 use log::*;
 use console::Console;

@@ -1,13 +1,15 @@
 use crate::volatile::Volatile;
 use crate::{bit_getter, bit_setter};
+use crate::register::ArrayWrapper;
+use core::ops::Index;
 
 #[repr(C, packed(4))]
 pub struct CapabilityRegisters {
     pub cap_length: Volatile<u8>,
     reserved: u8,
     pub hci_version: Volatile<u16>,
-    pub hcs_params1: Volatile<HscParam1>,
-    pub hcs_params2: Volatile<HscParam2>,
+    pub hcs_params1: Volatile<HcsParam1>,
+    pub hcs_params2: Volatile<HcsParam2>,
     pub hcs_params3: Volatile<u32>,
     pub hcc_params1: Volatile<HccParams1>,
     pub db_off: Volatile<u32>,
@@ -34,11 +36,11 @@ impl core::fmt::Display for CapabilityRegisters {
 }
 
 #[repr(C)]
-pub struct HscParam1 {
+pub struct HcsParam1 {
     data: u32,
 }
 
-impl HscParam1 {
+impl HcsParam1 {
     pub fn max_device_slots(&self) -> u8 {
         (self.data & 0xff) as u8
     }
@@ -48,7 +50,7 @@ impl HscParam1 {
     }
 }
 
-impl core::fmt::Display for HscParam1 {
+impl core::fmt::Display for HcsParam1 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
@@ -61,11 +63,11 @@ impl core::fmt::Display for HscParam1 {
 }
 
 #[repr(C)]
-pub struct HscParam2 {
+pub struct HcsParam2 {
     data: u32,
 }
 
-impl HscParam2 {
+impl HcsParam2 {
     pub fn max_scratchpad_buf(&self) -> usize {
         let hi = (self.data >> 21 & 0b11111) as usize;
         let lo = (self.data >> 27 & 0b11111) as usize;
@@ -73,7 +75,7 @@ impl HscParam2 {
     }
 }
 
-impl core::fmt::Display for HscParam2 {
+impl core::fmt::Display for HcsParam2 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
@@ -147,6 +149,56 @@ pub struct UsbSts {
 impl UsbSts {
     bit_getter!(data:u32; 0, pub host_controller_halted);
     bit_getter!(data:u32; 11, pub controller_not_ready);
+}
+
+#[repr(packed)]
+struct PortSc {
+    data: u32
+}
+
+#[repr(packed)]
+struct PortPmsc {
+    data: u32
+}
+
+#[repr(packed)]
+struct PortLi {
+    data: u32
+}
+
+#[repr(packed)]
+struct PortHlpmc {
+    data: u32
+}
+
+#[repr(packed)]
+pub struct PortRegisterSet {
+    portsc: Volatile<PortSc>,
+    portpmsc: Volatile<PortPmsc>,
+    portli: Volatile<PortLi>,
+    porthlpmc: Volatile<PortHlpmc>
+}
+
+pub type PortRegisterSets = ArrayWrapper<PortRegisterSet>;
+
+impl PortRegisterSets {
+    pub unsafe fn new(array_base_addr: usize, size: usize) -> Self {
+        let array = &mut **(array_base_addr as *mut *mut PortRegisterSet);
+        return Self{
+            array,
+            size
+        };
+    }
+}
+
+impl Index<usize> for PortRegisterSets {
+    type Output = *mut PortRegisterSet;
+
+    fn index(&self, idx: usize) -> &Self::Output {
+        unsafe {
+            return & *((self.array as usize + idx) as *mut *mut PortRegisterSet);
+        }
+    }
 }
 
 #[repr(C)]
