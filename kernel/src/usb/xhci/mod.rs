@@ -80,10 +80,10 @@ impl<'a> Controller<'a> {
         Ok(StatusCode::KSuccess)
     }
 
-    pub fn PortAt(&mut self, port_num: u8) -> Port {
+    pub fn port_at(&mut self, port_num: u8) -> Port {
         return Port::new(
             port_num,
-            self.PortRegisterSets()[(port_num-1).into()]
+            self.port_register_sets()[(port_num-1).into()]
         );
     }
 
@@ -91,7 +91,7 @@ impl<'a> Controller<'a> {
         return self.cap_regs.hcs_params1.read().max_ports();
     }
 
-    fn PortRegisterSets(&mut self) -> PortRegisterSets {
+    fn port_register_sets(&mut self) -> PortRegisterSets {
         let p_op_regs: *mut OperationalRegisters = &mut *(self.op_regs);
         unsafe {
             return PortRegisterSets::new(
