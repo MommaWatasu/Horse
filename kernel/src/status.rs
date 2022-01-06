@@ -42,7 +42,7 @@ impl StatusCode {
             //KBufferTooSmall => "KBufferTooSmall",
             //KUnknownDevice => "KUnknownDevice",
             //KTransferFailed => "KTransferFailed",
-            //KInvalidPhase => "KInvalidPhase",
+            KInvalidPhase => "KInvalidPhase",
             //KUnknownXHCISpeedID => "KUnknownXHCISpeedID",
             //KNoWaiter => "KNoWaiter",
             //KLastOfCode => "KLastOfCode"
@@ -57,4 +57,16 @@ impl core::fmt::Display for StatusCode {
             "{}", self.to_string()
         )
     }
+}
+
+#[derive(PartialEq, Clone, Copy)]
+pub enum ConfigPhase {
+    KNotConnected,
+    KWaitingAddressed,
+    KResettingPort,
+    KEnablingSlot,
+    KAddressingDevice,
+    KInitializingDevice,
+    KConfiguringEndpoints,
+    KConfigured,
 }

@@ -183,6 +183,26 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     };
     info!("xHC starting...");
     xhc.run();
+
+    let port: Port;
+    let is_connected: bool;
+    for i in 1..xhc.max_ports() {
+        port = xhc.port_at(i);
+        is_connected = port.is_connected();
+        debug!("Port {}: IsConnected={}", i, is_connected);
+
+        if port.is_connected() {
+            match xhc.configure_port(&port) {
+                Ok(sc) => {
+                    info!("Configure Port: {}", sc);
+                },
+                Err(sc) => {
+                    info!("Configure Port: {}", sc);
+                    continue;
+                }
+            }
+        }
+    }
     info!("DONE ALL PROCESSING");
     draw_mouse_cursor();
 

@@ -6,12 +6,18 @@ mod port;
 use registers::*;
 use port::*;
 use crate::debug;
-use crate::status::StatusCode;
+use crate::status::{StatusCode, ConfigPhase};
 use crate::usb::memory::Allocator;
 
 const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
 static ALLOC: spin::Mutex<Allocator<MEM_POOL_SIZE>> =
     spin::Mutex::new(Allocator::new());
+
+static port_config_phase: spin::Mutex<[ConfigPhase; 256]> =
+    spin::Mutex::new([ConfigPhase::KNotConnected; 256]);
+
+static addressing_port: spin::Mutex<u8> =
+    spin::Mutex::new(0);
 
 pub struct Controller<'a> {
     cap_regs: &'a mut CapabilityRegisters,
@@ -78,6 +84,35 @@ impl<'a> Controller<'a> {
         while self.op_regs.usbsts.read().host_controller_halted() {};
 
         Ok(StatusCode::KSuccess)
+    }
+
+    pub fn reset_port(&self, port: & Port) -> Result<StatusCode, StatusCode> {
+        let is_connected: bool;
+        unsafe { is_connected = port.is_connected(); };
+        debug!("ResetPort: port.is_connected() = {}", is_connected);
+        if is_connected {
+            return Ok(StatusCode::KSuccess);
+        }
+
+        if *addressing_port.lock() != 0 {
+            port_config_phase.lock()[port.number() as usize] = ConfigPhase::KWaitingAddressed;
+        } else {
+            let port_phase: ConfigPhase = (*port_config_phase.lock())[port.number() as usize];
+            if port_phase != ConfigPhase::KNotConnected && port_phase != ConfigPhase::KWaitingAddressed {
+                return Err(StatusCode::KInvalidPhase);
+            }
+            *addressing_port.lock() = port.number();
+            (*port_config_phase.lock())[port.number() as usize] = ConfigPhase::KResettingPort;
+            unsafe {port.reset(); }
+        }
+        return Ok(StatusCode::KSuccess);
+    }
+
+    pub fn configure_port(&self, port: &Port) -> Result<StatusCode, StatusCode> {
+        if (*port_config_phase.lock())[port.number() as usize] == ConfigPhase::KNotConnected {
+            return self.reset_port(port);
+        }
+        return Ok(StatusCode::KSuccess);
     }
 
     pub fn port_at(&mut self, port_num: u8) -> Port {

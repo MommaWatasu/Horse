@@ -153,7 +153,12 @@ impl UsbSts {
 
 #[repr(packed)]
 struct PortSc {
-    data: u32
+    pub data: u32
+}
+
+impl PortSc {
+    bit_getter!(data: u32; 0, pub current_connect_status);
+    bit_getter!(data: u32; 4, pub port_reset);
 }
 
 #[repr(packed)]
@@ -173,10 +178,10 @@ struct PortHlpmc {
 
 #[repr(packed)]
 pub struct PortRegisterSet {
-    portsc: Volatile<PortSc>,
-    portpmsc: Volatile<PortPmsc>,
-    portli: Volatile<PortLi>,
-    porthlpmc: Volatile<PortHlpmc>
+    pub portsc: Volatile<PortSc>,
+    pub portpmsc: Volatile<PortPmsc>,
+    pub portli: Volatile<PortLi>,
+    pub porthlpmc: Volatile<PortHlpmc>
 }
 
 pub type PortRegisterSets = ArrayWrapper<PortRegisterSet>;
