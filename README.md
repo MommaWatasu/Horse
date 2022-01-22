@@ -10,6 +10,7 @@ To install them, run the following command
 ```
 #If you haven't installed Rust, you need to install it too.
 rustup install nightly
+sudo apt install lld
 sudo apt install qemu
 sudo apt install qemu-utils
 sudo apt install qemu-system-x86
