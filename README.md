@@ -14,6 +14,7 @@ sudo apt install lld
 sudo apt install qemu
 sudo apt install qemu-utils
 sudo apt install qemu-system-x86
+rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
 ```
 
 after this, all you have to do in order to build this OS is run build.sh under the repository.
