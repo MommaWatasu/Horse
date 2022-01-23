@@ -1,7 +1,7 @@
 mod context;
 mod devmgr;
 mod registers;
-mod port;
+pub mod port;
 
 use registers::*;
 use port::*;

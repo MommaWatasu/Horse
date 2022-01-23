@@ -22,6 +22,7 @@ use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
 use pci::Device;
 use pci::{read_bar, scan_all_bus, read_class_code, read_vendor_id, ClassCode, PciDevices};
 use usb::xhci::Controller;
+use usb::xhci::port::Port;
 
 const BG_COLOR: PixelColor = PixelColor(0, 80, 80);
 const FG_COLOR: PixelColor = PixelColor(255, 128, 0);
@@ -184,14 +185,16 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     info!("xHC starting...");
     xhc.run();
 
-    let port: Port;
-    let is_connected: bool;
+    let mut port: Port;
+    let mut is_connected: bool;
     for i in 1..xhc.max_ports() {
         port = xhc.port_at(i);
-        is_connected = port.is_connected();
+        unsafe {
+            is_connected = port.is_connected();
+        }
         debug!("Port {}: IsConnected={}", i, is_connected);
 
-        if port.is_connected() {
+        if is_connected {
             match xhc.configure_port(&port) {
                 Ok(sc) => {
                     info!("Configure Port: {}", sc);

@@ -152,7 +152,7 @@ impl UsbSts {
 }
 
 #[repr(packed)]
-struct PortSc {
+pub struct PortSc {
     pub data: u32
 }
 
@@ -162,17 +162,17 @@ impl PortSc {
 }
 
 #[repr(packed)]
-struct PortPmsc {
+pub struct PortPmsc {
     data: u32
 }
 
 #[repr(packed)]
-struct PortLi {
+pub struct PortLi {
     data: u32
 }
 
 #[repr(packed)]
-struct PortHlpmc {
+pub struct PortHlpmc {
     data: u32
 }
 
