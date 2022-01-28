@@ -26,26 +26,27 @@ pub enum StatusCode {
 impl StatusCode {
     pub fn to_string(&self) -> &str{
         match self {
-            KSuccess => "KSuccess",
-            //KFull => "KFull",
-            //KEmpty => "KEmpty",
-            //KNoEnoughMemory => "KNoEnoughMemory",
-            //KIndexOutOfRange => "KIndexOutOfRange",
-            //KHostControllerNotHalted => "KHostControllerNotHalted",
-            //KInvalidSlotID => "KInvalidSlotID",
-            //KPortNotConnected => "KPortNotConnected",
-            //KInvalidEndpointNumber => "KInvalidEndpointNumber",
-            //KTransferRingNotSet => "KTransferRingNotSet",
-            //KAlreadyAllocated => "KAlreadyAllocated",
-            //KNotImplemented => "KNotImplemented",
-            //KInvalidDescriptor => "KInvalidDescriptor",
-            //KBufferTooSmall => "KBufferTooSmall",
-            //KUnknownDevice => "KUnknownDevice",
-            //KTransferFailed => "KTransferFailed",
-            KInvalidPhase => "KInvalidPhase",
-            //KUnknownXHCISpeedID => "KUnknownXHCISpeedID",
-            //KNoWaiter => "KNoWaiter",
-            //KLastOfCode => "KLastOfCode"
+            StatusCode::KSuccess => "KSuccess",
+            StatusCode::KFull => "KFull",
+            StatusCode::KEmpty => "KEmpty",
+            StatusCode::KNoEnoughMemory => "KNoEnoughMemory",
+            StatusCode::KIndexOutOfRange => "KIndexOutOfRange",
+            StatusCode::KHostControllerNotHalted => "KHostControllerNotHalted",
+            StatusCode::KInvalidSlotID => "KInvalidSlotID",
+            StatusCode::KPortNotConnected => "KPortNotConnected",
+            StatusCode::KInvalidEndpointNumber => "KInvalidEndpointNumber",
+            StatusCode::KTransferRingNotSet => "KTransferRingNotSet",
+            StatusCode::KAlreadyAllocated => "KAlreadyAllocated",
+            StatusCode::KNotImplemented => "KNotImplemented",
+            StatusCode::KInvalidDescriptor => "KInvalidDescriptor",
+            StatusCode::KBufferTooSmall => "KBufferTooSmall",
+            StatusCode::KUnknownDevice => "KUnknownDevice",
+            StatusCode::KNoCorrespondingSetupStage => "KNoCorrespondingSetupStage",
+            StatusCode::KTransferFailed => "KTransferFailed",
+            StatusCode::KInvalidPhase => "KInvalidPhase",
+            StatusCode::KUnknownXHCISpeedID => "KUnknownXHCISpeedID",
+            StatusCode::KNoWaiter => "KNoWaiter",
+            StatusCode::KLastOfCode => "KLastOfCode"
         }
     }
 }
