@@ -188,15 +188,17 @@ pub type PortRegisterSets = ArrayWrapper<PortRegisterSet>;
 
 impl PortRegisterSets {
     pub unsafe fn new(array_base_addr: usize, size: usize) -> Self {
-        let array = &mut **(array_base_addr as *mut *mut PortRegisterSet);
+        let array = array_base_addr as *mut PortRegisterSet;
         return Self{
             array,
             size
         };
     }
     
-    pub fn index(&self, idx: usize) -> *mut PortRegisterSet {
-        return (self.array as usize + idx) as *mut PortRegisterSet;
+    pub unsafe fn index(&self, idx: usize) -> *mut PortRegisterSet {
+        unsafe {
+            return self.array.offset(idx.try_into().unwrap());
+        }
     }
 }
 

@@ -188,19 +188,18 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     let mut port: Port;
     let mut is_connected: bool;
     for i in 1..xhc.max_ports() {
-        port = xhc.port_at(i);
         unsafe {
+            port = xhc.port_at(i);
             is_connected = port.is_connected();
         }
-        debug!("Port {}: IsConnected={}", i, is_connected);
 
         if is_connected {
             match xhc.configure_port(&port) {
                 Ok(sc) => {
-                    info!("Configure Port: {}", sc);
+                    status_log!(StatusCode::KSuccess, "Configure Port: {}", sc);
                 },
                 Err(sc) => {
-                    info!("Configure Port: {}", sc);
+                    status_log!(StatusCode::KFailure, "Configure Port: {}", sc);
                     continue;
                 }
             }

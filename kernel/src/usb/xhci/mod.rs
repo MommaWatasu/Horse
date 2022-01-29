@@ -116,11 +116,13 @@ impl<'a> Controller<'a> {
         return Ok(StatusCode::KSuccess);
     }
 
-    pub fn port_at(&mut self, port_num: u8) -> Port {
-        return Port::new(
-            port_num,
-            self.port_register_sets().index((port_num-1).into())
-        );
+    pub unsafe fn port_at(&mut self, port_num: u8) -> Port {
+        unsafe {
+            return Port::new(
+                port_num,
+                self.port_register_sets().index((port_num-1).into())
+            );
+        }
     }
 
     pub fn max_ports(&self) -> u8 {
