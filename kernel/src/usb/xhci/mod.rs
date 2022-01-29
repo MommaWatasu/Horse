@@ -9,14 +9,14 @@ use crate::debug;
 use crate::status::{StatusCode, ConfigPhase};
 use crate::usb::memory::Allocator;
 
-const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
-static ALLOC: spin::Mutex<Allocator<MEM_POOL_SIZE>> =
-    spin::Mutex::new(Allocator::new());
+//const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
+//static ALLOC: spin::Mutex<Allocator<MEM_POOL_SIZE>> =
+//    spin::Mutex::new(Allocator::new());
 
-static port_config_phase: spin::Mutex<[ConfigPhase; 256]> =
+static PORT_CONFIG_PHASE: spin::Mutex<[ConfigPhase; 256]> =
     spin::Mutex::new([ConfigPhase::KNotConnected; 256]);
 
-static addressing_port: spin::Mutex<u8> =
+static ADDRESSING_PORT: spin::Mutex<u8> =
     spin::Mutex::new(0);
 
 pub struct Controller<'a> {
@@ -94,22 +94,22 @@ impl<'a> Controller<'a> {
             return Ok(StatusCode::KSuccess);
         }
 
-        if *addressing_port.lock() != 0 {
-            port_config_phase.lock()[port.number() as usize] = ConfigPhase::KWaitingAddressed;
+        if *ADDRESSING_PORT.lock() != 0 {
+            PORT_CONFIG_PHASE.lock()[port.number() as usize] = ConfigPhase::KWaitingAddressed;
         } else {
-            let port_phase: ConfigPhase = (*port_config_phase.lock())[port.number() as usize];
+            let port_phase: ConfigPhase = (*PORT_CONFIG_PHASE.lock())[port.number() as usize];
             if port_phase != ConfigPhase::KNotConnected && port_phase != ConfigPhase::KWaitingAddressed {
                 return Err(StatusCode::KInvalidPhase);
             }
-            *addressing_port.lock() = port.number();
-            (*port_config_phase.lock())[port.number() as usize] = ConfigPhase::KResettingPort;
+            *ADDRESSING_PORT.lock() = port.number();
+            (*PORT_CONFIG_PHASE.lock())[port.number() as usize] = ConfigPhase::KResettingPort;
             unsafe {port.reset(); }
         }
         return Ok(StatusCode::KSuccess);
     }
 
     pub fn configure_port(&self, port: &Port) -> Result<StatusCode, StatusCode> {
-        if (*port_config_phase.lock())[port.number() as usize] == ConfigPhase::KNotConnected {
+        if (*PORT_CONFIG_PHASE.lock())[port.number() as usize] == ConfigPhase::KNotConnected {
             return self.reset_port(port);
         }
         return Ok(StatusCode::KSuccess);
@@ -118,7 +118,7 @@ impl<'a> Controller<'a> {
     pub fn port_at(&mut self, port_num: u8) -> Port {
         return Port::new(
             port_num,
-            self.port_register_sets()[(port_num-1).into()]
+            self.port_register_sets().index((port_num-1).into())
         );
     }
 
