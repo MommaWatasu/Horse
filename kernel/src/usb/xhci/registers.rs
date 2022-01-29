@@ -2,7 +2,7 @@ use crate::volatile::Volatile;
 use crate::{bit_getter, bit_setter};
 use crate::register::ArrayWrapper;
 use core::ops::Index;
-
+use crate::debug;
 #[repr(C, packed(4))]
 pub struct CapabilityRegisters {
     pub cap_length: Volatile<u8>,
@@ -151,7 +151,7 @@ impl UsbSts {
     bit_getter!(data:u32; 11, pub controller_not_ready);
 }
 
-#[repr(packed)]
+#[repr(C)]
 pub struct PortSc {
     pub data: u32
 }
@@ -161,22 +161,22 @@ impl PortSc {
     bit_getter!(data: u32; 4, pub port_reset);
 }
 
-#[repr(packed)]
+#[repr(C)]
 pub struct PortPmsc {
     data: u32
 }
 
-#[repr(packed)]
+#[repr(C)]
 pub struct PortLi {
     data: u32
 }
 
-#[repr(packed)]
+#[repr(C)]
 pub struct PortHlpmc {
-    data: u32
+    pub data: u32
 }
 
-#[repr(packed)]
+#[repr(C, packed(4))]
 pub struct PortRegisterSet {
     pub portsc: Volatile<PortSc>,
     pub portpmsc: Volatile<PortPmsc>,
@@ -194,15 +194,9 @@ impl PortRegisterSets {
             size
         };
     }
-}
-
-impl Index<usize> for PortRegisterSets {
-    type Output = *mut PortRegisterSet;
-
-    fn index(&self, idx: usize) -> &Self::Output {
-        unsafe {
-            return & *((self.array as usize + idx) as *mut *mut PortRegisterSet);
-        }
+    
+    pub fn index(&self, idx: usize) -> *mut PortRegisterSet {
+        return (self.array as usize + idx) as *mut PortRegisterSet;
     }
 }
 
