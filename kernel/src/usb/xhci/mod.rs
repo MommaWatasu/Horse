@@ -5,7 +5,7 @@ pub mod port;
 
 use registers::*;
 use port::*;
-use crate::debug;
+use crate::{status_log, debug};
 use crate::status::{StatusCode, ConfigPhase};
 use crate::usb::memory::Allocator;
 
@@ -30,7 +30,6 @@ impl<'a> Controller<'a> {
     /// mmio_base must be a valid base address for xHCI device MMIO
     pub unsafe fn new(mmio_base: usize) -> Self {
         let cap_regs = &mut *(mmio_base as *mut CapabilityRegisters);
-        debug!("cap regs: {}", cap_regs);
         let op_regs =
             &mut *((mmio_base + cap_regs.cap_length.read() as usize) as *mut OperationalRegisters);
         let doorbell_first =
@@ -58,9 +57,9 @@ impl<'a> Controller<'a> {
             usbcmd.set_host_controller_reset(true);
         });
         while op_regs.usbcmd.read().host_controller_reset() {}
-        debug!("controller reset done.");
+        status_log!(StatusCode::KSuccess, "controller is reseted");
         while op_regs.usbsts.read().controller_not_ready() {}
-        debug!("controller is ready.");
+        status_log!(StatusCode::KSuccess, "controller is ready");
         let max_slots = cap_regs.hcs_params1.read().max_device_slots();
         debug!("max device slots: {}", max_slots);
         op_regs
@@ -96,6 +95,7 @@ impl<'a> Controller<'a> {
 
         if *ADDRESSING_PORT.lock() != 0 {
             PORT_CONFIG_PHASE.lock()[port.number() as usize] = ConfigPhase::KWaitingAddressed;
+            return Ok(StatusCode::KSuccess);
         } else {
             let port_phase: ConfigPhase = (*PORT_CONFIG_PHASE.lock())[port.number() as usize];
             if port_phase != ConfigPhase::KNotConnected && port_phase != ConfigPhase::KWaitingAddressed {
@@ -103,9 +103,10 @@ impl<'a> Controller<'a> {
             }
             *ADDRESSING_PORT.lock() = port.number();
             (*PORT_CONFIG_PHASE.lock())[port.number() as usize] = ConfigPhase::KResettingPort;
-            unsafe {port.reset(); }
+            unsafe {
+                return port.reset();
+            }
         }
-        return Ok(StatusCode::KSuccess);
     }
 
     pub fn configure_port(&self, port: &Port) -> Result<StatusCode, StatusCode> {

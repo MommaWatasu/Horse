@@ -1,4 +1,5 @@
 use core::fmt::Write;
+use crate::status::StatusCode;
 
 static LOG_LEVEL_DISPLAY: [&str; 6] = ["OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
 pub static LOG_LEVEL: spin::Mutex<LogLevel> = spin::Mutex::new(LogLevel::Debug);
@@ -35,14 +36,42 @@ macro_rules! println {
 macro_rules! log {
     (level: $level:expr, $fmt:expr) => {
         if $level <= $crate::_log_level() {
-            $crate::print!("{} - ", $level.as_str());
+            $crate::print!("[ {} ]", $level.as_str());
             $crate::print!(core::concat!($fmt, "\n"));
         }
     };
     (level: $level:expr, $fmt:expr, $($arg:tt)*) => {
         if $level <= $crate::_log_level() {
-            $crate::print!("{} - ", $level.as_str());
+            $crate::print!("[ {} ]", $level.as_str());
             $crate::print!(core::concat!($fmt, "\n"), $($arg)*);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! status_log {
+    ($status:expr ,$fmt:expr) => {
+        match $status {
+            StatusCode::KSuccess => {
+                crate::print!("[ OK ]");
+                crate::print!(core::concat!($fmt, "\n"))
+            },
+            _ => {
+                crate::print!("[ Error ]");
+                crate::print!(core::concat!($fmt, "\n"))
+            }
+        }
+    };
+    ($status:expr, $fmt:expr, $($arg:tt)*) => {
+        match $status {
+            StatusCode::KSuccess => {
+                crate::print!("[ OK ]");
+                crate::print!(core::concat!($fmt, "\n"), $($arg)*)
+            },
+            _ => {
+                crate::print!("[ Error ]");
+                crate::print!(core::concat!($fmt, "\n"), $($arg)*)
+            }
         }
     };
 }

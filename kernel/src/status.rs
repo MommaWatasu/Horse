@@ -1,6 +1,7 @@
 #[derive(Debug)]
 pub enum StatusCode {
     KSuccess,
+    KFailure,
     KFull,
     KEmpty,
     KNoEnoughMemory,
@@ -27,6 +28,7 @@ impl StatusCode {
     pub fn to_string(&self) -> &str{
         match self {
             StatusCode::KSuccess => "KSuccess",
+            StatusCode::KFailure => "KFailure",
             StatusCode::KFull => "KFull",
             StatusCode::KEmpty => "KEmpty",
             StatusCode::KNoEnoughMemory => "KNoEnoughMemory",

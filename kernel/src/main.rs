@@ -13,6 +13,7 @@ pub mod usb;
 pub mod volatile;
 pub mod register;
 
+use status::StatusCode;
 use log::*;
 use console::Console;
 use core::panic::PanicInfo;
@@ -23,8 +24,8 @@ use pci::{read_bar, scan_all_bus, read_class_code, read_vendor_id, ClassCode, Pc
 use usb::xhci::Controller;
 use usb::xhci::port::Port;
 
-const BG_COLOR: PixelColor = PixelColor(0, 80, 80);
-const FG_COLOR: PixelColor = PixelColor(255, 128, 0);
+const BG_COLOR: PixelColor = PixelColor(0, 0, 0);
+const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
 
 const K_MOUSE_CURSOR_HEIGHT: usize = 24;
 const MOUSE_CURSOR_SHAPE: [&str; K_MOUSE_CURSOR_HEIGHT] = [
@@ -99,10 +100,10 @@ fn find_pci_devices() -> PciDevices {
     match scan_all_bus() {
         Ok(v) => {
             pci_devices = v;
-            info!("ScanBus: Success");
+            status_log!(StatusCode::KSuccess, "Scanning Bus")
         },
         Err(_code) => {
-            panic!("ScanBus: Failed")
+            panic!("Scanning Bus");
         }
     }
     for dev in pci_devices.iter() {
@@ -164,7 +165,8 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     let xhc_dev = find_xhc(&pci_devices);
     let xhc_dev = match xhc_dev {
         Some(xhc_dev) => {
-            info!(
+            status_log!(
+                StatusCode::KSuccess,
                 "xHC has been found: {}.{}.{}",
                 xhc_dev.bus, xhc_dev.device, xhc_dev.function
             );
@@ -181,8 +183,7 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     unsafe {
         xhc = Controller::new(xhc_mmio_base);
     };
-    info!("xHC starting...");
-    xhc.run();
+    status_log!(xhc.run().unwrap(), "XHC starting");
 
     let mut port: Port;
     let mut is_connected: bool;
