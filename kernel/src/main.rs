@@ -12,9 +12,11 @@ pub mod pci;
 pub mod usb;
 pub mod volatile;
 pub mod register;
+pub mod mouse;
 
 use status::StatusCode;
 use log::*;
+use mouse::*;
 use console::Console;
 use core::panic::PanicInfo;
 use core::arch::asm;
@@ -26,53 +28,6 @@ use usb::xhci::port::Port;
 
 const BG_COLOR: PixelColor = PixelColor(0, 0, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
-
-const K_MOUSE_CURSOR_HEIGHT: usize = 24;
-const MOUSE_CURSOR_SHAPE: [&str; K_MOUSE_CURSOR_HEIGHT] = [
-"@              ",
-"@@             ",
-"@.@            ",
-"@..@           ",
-"@...@          ",
-"@....@         ",
-"@.....@        ",
-"@......@       ",
-"@.......@      ",
-"@........@     ",
-"@.........@    ",
-"@..........@   ",
-"@...........@  ",
-"@............@ ",
-"@......@@@@@@@@",
-"@......@       ",
-"@....@@.@      ",
-"@...@ @.@      ",
-"@..@   @.@     ",
-"@.@    @.@     ",
-"@@      @.@    ",
-"@       @.@    ",
-"         @.@   ",
-"         @@@   "
-];
-
-fn draw_mouse_cursor() {
-    let graphics = Graphics::instance();
-    for (dy, l) in MOUSE_CURSOR_SHAPE.iter().enumerate() {
-        for (dx, c) in l.chars().enumerate() {
-            let x = 200+dx;
-            let y = 100+dy;
-            match c {
-                '@' => {
-                    graphics.write_pixel(x, y, &PixelColor(0, 0, 0));
-                },
-                '.' => {
-                    graphics.write_pixel(x, y, &PixelColor(255, 255, 255));
-                },
-                _=>{}
-            }
-        }
-    }
-}
 
 fn welcome_message() {
     print!(
