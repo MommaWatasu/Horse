@@ -12,21 +12,23 @@ pub struct Device {
 }
 
 pub struct DeviceManager<'a> {
-    device_context_pointers_: &'a[&'a DeviceContext],
-    max_slots_: usize,
-    devices_: &'a[&'a Device]
+    device_context_pointers: &'a[&'a DeviceContext],
+    max_slots: usize,
+    devices: &'a[&'a Device]
 }
 
 impl<'a> DeviceManager<'a> {
-    pub fn initialize(&mut self, max_slots: usize) -> Result<StatusCode, StatusCode> {
-        self.max_slots_ = max_slots;
-
+    pub fn new(max_slots: usize) -> Result<Self, StatusCode> {
+        let device_context_pointers: &'a[&'a DeviceContext];
+        let devices: &'a[&'a Device];
         match Allocator::alloc_array::<&Device>(&mut *ALLOC.lock(), max_slots+1) {
             None => {
                 return Err(StatusCode::KNoEnoughMemory);
             },
             Some(t) => {
-                self.devices_ = unsafe { t.as_ref() };
+                unsafe {
+                    devices = t.as_ref();
+                }
             }
         };
 
@@ -35,14 +37,20 @@ impl<'a> DeviceManager<'a> {
                 return Err(StatusCode::KNoEnoughMemory)
             },
             Some(t) => {
-                self.device_context_pointers_ = unsafe { t.as_ref() };
+                unsafe {
+                    device_context_pointers = t.as_ref();
+                }
             }
         };
 
-        Ok(StatusCode::KSuccess)
+        return Ok(DeviceManager{
+            device_context_pointers,
+            max_slots,
+            devices
+        });
     }
 
     pub fn device_contexts(&self) -> &'a[&'a DeviceContext] {
-        return self.device_context_pointers_;
+        return self.device_context_pointers;
     }
 }

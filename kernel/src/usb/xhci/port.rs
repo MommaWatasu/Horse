@@ -28,7 +28,7 @@ impl Port {
         portsc.data |= 0x00020010;
         (*self.port_reg_set).portsc.write(portsc);
 
-        while (*self.port_reg_set).portsc.read().port_reset() {}
+        while (*self.port_reg_set).portsc.read().port_reset() == 1 {}
 
         return Ok(StatusCode::KSuccess);
     }

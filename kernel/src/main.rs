@@ -111,6 +111,13 @@ fn switch_echi_to_xhci(_xhc_dev: &Device, pci_devices: &PciDevices) {
     }
 }
 
+static mouse_cursor: spin::Mutex<MouseCursor> = spin::Mutex::new(MouseCursor::new(BG_COLOR, [300, 200]));
+
+fn mouse_observer(displacement_x: i8, displacement_y: i8) {
+    mouse_cursor.lock().move_relative([displacement_x.try_into().unwrap(),
+        displacement_y.try_into().unwrap()]);
+}
+
 #[no_mangle]
 extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     initialize(fb, mi);
@@ -161,7 +168,17 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
         }
     }
     info!("DONE ALL PROCESSING");
-    draw_mouse_cursor();
+    
+    /*
+    loop {
+        match xhc.process_event(); {
+            Ok(StatusCode::KSucess) => {},
+            Err(code) => {
+                status_log!(code, "Error while process_event")
+            }
+        }
+    }
+    */
 
     loop {
         unsafe {

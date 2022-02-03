@@ -1,25 +1,19 @@
 #[macro_export]
-macro_rules! bit_setter {
-    ($field:tt : $field_type:ty; $bit:literal, $vis:vis $name:ident) => {
+macro_rules! bit_getter {
+    ($base:tt $([$idx:literal])? : $base_ty:ty ; $mask:expr ; $ty:ty, $vis:vis $getter_name:ident) => {
         #[allow(dead_code)]
-        $vis fn $name(&mut self, value: bool) {
-            let b: $field_type = 1 << $bit;
-            if (value) {
-                self.$field |= b;
-            } else {
-                self.$field &= !b;
-            }
+        $vis fn $getter_name(&self) -> $ty {
+            (((self.$base $([$idx])?) & $mask) >> <$base_ty>::trailing_zeros($mask)) as $ty
         }
-    }
+    };
 }
 
 #[macro_export]
-macro_rules! bit_getter {
-    ($field:tt : $field_type:ty; $bit:literal, $vis:vis $name:ident) => {
+macro_rules! bit_setter {
+    ($base:tt $([$idx:literal])? : $base_ty:ty ; $mask:expr ; $ty:ty, $vis:vis $setter_name:ident) => {
         #[allow(dead_code)]
-        $vis fn $name(&self) -> bool {
-            let b: $field_type = 1 << $bit;
-            (self.$field & b) == b
+        $vis fn $setter_name(&mut self, val: $ty) {
+            self.$base $([$idx])? = self.$base $([$idx])? & !$mask | ((val as $base_ty) << <$base_ty>::trailing_zeros($mask));
         }
-    }
+    };
 }
