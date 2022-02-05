@@ -1,57 +1,59 @@
 #[derive(Debug)]
 pub enum StatusCode {
-    KSuccess,
-    KFailure,
-    KFull,
-    KEmpty,
-    KNoEnoughMemory,
-    KIndexOutOfRange,
-    KHostControllerNotHalted,
-    KInvalidSlotID,
-    KPortNotConnected,
-    KInvalidEndpointNumber,
-    KTransferRingNotSet,
-    KAlreadyAllocated,
-    KNotImplemented,
-    KInvalidDescriptor,
-    KBufferTooSmall,
-    KUnknownDevice,
-    KNoCorrespondingSetupStage,
-    KTransferFailed,
-    KInvalidPhase,
-    KUnknownXHCISpeedID,
-    KNoWaiter,
-    KLastOfCode
+    Success,
+    Failure,
+    Full,
+    Empty,
+    NoEnoughMemory,
+    IndexOutOfRange,
+    HostControllerNotHalted,
+    InvalidSlotID,
+    PortNotConnected,
+    InvalidEndpointNumber,
+    TransferRingNotSet,
+    AlreadyAllocated,
+    NotImplemented,
+    InvalidDescriptor,
+    BufferTooSmall,
+    UnknownDevice,
+    NoCorrespondingSetupStage,
+    TransferFailed,
+    InvalidPhase,
+    UnknownXHCISpeedID,
+    NoWaiter,
+    LastOfCode
 }
 
 impl StatusCode {
     pub fn to_string(&self) -> &str{
         match self {
-            StatusCode::KSuccess => "KSuccess",
-            StatusCode::KFailure => "KFailure",
-            StatusCode::KFull => "KFull",
-            StatusCode::KEmpty => "KEmpty",
-            StatusCode::KNoEnoughMemory => "KNoEnoughMemory",
-            StatusCode::KIndexOutOfRange => "KIndexOutOfRange",
-            StatusCode::KHostControllerNotHalted => "KHostControllerNotHalted",
-            StatusCode::KInvalidSlotID => "KInvalidSlotID",
-            StatusCode::KPortNotConnected => "KPortNotConnected",
-            StatusCode::KInvalidEndpointNumber => "KInvalidEndpointNumber",
-            StatusCode::KTransferRingNotSet => "KTransferRingNotSet",
-            StatusCode::KAlreadyAllocated => "KAlreadyAllocated",
-            StatusCode::KNotImplemented => "KNotImplemented",
-            StatusCode::KInvalidDescriptor => "KInvalidDescriptor",
-            StatusCode::KBufferTooSmall => "KBufferTooSmall",
-            StatusCode::KUnknownDevice => "KUnknownDevice",
-            StatusCode::KNoCorrespondingSetupStage => "KNoCorrespondingSetupStage",
-            StatusCode::KTransferFailed => "KTransferFailed",
-            StatusCode::KInvalidPhase => "KInvalidPhase",
-            StatusCode::KUnknownXHCISpeedID => "KUnknownXHCISpeedID",
-            StatusCode::KNoWaiter => "KNoWaiter",
-            StatusCode::KLastOfCode => "KLastOfCode"
+            StatusCode::Success => "Success",
+            StatusCode::Failure => "Failure",
+            StatusCode::Full => "Full",
+            StatusCode::Empty => "Empty",
+            StatusCode::NoEnoughMemory => "NoEnoughMemory",
+            StatusCode::IndexOutOfRange => "IndexOutOfRange",
+            StatusCode::HostControllerNotHalted => "HostControllerNotHalted",
+            StatusCode::InvalidSlotID => "InvalidSlotID",
+            StatusCode::PortNotConnected => "PortNotConnected",
+            StatusCode::InvalidEndpointNumber => "InvalidEndpointNumber",
+            StatusCode::TransferRingNotSet => "TransferRingNotSet",
+            StatusCode::AlreadyAllocated => "AlreadyAllocated",
+            StatusCode::NotImplemented => "NotImplemented",
+            StatusCode::InvalidDescriptor => "InvalidDescriptor",
+            StatusCode::BufferTooSmall => "BufferTooSmall",
+            StatusCode::UnknownDevice => "UnknownDevice",
+            StatusCode::NoCorrespondingSetupStage => "NoCorrespondingSetupStage",
+            StatusCode::TransferFailed => "TransferFailed",
+            StatusCode::InvalidPhase => "InvalidPhase",
+            StatusCode::UnknownXHCISpeedID => "UnknownXHCISpeedID",
+            StatusCode::NoWaiter => "NoWaiter",
+            StatusCode::LastOfCode => "LastOfCode"
         }
     }
 }
+
+pub type Result<T> = core::result::Result<T, StatusCode>;
 
 impl core::fmt::Display for StatusCode {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -62,14 +64,14 @@ impl core::fmt::Display for StatusCode {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
-pub enum ConfigPhase {
-    KNotConnected,
-    KWaitingAddressed,
-    KResettingPort,
-    KEnablingSlot,
-    KAddressingDevice,
-    KInitializingDevice,
-    KConfiguringEndpoints,
-    KConfigured,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PortConfigPhase {
+    NotConnected,
+    WaitingAddressed,
+    ResettingPort,
+    EnablingSlot,
+    AddressingDevice,
+    InitializingDevice,
+    ConfiguringEndpoints,
+    Configured,
 }

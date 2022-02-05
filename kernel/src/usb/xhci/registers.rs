@@ -1,7 +1,5 @@
 use crate::volatile::Volatile;
 use crate::{bit_getter, bit_setter};
-use crate::register::ArrayWrapper;
-use crate::debug;
 
 #[repr(C)]
 pub struct HcsParam1 {
@@ -18,18 +16,6 @@ impl HcsParam1 {
     }
 }
 
-impl core::fmt::Display for HcsParam1 {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "0x{:08x} (slots: {} ports: {})",
-            self.data,
-            self.max_device_slots(),
-            self.max_ports()
-        )
-    }
-}
-
 #[repr(C)]
 pub struct HcsParam2 {
     data: u32,
@@ -43,15 +29,9 @@ impl HcsParam2 {
     }
 }
 
-impl core::fmt::Display for HcsParam2 {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "0x{:08x} (max_scratchpad_buf: {})",
-            self.data,
-            self.max_scratchpad_buf()
-        )
-    }
+#[repr(C)]
+pub struct HcsParam3 {
+    data: u32
 }
 
 #[repr(C)]
@@ -63,15 +43,27 @@ impl HccParams1 {
     bit_getter!(data: u32; 0xFFFF0000; u16, pub xecp);
 }
 
-impl core::fmt::Display for HccParams1 {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "0x{:08x} (xECP: 0x{:08x}, CSZ: {})",
-            self.data,
-            self.xecp(),
-            self.context_size()
-        )
+#[repr(C)]
+pub struct Dboff {
+    data: u32,
+}
+impl Dboff {
+    bit_getter!(data: u32; 0xFFFFFFFC; u32, doorbell_array_offset);
+
+    pub fn offset(&self) -> usize {
+        (self.doorbell_array_offset() << 2) as usize
+    }
+}
+
+#[repr(C)]
+pub struct Rtsoff {
+    data: u32,
+}
+impl Rtsoff {
+    bit_getter!(data: u32; 0xFFFFFFE0; u32, runtime_register_space_offset);
+
+    pub fn offset(&self) -> usize {
+        (self.runtime_register_space_offset() << 5) as usize
     }
 }
 
@@ -87,13 +79,11 @@ impl UsbCmd {
     bit_setter!(data: u32; 0b0010; u8, pub set_host_controller_reset);
     bit_getter!(data: u32; 0b0010; u8, pub host_controller_reset);
     
-    bit_setter!(data: u32; 0b0100; u8, pub set_intterupt_enable);
-    bit_getter!(data: u32; 0b0100; u8, pub intterupt_enable);
+    bit_setter!(data: u32; 0b0100; u8, pub set_interrupt_enable);
+    bit_getter!(data: u32; 0b0100; u8, pub interrupt_enable);
     
     bit_setter!(data: u32; 0b1000; u8, pub set_host_system_error_enable);
     bit_getter!(data: u32; 0b1000; u8, pub host_system_error_enable);
-    //bit_setter!(data: u32; 10, pub set_enable_wrap_event);
-    //bit_getter!(data: u32; 10, pub enable_wrap_event);
 }
 
 #[repr(C)]
@@ -115,7 +105,7 @@ impl PageSize {
     bit_getter!(data: u32; 0x0000FFFF; u32, pub page_size_shifted);
     
     pub fn page_size(&self) -> usize {
-        1 << (self.page_size_sifted() as usize + 12)
+        1 << (self.page_size_shifted() as usize + 12)
     }
 }
 
@@ -184,6 +174,25 @@ impl ExtendedRegister {
     bit_getter!(data: u32; 0x00FF; u8, pub capability_id);
     
     bit_getter!(data: u32; 0xFF09; u8, pub next_capability_pointer);
+}
+
+#[repr(C)]
+pub struct Usblegsup {
+    data: u32
+}
+
+impl Usblegsup {
+    pub const fn id() -> u8 { 1 }
+    
+    bit_getter!(data: u32; 0x000000FF; u8, pub capability_id);
+    
+    bit_getter!(data: u32; 0x0000FF00; u8, pub next_capability_pointer);
+    
+    bit_getter!(data: u32; 0x00010000; u8, pub hc_bios_owned_semaphore);
+    bit_setter!(data: u32; 0x00010000; u8, pub set_hc_bios_owned_semaphore);
+    
+    bit_getter!(data: u32; 0x01000000; u8, pub hc_os_owned_semaphore);
+    bit_setter!(data: u32; 0x01000000; u8, pub set_hc_os_owned_semaphore);
 }
 
 #[repr(C)]
@@ -302,29 +311,10 @@ pub struct CapabilityRegisters {
     pub hci_version: Volatile<u16>,
     pub hcs_params1: Volatile<HcsParam1>,
     pub hcs_params2: Volatile<HcsParam2>,
-    pub hcs_params3: Volatile<u32>,
+    pub hcs_params3: Volatile<HcsParam3>,
     pub hcc_params1: Volatile<HccParams1>,
-    pub db_off: Volatile<u32>,
-    pub rts_off: Volatile<u32>,
-    pub hcc_params2: Volatile<u32>,
-}
-
-impl core::fmt::Display for CapabilityRegisters {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "cap_length: {}, hci_version: 0x{:02x}, hcs_params1: {}, hcs_params2: {}, hcs_params3: 0x{:08x}, hcc_params1: {}, db_off: 0x{:08x}, rts_off: 0x{:08x}, hcc_params2: 0x{:08x}",
-            self.cap_length.read(),
-            self.hci_version.read(),
-            self.hcs_params1.read(),
-            self.hcs_params2.read(),
-            self.hcs_params3.read(),
-            self.hcc_params1.read(),
-            self.db_off.read() & 0xffff_fffc,
-            self.rts_off.read() & 0xffff_ffe0,
-            self.hcc_params2.read()
-        )
-    }
+    pub db_off: Volatile<Dboff>,
+    pub rts_off: Volatile<Rtsoff>
 }
 
 #[repr(C, packed(4))]
@@ -347,7 +337,7 @@ pub struct InterrupterRegisterSet {
     pub erstsz: Volatile<Erstsz>,
     reserved: u32,
     pub erstba: Volatile<Erstba>,
-    erdp: Volatile<Erdp>
+    pub erdp: Volatile<Erdp>
 }
 
 #[repr(C, packed(4))]
@@ -356,22 +346,4 @@ pub struct PortRegisterSet {
     pub portpmsc: Volatile<PortPmsc>,
     pub portli: Volatile<PortLi>,
     pub porthlpmc: Volatile<PortHlpmc>
-}
-
-pub type PortRegisterSets = ArrayWrapper<PortRegisterSet>;
-
-impl PortRegisterSets {
-    pub unsafe fn new(array_base_addr: usize, size: usize) -> Self {
-        let array = array_base_addr as *mut PortRegisterSet;
-        return Self{
-            array,
-            size
-        };
-    }
-    
-    pub unsafe fn index(&self, idx: usize) -> *mut PortRegisterSet {
-        unsafe {
-            return self.array.offset(idx.try_into().unwrap());
-        }
-    }
 }

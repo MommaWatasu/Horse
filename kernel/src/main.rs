@@ -11,7 +11,6 @@ pub mod console;
 pub mod pci;
 pub mod usb;
 pub mod volatile;
-pub mod register;
 pub mod mouse;
 
 use status::StatusCode;
@@ -24,7 +23,6 @@ use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
 use pci::Device;
 use pci::{read_bar, scan_all_bus, read_class_code, read_vendor_id, ClassCode, PciDevices};
 use usb::xhci::Controller;
-use usb::xhci::port::Port;
 
 const BG_COLOR: PixelColor = PixelColor(0, 0, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
@@ -55,7 +53,7 @@ fn find_pci_devices() -> PciDevices {
     match scan_all_bus() {
         Ok(v) => {
             pci_devices = v;
-            status_log!(StatusCode::KSuccess, "Scanning Bus")
+            status_log!(StatusCode::Success, "Scanning Bus")
         },
         Err(_code) => {
             panic!("Scanning Bus");
@@ -128,7 +126,7 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     let xhc_dev = match xhc_dev {
         Some(xhc_dev) => {
             status_log!(
-                StatusCode::KSuccess,
+                StatusCode::Success,
                 "xHC has been found: {}.{}.{}",
                 xhc_dev.bus, xhc_dev.device, xhc_dev.function
             );
@@ -158,10 +156,10 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
         if is_connected {
             match xhc.configure_port(&port) {
                 Ok(sc) => {
-                    status_log!(StatusCode::KSuccess, "Configure Port: {}", sc);
+                    status_log!(StatusCode::Success, "Configure Port: {}", sc);
                 },
                 Err(sc) => {
-                    status_log!(StatusCode::KFailure, "Configure Port: {}", sc);
+                    status_log!(StatusCode::Failure, "Configure Port: {}", sc);
                     continue;
                 }
             }

@@ -68,11 +68,11 @@ impl PciDevices {
 
     pub fn add_device(&mut self, device: Device) -> Result<StatusCode, StatusCode> {
         if self.count > 32 {
-            Err(StatusCode::KFull)
+            Err(StatusCode::Full)
         } else {
             self.devices[self.count] = device;
             self.count += 1;
-            Ok(StatusCode::KSuccess)
+            Ok(StatusCode::Success)
         }
     }
 
@@ -91,7 +91,7 @@ impl PciDevices {
             let secondary_bus = ((bus_numbers >> 8) & 0xff) as u8;
             return self.scan_bus(secondary_bus);
         }
-        Ok(StatusCode::KSuccess)
+        Ok(StatusCode::Success)
     }
 
     fn scan_device(&mut self, bus: u8, device: u8) -> Result<StatusCode, StatusCode> {
@@ -103,7 +103,7 @@ impl PciDevices {
                 }
             }
         }
-        Ok(StatusCode::KSuccess)
+        Ok(StatusCode::Success)
     }
 
     fn scan_bus(&mut self, bus: u8) -> Result<StatusCode, StatusCode> {
@@ -112,7 +112,7 @@ impl PciDevices {
                 self.scan_device(bus, device)?;
             }
         }
-        Ok(StatusCode::KSuccess)
+        Ok(StatusCode::Success)
     }
 
     pub fn iter(&self) -> PciDevicesIter {
@@ -202,7 +202,7 @@ fn read_conf_reg(dev: &Device, reg_addr: u8) -> u32 {
 
 pub fn read_bar(device: &Device, bar_index: usize) -> Result<u64, StatusCode> {
     if bar_index >= 6 {
-        return Err(StatusCode::KIndexOutOfRange);
+        return Err(StatusCode::IndexOutOfRange);
     }
     let addr: u8 = calc_bar_address(bar_index);
     let bar: u32 = read_conf_reg(device, addr);
@@ -212,7 +212,7 @@ pub fn read_bar(device: &Device, bar_index: usize) -> Result<u64, StatusCode> {
     }
 
     if bar_index >= 5 {
-        return Err(StatusCode::KIndexOutOfRange);
+        return Err(StatusCode::IndexOutOfRange);
     }
 
     let bar_upper: u32 = PCI_PORT.lock().read(device.bus, device.device, device.function, u8::from(addr+4));

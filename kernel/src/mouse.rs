@@ -2,7 +2,6 @@ use crate::{
     Graphics,
     PixelColor
 };
-use crate::debug;
 const K_MOUSE_CURSOR_HEIGHT: usize = 24;
 pub const MOUSE_CURSOR_SHAPE: [&str; K_MOUSE_CURSOR_HEIGHT] = [
 "@              ",

@@ -1,5 +1,4 @@
 use core::fmt::Write;
-use crate::status::StatusCode;
 
 static LOG_LEVEL_DISPLAY: [&str; 6] = ["OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
 pub static LOG_LEVEL: spin::Mutex<LogLevel> = spin::Mutex::new(LogLevel::Debug);
@@ -52,7 +51,7 @@ macro_rules! log {
 macro_rules! status_log {
     ($status:expr ,$fmt:expr) => {
         match $status {
-            StatusCode::KSuccess => {
+            StatusCode::Success => {
                 crate::print!("[ OK ]");
                 crate::print!(core::concat!($fmt, "\n"))
             },
@@ -64,7 +63,7 @@ macro_rules! status_log {
     };
     ($status:expr, $fmt:expr, $($arg:tt)*) => {
         match $status {
-            StatusCode::KSuccess => {
+            StatusCode::Success => {
                 crate::print!("[ OK ]");
                 crate::print!(core::concat!($fmt, "\n"), $($arg)*)
             },
