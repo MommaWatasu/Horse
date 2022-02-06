@@ -55,13 +55,11 @@ impl Port {
     }
 
     pub unsafe fn reset(& self) {
-        unsafe {
-            (*self.regs).portsc.modify(|portsc| {
-                portsc.data &= 0b_0000_1110_1111_1110_1100_0011_1110_0000;
-                portsc.data |= 0b_0000_0000_0000_0010_0000_0000_0001_0000; // Write 1 to PR and CSC
-            })
-        };
-        while unsafe { (*self.regs).portsc.read().port_reset() == 1 } {}
+        (*self.regs).portsc.modify(|portsc| {
+            portsc.data &= 0b_0000_1110_1111_1110_1100_0011_1110_0000;
+            portsc.data |= 0b_0000_0000_0000_0010_0000_0000_0001_0000; // Write 1 to PR and CSC
+        });
+        while (*self.regs).portsc.read().port_reset() == 1 {}
     }
     
     pub fn clear_connect_status_change(&mut self) {

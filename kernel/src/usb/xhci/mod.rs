@@ -39,9 +39,6 @@ const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
 pub static ALLOC: spin::Mutex<Allocator<MEM_POOL_SIZE>> =
     spin::Mutex::new(Allocator::new());
 
-static PORT_CONFIG_PHASE: spin::Mutex<[PortConfigPhase; 256]> =
-    spin::Mutex::new([PortConfigPhase::NotConnected; 256]);
-
 pub struct Controller<'a> {
     cap_regs: *mut CapabilityRegisters,
     op_regs: *mut OperationalRegisters,
@@ -215,11 +212,9 @@ impl<'a> Controller<'a> {
     }
 
     pub unsafe fn run(&mut self) -> Result<StatusCode> {
-        unsafe {
-            (*self.op_regs).usbcmd.modify(|usbcmd| {
-                usbcmd.set_run_stop(1);
-            })
-        };
+        (*self.op_regs).usbcmd.modify(|usbcmd| {
+            usbcmd.set_run_stop(1);
+        });
 
         while (*self.op_regs).usbsts.read().host_controller_halted() == 1 {};
 
@@ -303,9 +298,7 @@ impl<'a> Controller<'a> {
                     return Err(StatusCode::InvalidPhase);
                 }
                 port.set_config_phase(PortConfigPhase::ResettingPort);
-                unsafe {
-                    port.reset();
-                }
+                port.reset();
             }
         }
         Ok(())
@@ -314,7 +307,7 @@ impl<'a> Controller<'a> {
     pub unsafe fn configure_port(&mut self, port: &Port) {
         let mut first = None;
         for port_num in 1..=self.max_ports {
-            if unsafe { !self.ports[port_num as usize].is_connected() } {
+            if !self.ports[port_num as usize].is_connected() {
                 continue;
             }
             if first.is_none() {
@@ -596,7 +589,7 @@ impl<'a> Controller<'a> {
         );
         match port.config_phase() {
             PortConfigPhase::NotConnected => {
-                if unsafe { port.is_connect_status_changed() } {
+                if port.is_connect_status_changed() {
                     port.clear_connect_status_change();
                     unsafe { self.reset_port(port_id) }
                 } else {

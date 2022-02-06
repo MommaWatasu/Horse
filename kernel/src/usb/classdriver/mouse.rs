@@ -72,7 +72,7 @@ impl Driver for HidMouseDriver {
             };
 
             let mut cursor = MOUSE_CURSOR_POS.lock();
-            let (mut x, mut y) = *cursor;
+            let (x, y) = *cursor;
 
             *cursor = (x, y);
         }
