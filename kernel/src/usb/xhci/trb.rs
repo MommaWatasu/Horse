@@ -1,3 +1,4 @@
+use core::mem::transmute;
 use crate::{bit_getter, bit_setter};
 use crate::usb::{
     endpoint::EndpointId,
@@ -26,7 +27,7 @@ pub enum TypeId {
 
 pub trait Trb: Sized {
     const TYPE: u8;
-    
+
     fn upcast(&self) -> &GenericTrb {
         unsafe { core::mem::transmute::<&Self, &GenericTrb>(self) }
     }
@@ -56,7 +57,7 @@ impl GenericTrb {
     
     pub fn downcast_ref<T: Trb>(&self) -> Option<&T> {
         if self.trb_type() == T::TYPE {
-            Some(unsafe { core::mem::transfer::<&Self, &T>(self) })
+            Some(unsafe { transmute::<&Self, &T>(self) })
         } else {
             None
         }

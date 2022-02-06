@@ -1,5 +1,8 @@
 use core::ptr::null_mut;
-use core::mem::MaybeUninit;
+use core::mem::{
+    MaybeUninit,
+    transmute
+};
 use crate::{
     status::StatusCode,
     bit_getter,
@@ -8,19 +11,22 @@ use crate::{
 };
 use super::{
     ALLOC,
-    GenericTrb,
-    Link,
+    trb::{
+        GenericTrb,
+        Link,
+        Trb
+    },
     InterrupterRegisterSet
 };
 
 pub struct Ring {
     buf: &'static mut [GenericTrb],
-    cycle_bit: bool,
+    pub cycle_bit: bool,
     write_idx: usize
 }
 
 impl Ring {
-    pub fn with_capability(buf_size: usize) -> Result<Self, StatusCode> {
+    pub fn with_capacity(buf_size: usize) -> Result<Self, StatusCode> {
         let buf: &mut [MaybeUninit<GenericTrb>] = unsafe {
             ALLOC
                 .lock()
@@ -32,7 +38,7 @@ impl Ring {
             *p = MaybeUninit::zeroed();
         }
         let buf = unsafe {
-            core::mem::transfermute::<&mut [MaybeUninit<GenericTrb>], &mut [GenericTrb]>(buf)
+            transmute::<&mut [MaybeUninit<GenericTrb>], &mut [GenericTrb]>(buf)
         };
         Ok(Self{
             buf,
@@ -57,7 +63,7 @@ impl Ring {
         unsafe { p.add(3).write_volatile(trb.data[3]) };
     }
     
-    pub fn push(&mut self, trb: GenericTrb) -> &GenericTrb {
+    pub fn push(&mut self, trb: &GenericTrb) -> &GenericTrb {
         self.copy_to_last(trb.clone());
         let written_idx = self.write_idx;
         self.write_idx += 1;
@@ -86,7 +92,7 @@ pub struct EventRing {
 }
 
 impl EventRing {
-    pub fn with_capability(buf_size: usize) -> Result<Self, StatusCode> {
+    pub fn with_capacity(buf_size: usize) -> Result<Self, StatusCode> {
         let mut alloc = ALLOC.lock();
         
         let buf: &mut [MaybeUninit<GenericTrb>] = unsafe {
@@ -99,23 +105,23 @@ impl EventRing {
             *p = MaybeUninit::zeroed();
         }
         let buf = unsafe {
-            core::mem::transfer::<&mut [MaybeUninit<GenericTrb>], &mut [GenericTrb]>(buf)
+            transmute::<&mut [MaybeUninit<GenericTrb>], &mut [GenericTrb]>(buf)
         };
         let buf = buf as *const [GenericTrb];
         
         let table: &mut [MaybeUninit<EventRingSegmentTableEntry>] = unsafe {
             alloc
                 .alloc_slice_ext::<EventRingSegmentTableEntry>(1, 64, Some(64 * 1024))
-                .ok_or(StatusCode::NoEnoughMemory)
+                .ok_or(StatusCode::NoEnoughMemory)?
                 .as_mut()
         };
         for p in table.iter_mut() {
             *p = MaybeUninit::zeroed();
         }
-        let tabel = unsafe {
-            core::mem::transfer::<
+        let table = unsafe {
+            transmute::<
                 &mut [MaybeUninit<EventRingSegmentTableEntry>],
-                &mut [EventRingSegmentTableEntry]
+                &mut [EventRingSegmentTableEntry],
             >(table)
         };
         unsafe {
@@ -134,14 +140,22 @@ impl EventRing {
     
     pub fn initialize(&mut self, interrupter: *mut InterrupterRegisterSet) {
         self.interrupter = interrupter;
-        
+
         let (ptr, len) = unsafe { ((*self.erst).as_ptr(), (*self.erst).len()) };
-        
+
         unsafe {
-            (*interrupter).erstsz.modify(|erstba| {
+            (*interrupter).erstsz.modify(|erstsz| {
+                erstsz.set_event_ring_segment_table_size(len as u16);
+            })
+        };
+
+        self.write_dequeue_pointer(unsafe { (*self.buf).as_ptr() });
+
+        unsafe {
+            (*interrupter).erstba.modify(|erstba| {
                 erstba.set_pointer(ptr as usize);
             })
-        }
+        };
     }
     
     pub fn front(&self) -> Option<&GenericTrb> {

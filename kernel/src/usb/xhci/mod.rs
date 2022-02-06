@@ -12,13 +12,26 @@ use core::ptr::{
 };
 use devmgr::DeviceManager;
 use ring::*;
-use trb::*;
 use registers::*;
 use port::*;
-use crate::{status_log, debug, warn, trace, error};
-use crate::status::{StatusCode, PortConfigPhase};
-use crate::usb::memory::Allocator;
-use crate::volatile::Volatile;
+use trb::{
+    EvaluateContextCommand,
+    EnableSlotCommand,
+    AddressDeviceCommand,
+    TransferEvent,
+    Trb,
+    ConfigureEndpointCommand,
+    CommandCompletionEvent,
+    PortStatusChangeEvent
+};
+use crate::{
+    status_log, debug, warn, trace, error,
+    status::{
+        StatusCode, PortConfigPhase, Result
+    },
+    usb::memory::Allocator,
+    volatile::Volatile
+};
 
 const KDeviceSize: usize = 0;
 
@@ -26,8 +39,8 @@ const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
 pub static ALLOC: spin::Mutex<Allocator<MEM_POOL_SIZE>> =
     spin::Mutex::new(Allocator::new());
 
-static PORT_CONFIG_PHASE: spin::Mutex<[ConfigPhase; 256]> =
-    spin::Mutex::new([ConfigPhase::KNotConnected; 256]);
+static PORT_CONFIG_PHASE: spin::Mutex<[PortConfigPhase; 256]> =
+    spin::Mutex::new([PortConfigPhase::NotConnected; 256]);
 
 pub struct Controller<'a> {
     cap_regs: *mut CapabilityRegisters,
@@ -45,7 +58,7 @@ impl<'a> Controller<'a> {
     const DEVICES_SIZE: usize = 16;
     /// # Safety
     /// mmio_base must be a valid base address for xHCI device MMIO
-    pub unsafe fn new(mmio_base: usize) -> Result<Self, StatusCode> {
+    pub unsafe fn new(mmio_base: usize) -> Result<Self> {
         let cap_regs = mmio_base as *mut CapabilityRegisters;
         let max_ports = (*cap_regs).hcs_params1.read().max_ports();
         
@@ -112,7 +125,7 @@ impl<'a> Controller<'a> {
                     .as_mut()
             };
             
-            for ptr in buf.arr.iter_mut() {
+            for ptr in buf_arr.iter_mut() {
                 #[allow(unused_unsafe)]
                 let buf: &mut [u8] = unsafe {
                     alloc
@@ -143,16 +156,16 @@ impl<'a> Controller<'a> {
         dcbaap.set_pointer(device_contexts as usize);
         (*op_regs).dcbaap.write(dcbaap);
         
-        let cr = CommandRing::with_capability(32)?;
+        let cr = CommandRing::with_capacity(32)?;
         //register the address of the Command Ring buffer
-        (*op_regs).crcr>modify_with(|value| {
+        (*op_regs).crcr.modify(|value| {
             value.set_ring_cycle_state(cr.cycle_bit as u8);
-            value.set_command_ring(0);
+            value.set_command_stop(0);
             value.set_command_abort(0);
             value.set_pointer(cr.buffer_ptr() as usize);
         });
         
-        let mut er = EventRing::with_capability(32)?;
+        let mut er = EventRing::with_capacity(32)?;
         er.initialize(primary_interrupter);
         
         (*primary_interrupter).iman.modify(|iman| {
@@ -168,7 +181,7 @@ impl<'a> Controller<'a> {
             let port_regs_base = ((op_regs as usize) + 0x400) as *mut PortRegisterSet;
             
             #[allow(unused_unsafe)]
-            let port: &mut [MaybeUninit<Port>] = unsafe {
+            let ports: &mut [MaybeUninit<Port>] = unsafe {
                 ALLOC
                     .lock()
                     .alloc_slice::<Port>((max_ports + 1) as usize)
@@ -201,7 +214,7 @@ impl<'a> Controller<'a> {
         })
     }
 
-    pub fn run(&mut self) -> Result<StatusCode, StatusCode> {
+    pub fn run(&mut self) -> Result<StatusCode> {
         unsafe {
             (*self.op_regs).usbcmd.modify(|usbcmd| {
                 usbcmd.set_run_stop(1);
@@ -245,7 +258,7 @@ impl<'a> Controller<'a> {
                 debug!("No USB legacy support");
                 return;
             },
-            Some(ptr) => reg as *mut Volatile<Usblegsup>
+            Some(reg) => reg as *mut Volatile<Usblegsup>
         };
         
         let mut r = unsafe { (*reg).read() };
@@ -253,22 +266,22 @@ impl<'a> Controller<'a> {
             debug!("already os owned");
             return;
         }
-        r.set_hc_owned_semaphore(1);
-        unsafe { (*reg).writer(r) };
+        r.set_hc_os_owned_semaphore(1);
+        unsafe { (*reg).write(r) };
         
         debug!("waiting untile OS owns xHC...");
         loop {
             let r = unsafe {(*reg).read()};
-            if r.hc_bios_owned_semaphore() == 0 && r.hc_os_owned_sema_phore == 1 {
+            if r.hc_bios_owned_semaphore() == 0 && r.hc_os_owned_semaphore() == 1 {
                 break;
             }
         }
         debug!("OS has owned xHC");
     }
 
-    pub fn reset_port(&mut self, port_num: u8) -> Result<StatusCode, StatusCode> {
+    pub fn reset_port(&mut self, port_num: u8) -> Result<()> {
         if !self.ports[port_num as usize].is_connected() {
-            return Ok(StatusCode::Success);
+            return Ok(());
         }
         match self.addressing_port {
             Some(_) => {
@@ -293,7 +306,7 @@ impl<'a> Controller<'a> {
                 port.reset();
             }
         }
-        Ok(StatusCode::Success)
+        Ok(())
     }
 
     pub fn configure_port(&self, port: &Port) {
@@ -313,26 +326,13 @@ impl<'a> Controller<'a> {
             }
         }
     }
-
-    pub unsafe fn port_at(&mut self, port_num: u8) -> Port {
-        unsafe {
-            return Port::new(
-                port_num,
-                self.port_register_sets().index((port_num-1).into())
-            );
-        }
-    }
-
-    pub fn max_ports(&self) -> u8 {
-        return (*self.cap_regs).hcs_params1.read().max_ports();
-    }
     
     fn ring_doorbell(doorbell: *mut DoorbellRegister) {
         trace!("ring the doorbell zero (Command Ring)");
         unsafe { (*doorbell).ring(0) };
     }
 
-    fn enable_slot(&mut self, port_num: u8) -> Result<StatusCode, StatusCode> {
+    fn enable_slot(&mut self, port_num: u8) -> Result<()> {
         let port = &mut self.ports[port_num as usize];
 
         let is_enabled = port.is_enabled();
@@ -349,12 +349,12 @@ impl<'a> Controller<'a> {
             let cmd = EnableSlotCommand::default();
             trace!("EnableSlotCommand pushed");
             self.cr.push(cmd.upcast());
-            Self::ring_doorbell(self.doorbell_zero);
+            Self::ring_doorbell(self.doorbell_first);
         }
-        Ok(StatusCode::Success)
+        Ok(())
     }
 
-    fn address_device(&mut self, port_num: u8, slot_id: u8) -> Result<StatusCode, StatusCode> {
+    fn address_device(&mut self, port_num: u8, slot_id: u8) -> Result<()> {
         trace!("address_device: port = {}, slot = {}", port_num, slot_id);
         let port = &self.ports[port_num as usize];
         let input_ctx = self.devmgr.add_device(port, slot_id)?;
@@ -364,12 +364,12 @@ impl<'a> Controller<'a> {
         cmd.set_input_context_ptr(input_ctx);
         cmd.set_slot_id(slot_id);
         self.cr.push(cmd.upcast());
-        Self::ring_doorbell(self.doorbell_zero);
+        Self::ring_doorbell(self.doorbell_first);
 
-        Ok(StatusCode::Success)
+        Ok(())
     }
 
-    pub fn process_event(&mut self) -> Result<StatusCode, StatusCode> {
+    pub fn process_event(&mut self) -> Result<()> {
         if let Some(trb) = self.er.front() {
             trace!("event found: TRB type = {}", trb.trb_type());
 
@@ -383,10 +383,10 @@ impl<'a> Controller<'a> {
             self.er.pop();
             trace!("event popped");
         }
-        Ok(StatusCode::Success)
+        Ok(())
     }
 
-    fn on_transfer_event(&mut self) -> Result<StatusCode, StatusCode> {
+    fn on_transfer_event(&mut self) -> Result<()> {
         let trb = self
             .er
             .front()
@@ -423,7 +423,7 @@ impl<'a> Controller<'a> {
         if let Some(cmd_trb) = dev.command_trb.take() {
             debug!("command TRB found");
             self.cr.push(&cmd_trb);
-            Self::ring_doorbell(self.doorbell_zero);
+            Self::ring_doorbell(self.doorbell_first);
         }
 
         if dev.is_initialized()
@@ -438,12 +438,12 @@ impl<'a> Controller<'a> {
             cmd.set_input_context_ptr(input_ctx);
             cmd.set_slot_id(slot_id);
             self.cr.push(cmd.upcast());
-            Self::ring_doorbell(self.doorbell_zero);
+            Self::ring_doorbell(self.doorbell_first);
         }
 
-        Ok(StatusCode::Success)
+        Ok(())
     }
-    fn on_command_completion_event(&mut self) -> Result<StatusCode, StatusCode> {
+    fn on_command_completion_event(&mut self) -> Result<()> {
         let trb = self
             .er
             .front()
@@ -526,9 +526,9 @@ impl<'a> Controller<'a> {
                     if let Some(cmd_trb) = dev.command_trb.take() {
                         debug!("command TRB found");
                         self.cr.push(&cmd_trb);
-                        Self::ring_doorbell(self.doorbell_zero);
+                        Self::ring_doorbell(self.doorbell_first);
                     }
-                    Ok(StatusCode::Success)
+                    Ok(())
                 }
             }
             EvaluateContextCommand::TYPE => {
@@ -546,9 +546,9 @@ impl<'a> Controller<'a> {
                     if let Some(cmd_trb) = dev.command_trb.take() {
                         debug!("command TRB found");
                         self.cr.push(&cmd_trb);
-                        Self::ring_doorbell(self.doorbell_zero);
+                        Self::ring_doorbell(self.doorbell_first);
                     }
-                    Ok(StatusCode::Success)
+                    Ok(())
                 }
             }
             ConfigureEndpointCommand::TYPE => {
@@ -565,7 +565,7 @@ impl<'a> Controller<'a> {
                 } else {
                     dev.on_endpoints_configured()?;
                     self.ports[port_num as usize].set_config_phase(PortConfigPhase::Configured);
-                    Ok(StatusCode::Success)
+                    Ok(())
                 }
             }
             _ => {
@@ -574,7 +574,7 @@ impl<'a> Controller<'a> {
             }
         }
     }
-    fn on_port_status_change_event(&mut self) -> Result<StatusCode, StatusCode> {
+    fn on_port_status_change_event(&mut self) -> Result<()> {
         let trb = self
             .er
             .front()
@@ -597,7 +597,7 @@ impl<'a> Controller<'a> {
                     self.reset_port(port_id)
                 } else {
                     trace!("skipping reset_port: port_id = {}", port_id);
-                    Ok(StatusCode::Success)
+                    Ok(())
                 }
             }
             PortConfigPhase::ResettingPort => {
@@ -605,16 +605,16 @@ impl<'a> Controller<'a> {
                     self.enable_slot(port_id)
                 } else {
                     trace!("skipping: enable_slot: port_id = {}", port_id);
-                    Ok(StatusCode::Success)
+                    Ok(())
                 }
             }
             PortConfigPhase::EnablingSlot => {
                 trace!("skipping: port_id = {}", port_id);
-                Ok(StatusCode::Success)
+                Ok(())
             }
             PortConfigPhase::WaitingAddressed => {
                 trace!("waiting addressed: port_id = {}", port_id);
-                Ok(StatusCode::Success)
+                Ok(())
             }
             phase => {
                 warn!(

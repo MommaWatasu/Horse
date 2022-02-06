@@ -11,6 +11,7 @@ pub enum EndpointType {
 }
 
 impl core::convert::TryFrom<u8> for EndpointType {
+    type Error = StatusCode;
     fn try_from(ty: u8) -> core::result::Result<Self, StatusCode> {
         match ty {
             0 => Ok(Self::Control),
@@ -27,7 +28,7 @@ pub struct EndpointId {
     addr: u8,
 }
 impl EndpointId {
-    const DEFAULT_CONTROL_PIPE: EndpointId = EndpointId { addr: 1 };
+    pub const DEFAULT_CONTROL_PIPE: EndpointId = EndpointId { addr: 1 };
 
     pub fn from_addr(addr: u8) -> Self {
         Self { addr }

@@ -79,8 +79,8 @@ impl UsbCmd {
     bit_setter!(data: u32; 0b0010; u8, pub set_host_controller_reset);
     bit_getter!(data: u32; 0b0010; u8, pub host_controller_reset);
     
-    bit_setter!(data: u32; 0b0100; u8, pub set_interrupt_enable);
-    bit_getter!(data: u32; 0b0100; u8, pub interrupt_enable);
+    bit_setter!(data: u32; 0b0100; u8, pub set_interrupter_enable);
+    bit_getter!(data: u32; 0b0100; u8, pub interrupter_enable);
     
     bit_setter!(data: u32; 0b1000; u8, pub set_host_system_error_enable);
     bit_getter!(data: u32; 0b1000; u8, pub host_system_error_enable);
@@ -295,11 +295,11 @@ pub struct PortHlpmc {
 }
 
 #[repr(C)]
-pub struct DoorbellRegister {
+pub struct Doorbell {
     data: u32
 }
 
-impl DoorbellRegister {
+impl Doorbell {
     bit_setter!(data: u32; 0x000000FF;  u8, pub set_db_target);
     bit_setter!(data: u32; 0xFFFF0000; u16, pub set_db_stream_id);
 }
@@ -346,4 +346,20 @@ pub struct PortRegisterSet {
     pub portpmsc: Volatile<PortPmsc>,
     pub portli: Volatile<PortLi>,
     pub porthlpmc: Volatile<PortHlpmc>
+}
+
+#[repr(C)]
+pub struct DoorbellRegister {
+    reg: Volatile<Doorbell>,
+}
+impl DoorbellRegister {
+    pub fn ring(&mut self, target: u8) {
+        self.ring_with_stream_id(target, 0)
+    }
+    pub fn ring_with_stream_id(&mut self, target: u8, stream_id: u16) {
+        self.reg.modify(|reg| {
+            reg.set_db_target(target);
+            reg.set_db_stream_id(stream_id);
+        })
+    }
 }

@@ -19,6 +19,16 @@ use crate::{
     }
 };
 
+pub enum TransferRequest {
+    NoOp,
+    ControlOut(SetupData),
+    InterruptIn {
+        ep_id: EndpointId,
+        buf_ptr: Option<NonNull<u8>>,
+        size: usize,
+    },
+}
+
 pub trait Driver {
     fn set_endpoint(&mut self, config: &EndpointConfig) -> Result<()>;
     fn on_endpoints_configured(&mut self) -> Result<TransferRequest>;

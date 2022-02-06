@@ -12,6 +12,7 @@ pub mod pci;
 pub mod usb;
 pub mod volatile;
 pub mod mouse;
+pub mod fixed_vec;
 
 use status::StatusCode;
 use log::*;

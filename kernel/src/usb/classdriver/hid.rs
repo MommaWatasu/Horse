@@ -2,15 +2,25 @@ use core::ptr::NonNull;
 use crate::{
     status::Result,
     usb::{
+        buffer::Buffer,
         endpoint::{
             EndpointId,
-            EndpointConfig
+            EndpointConfig,
+            EndpointType
         },
-        setupdata::SetupData
+        setupdata::{
+            SetupData,
+            HidRequest
+        },
+        setupdata::request_type,
+        xhci::ALLOC
     },
     warn, trace
 };
-use super::Driver;
+use super::{
+    Driver,
+    TransferRequest
+};
 
 pub struct HidDriver {
     interface_idx: u8,
@@ -26,14 +36,14 @@ impl HidDriver {
     const BUF_SIZE: usize = 1024;
 
     pub fn new(interface_idx: u8, in_packet_size: usize) -> Result<Self> {
-        let mut malloc = MALLOC.lock();
+        let mut alloc = ALLOC.lock();
         Ok(Self {
             interface_idx,
             in_packet_size,
             ep_interrupt_in: None,
             ep_interrupt_out: None,
-            buf: Buffer::new(&mut *malloc, Self::BUF_SIZE, 64),
-            prev_buf: Buffer::new(&mut *malloc, Self::BUF_SIZE, 64),
+            buf: Buffer::new(&mut *alloc, Self::BUF_SIZE, 64),
+            prev_buf: Buffer::new(&mut *alloc, Self::BUF_SIZE, 64),
             init_phase: 0,
         })
     }

@@ -73,7 +73,7 @@ impl EndpointContext {
 
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub struct DeviceContextIndex(usize);
+pub struct DeviceContextIndex(pub usize);
 impl From<EndpointId> for DeviceContextIndex {
     fn from(ep_id: EndpointId) -> Self {
         Self(ep_id.address() as usize)
@@ -83,7 +83,7 @@ impl From<EndpointId> for DeviceContextIndex {
 #[repr(C, align(64))]
 #[derive(PartialEq)]
 pub struct DeviceContext {
-    slot_context: SlotContext,
+    pub slot_context: SlotContext,
     ep_ctxs: [EndpointContext; 31],
 }
 
@@ -107,8 +107,8 @@ pub struct InputControlContext {
 
 #[repr(C, align(64))]
 pub struct InputContext {
-    input_control_ctx: InputControlContext,
-    slot_ctx: SlotContext,
+    pub input_control_ctx: InputControlContext,
+    pub slot_ctx: SlotContext,
     ep_ctxs: [EndpointContext; 31],
 }
 impl InputContext {

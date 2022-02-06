@@ -15,11 +15,11 @@ pub struct Allocator<const BUF_SIZE: usize> {
 
 impl<const BUF_SIZE: usize> Allocator<BUF_SIZE> {
     pub const fn new() -> Self {
-        let pool = [0; BUF_SIZE];
         Self {
-            pool,
-            current: 0,
+            buf: MaybeUninit::uninit(),
+            ptr: 0,
             end: 0,
+            initialized: false,
             boundary: 4096,
         }
     }
@@ -84,5 +84,21 @@ impl<const BUF_SIZE: usize> Allocator<BUF_SIZE> {
         let buf: &mut [u8] = self.alloc(size_of::<T>() * len, align, boundary)?.as_mut();
         let ptr = buf.as_mut_ptr() as *mut MaybeUninit<T>;
         Some(NonNull::new_unchecked(slice_from_raw_parts_mut(ptr, len)))
+    }
+    
+    pub fn alloc_obj<T: 'static>(&mut self) -> Option<NonNull<MaybeUninit<T>>> {
+        unsafe { self.alloc_obj_ext::<T>(align_of::<T>(), None) }
+    }
+
+    /// Safety: `align` must be a multiple of `core::mem::align_of::<T>()`.
+    pub unsafe fn alloc_obj_ext<T: 'static>(
+        &mut self,
+        align: usize,
+        boundary: Option<usize>,
+    ) -> Option<NonNull<MaybeUninit<T>>> {
+        debug_assert!(align % align_of::<T>() == 0);
+        let buf: &mut [u8] = self.alloc(size_of::<T>(), align, boundary)?.as_mut();
+        let obj = buf.as_mut_ptr() as *mut MaybeUninit<T>;
+        Some(NonNull::new_unchecked(obj))
     }
 }

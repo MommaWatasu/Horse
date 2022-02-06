@@ -1,6 +1,6 @@
 use crate::{bit_getter, bit_setter};
 
-mod request_type {
+pub mod request_type {
     #![allow(dead_code)]
 
     #[repr(u8)]
@@ -24,12 +24,12 @@ mod request_type {
 }
 
 #[repr(u8)]
-enum Request {
+pub enum Request {
     GetDescriptor = 6,
     SetConfiguration = 9,
 }
 #[repr(u8)]
-enum HidRequest {
+pub enum HidRequest {
     SetProtocol = 11,
 }
 

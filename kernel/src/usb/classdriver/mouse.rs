@@ -12,7 +12,8 @@ use crate::{
 };
 use super::{
     Driver,
-    HidDriver
+    HidDriver,
+    TransferRequest
 };
 
 pub struct HidMouseDriver {

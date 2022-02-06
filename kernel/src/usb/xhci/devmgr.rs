@@ -9,6 +9,7 @@ use core::mem::{
     size_of
 };
 use crate::{
+    fixed_vec::FixedVec,
     status::{
         StatusCode,
         Result
@@ -21,21 +22,38 @@ use crate::{
         },
         buffer:: Buffer,
         classdriver,
-        DescIter,
         descriptor,
+        descriptor::{
+            ConfigurationDescriptor,
+            Descriptor,
+            DeviceDescriptor,
+            EndpointDescriptor,
+            HidDescriptor,
+            InterfaceDescriptor,
+            DescIter
+        },
         setupdata::*,
+        setupdata::request_type,
         endpoint::*
     },
 };
 use super::{
     ALLOC,
     DoorbellRegister,
-    GenericTrb,
     context::*,
     Port,
     speed::PortSpeed,
     TransferRing,
-    trb
+    trb,
+    trb::{
+        GenericTrb,
+        EvaluateContextCommand,
+        Trb,
+        Normal,
+        SetupStage,
+        DataStage,
+        StatusStage
+    }
 };
 
 pub struct Device {
@@ -43,7 +61,7 @@ pub struct Device {
     input_ctx: InputContext,
     doorbell: *mut DoorbellRegister,
     transfer_rings: [Option<TransferRing>; 31],
-    command_trb: Option<GenericTrb>,
+    pub command_trb: Option<GenericTrb>,
     slot_id: u8,
     speed: PortSpeed,
 
@@ -61,7 +79,7 @@ pub struct Device {
     event_waiters: ArrayMap<SetupData, usize, 4>,
 
     /// {DataStage,StatusStage} TRB --> SetupData
-    setup_data_map: ArrayMap<*const trb::GenericTrb, SetupData, 16>,
+    setup_data_map: ArrayMap<*const GenericTrb, SetupData, 16>,
 }
 
 impl Device {
@@ -103,7 +121,7 @@ impl Device {
             init_phase_ptr.write(-1);
 
             let buf_ptr: *mut Buffer = addr_of_mut!((*ptr).buf);
-            buf_ptr.write(Buffer::new(&mut *MALLOC.lock(), Self::BUF_SIZE, 64));
+            buf_ptr.write(Buffer::new(&mut *ALLOC.lock(), Self::BUF_SIZE, 64));
 
             let num_configurations_ptr = addr_of_mut!((*ptr).num_configurations);
             num_configurations_ptr.write(0);
@@ -130,7 +148,7 @@ impl Device {
             ArrayMap::initialize_ptr(setup_data_map_ptr);
         }
         let device = &mut *ptr;
-
+        
         let slot_ctx = device.input_ctx.enable_slot_context();
         slot_ctx.set_route_string(0);
         slot_ctx.set_root_hub_port_number(port.number());
@@ -170,8 +188,8 @@ impl Device {
         Ok(self.transfer_rings[i].as_ref().unwrap())
     }
 
-    fn port_num(&self) -> u8 {
-        unsafe { (*self.ctx).slot_ctx.root_hub_port_number() }
+    pub fn port_num(&self) -> u8 {
+        unsafe { (*self.ctx).slot_context.root_hub_port_number() }
     }
 
     pub fn is_initialized(&self) -> bool {
@@ -199,7 +217,7 @@ impl Device {
             max_packet_size
         );
         ep0_ctx.set_max_packet_size(max_packet_size);
-        let mut eval_ctx_cmd = trb::EvaluateContextCommand::default();
+        let mut eval_ctx_cmd = EvaluateContextCommand::default();
         eval_ctx_cmd.set_input_context_ptr(&self.input_ctx);
         eval_ctx_cmd.set_slot_id(self.slot_id);
         self.command_trb = Some(eval_ctx_cmd.upcast().clone());
@@ -241,7 +259,7 @@ impl Device {
             transfered_size
         );
 
-        let mut desc_itr = descriptor::DescIter::new(&self.buf[..transfered_size]);
+        let mut desc_itr = DescIter::new(&self.buf[..transfered_size]);
         while let Some(if_desc) = desc_itr.next::<InterfaceDescriptor>() {
             let class_driver = match Self::new_class_driver(if_desc) {
                 Ok(driver) => driver,
@@ -309,7 +327,7 @@ impl Device {
                 info!("keyboard found");
                 use classdriver::HidKeyboardDriver;
                 let keyboard_driver = unsafe {
-                    let keyboard_driver: &mut MaybeUninit<HidKeyboardDriver> = MALLOC
+                    let keyboard_driver: &mut MaybeUninit<HidKeyboardDriver> = ALLOC
                         .lock()
                         .alloc_obj::<HidKeyboardDriver>()
                         .ok_or(StatusCode::NoEnoughMemory)?
@@ -328,7 +346,7 @@ impl Device {
                 info!("mouse found");
                 use classdriver::HidMouseDriver;
                 let mouse_driver = unsafe {
-                    let mouse_driver: &mut MaybeUninit<HidMouseDriver> = MALLOC
+                    let mouse_driver: &mut MaybeUninit<HidMouseDriver> = ALLOC
                         .lock()
                         .alloc_obj::<HidMouseDriver>()
                         .ok_or(StatusCode::NoEnoughMemory)?
@@ -346,13 +364,13 @@ impl Device {
         }
     }
 
-    fn configure_endpoints(&mut self) -> Result<*const InputContext> {
+    pub fn configure_endpoints(&mut self) -> Result<*const InputContext> {
         {
             let input_ctrl_ctx_ptr: *mut u8 =
                 &mut self.input_ctx.input_control_ctx as *mut _ as *mut u8;
             unsafe { input_ctrl_ctx_ptr.write_bytes(0, size_of::<InputControlContext>()) };
 
-            let src = unsafe { &(*self.ctx).slot_ctx as *const SlotContext };
+            let src = unsafe { &(*self.ctx).slot_context as *const SlotContext };
             let dst = &mut self.input_ctx.slot_ctx as *mut SlotContext;
             unsafe { core::ptr::copy(src, dst, 1) };
         }
@@ -419,7 +437,7 @@ impl Device {
         Ok(&self.input_ctx as *const InputContext)
     }
 
-    fn on_endpoints_configured(&mut self) -> Result<()> {
+    pub fn on_endpoints_configured(&mut self) -> Result<()> {
         for idx in 0..self.class_drivers.len() {
             let class_driver = self.class_drivers.get_mut(idx).unwrap();
             match class_driver.on_endpoints_configured()? {
@@ -439,7 +457,7 @@ impl Device {
         Ok(())
     }
 
-    fn on_command_completion_event_received(&mut self, issuer_type: u8) -> Result<()> {
+    pub fn on_command_completion_event_received(&mut self, issuer_type: u8) -> Result<()> {
         match issuer_type {
             trb::AddressDeviceCommand::TYPE => {
                 self.init_phase = 0;
@@ -465,7 +483,7 @@ impl Device {
         }
     }
 
-    fn on_transfer_event_received(&mut self, trb: &trb::TransferEvent) -> Result<()> {
+    pub fn on_transfer_event_received(&mut self, trb: &trb::TransferEvent) -> Result<()> {
         trace!(
             "device::on_transfer_event_received: issuer TRB = {:p}",
             trb.trb_pointer()
@@ -631,7 +649,7 @@ impl Device {
             self.event_waiters
                 .insert(setup_data.clone(), issuer_idx)
                 .map_err(|e| match e {
-                    ArrayMapError::NoSpace => Error::TooManyWaiters,
+                    ArrayMapError::NoSpace => StatusCode::TooManyWaiters,
                     ArrayMapError::SameKeyRegistered => {
                         panic!("same setup_data registered")
                     }
@@ -640,23 +658,23 @@ impl Device {
 
         debug!("Device::control_in: ep_id = {}", ep_id.address());
         if 15 < ep_id.number() {
-            return Err(Error::InvalidEndpointNumber);
+            return Err(StatusCode::InvalidEndpointNumber);
         }
 
         let dci = DeviceContextIndex::from(ep_id);
         let tr = self.transfer_rings[dci.0 - 1]
             .as_mut()
-            .ok_or(Error::TransferRingNotSet)?;
+            .ok_or(StatusCode::TransferRingNotSet)?;
 
         if let Some(buf_ptr) = buf_ptr {
-            let setup_stage = trb::SetupStage::new_in_data_stage(setup_data.clone());
+            let setup_stage = SetupStage::new_in_data_stage(setup_data.clone());
             tr.push(setup_stage.upcast());
 
-            let mut data_stage = trb::DataStage::new_in(buf_ptr.as_ptr(), size);
+            let mut data_stage = DataStage::new_in(buf_ptr.as_ptr(), size);
             data_stage.set_interrupt_on_completion(1);
             let data_stage_trb_ptr = tr.push(data_stage.upcast()) as *const trb::GenericTrb;
 
-            let mut status_stage = trb::StatusStage::default();
+            let mut status_stage = StatusStage::default();
             status_stage.set_direction(0);
 
             let status_stage_trb_ptr = tr.push(status_stage.upcast());
@@ -665,7 +683,7 @@ impl Device {
             self.setup_data_map
                 .insert(data_stage_trb_ptr, setup_data)
                 .map_err(|e| match e {
-                    ArrayMapError::NoSpace => Error::TooManyWaiters,
+                    ArrayMapError::NoSpace => StatusCode::TooManyWaiters,
                     ArrayMapError::SameKeyRegistered => {
                         panic!("same data_stage_trb_ptr registered")
                     }
@@ -691,7 +709,7 @@ impl Device {
             self.event_waiters
                 .insert(setup_data.clone(), issuer_idx)
                 .map_err(|e| match e {
-                    ArrayMapError::NoSpace => Error::TooManyWaiters,
+                    ArrayMapError::NoSpace => StatusCode::TooManyWaiters,
                     ArrayMapError::SameKeyRegistered => {
                         panic!("same setup_data registered")
                     }
@@ -700,22 +718,22 @@ impl Device {
 
         debug!("device::control_out: ep addr = {}", ep_id.address());
         if 15 < ep_id.number() {
-            return Err(Error::InvalidEndpointNumber);
+            return Err(StatusCode::InvalidEndpointNumber);
         }
 
         let dci = DeviceContextIndex::from(ep_id);
         let tr = self.transfer_rings[dci.0 - 1]
             .as_mut()
-            .ok_or(Error::TransferRingNotSet)?;
+            .ok_or(StatusCode::TransferRingNotSet)?;
 
         if let Some(_buf_ptr) = buf_ptr {
             let _size = size;
             unimplemented!();
         } else {
-            let setup_stage = trb::SetupStage::new_no_data_stage(setup_data.clone());
+            let setup_stage = SetupStage::new_no_data_stage(setup_data.clone());
             tr.push(setup_stage.upcast());
 
-            let mut status_stage = trb::StatusStage::default();
+            let mut status_stage = StatusStage::default();
             status_stage.set_direction(1);
             status_stage.set_interrupt_on_completion(1);
             let status_stage_trb_ptr = tr.push(status_stage.upcast());
@@ -724,7 +742,7 @@ impl Device {
             self.setup_data_map
                 .insert(status_stage_trb_ptr, setup_data)
                 .map_err(|e| match e {
-                    ArrayMapError::NoSpace => Error::TooManyWaiters,
+                    ArrayMapError::NoSpace => StatusCode::TooManyWaiters,
                     ArrayMapError::SameKeyRegistered => {
                         panic!("same data_stage_trb_ptr registered")
                     }
@@ -744,9 +762,9 @@ impl Device {
         let dci = DeviceContextIndex::from(ep_id);
         let tr = self.transfer_rings[dci.0 - 1]
             .as_mut()
-            .ok_or(Error::TransferRingNotSet)?;
+            .ok_or(StatusCode::TransferRingNotSet)?;
 
-        let mut normal = trb::Normal::default();
+        let mut normal = Normal::default();
         normal.set_data_buffer(buf_ptr.map(|ptr| ptr.as_ptr()).unwrap_or(null_mut()));
         normal.set_trb_transfer_length(size as u32);
         normal.set_interrupt_on_short_packet(1);
@@ -802,12 +820,12 @@ impl DeviceManager {
         doorbells: *mut DoorbellRegister,
         scratchpad_buf_arr: *const *const u8,
     ) -> Result<Self> {
-        let mut malloc = MALLOC.lock();
+        let mut malloc = ALLOC.lock();
 
         let devices: &mut [MaybeUninit<Option<&'static mut Device>>] = unsafe {
             malloc
                 .alloc_slice::<Option<&'static mut Device>>(max_slots + 1)
-                .ok_or(Error::NoEnoughMemory)?
+                .ok_or(StatusCode::NoEnoughMemory)?
                 .as_mut()
         };
         for p in devices.iter_mut() {
@@ -824,7 +842,7 @@ impl DeviceManager {
         let dcbaap: &mut [MaybeUninit<*const DeviceContext>] = unsafe {
             malloc
                 .alloc_slice_ext::<*const DeviceContext>(max_slots + 1, 64, None)
-                .ok_or(Error::NoEnoughMemory)?
+                .ok_or(StatusCode::NoEnoughMemory)?
                 .as_mut()
         };
         for p in dcbaap.iter_mut() {
@@ -855,17 +873,17 @@ impl DeviceManager {
     pub fn add_device(&mut self, port: &Port, slot_id: u8) -> Result<*const InputContext> {
         let slot_id = slot_id as usize;
         if !(1 <= slot_id && slot_id < self.devices.len()) {
-            return Err(Error::InvalidSlotId);
+            return Err(StatusCode::InvalidSlotId);
         }
         if self.devices[slot_id].is_some() {
-            return Err(Error::DeviceAlreadyAllocated);
+            return Err(StatusCode::DeviceAlreadyAllocated);
         }
 
         let device_ctx: &mut MaybeUninit<DeviceContext> = unsafe {
-            MALLOC
+            ALLOC
                 .lock()
                 .alloc_obj::<DeviceContext>()
-                .ok_or(Error::NoEnoughMemory)?
+                .ok_or(StatusCode::NoEnoughMemory)?
                 .as_mut()
         };
         unsafe { DeviceContext::initialize_ptr(device_ctx.as_mut_ptr()) };
@@ -873,10 +891,10 @@ impl DeviceManager {
             device_ctx as *const MaybeUninit<DeviceContext> as *const DeviceContext;
 
         let device: &mut MaybeUninit<Device> = unsafe {
-            MALLOC
+            ALLOC
                 .lock()
                 .alloc_obj::<Device>()
-                .ok_or(Error::NoEnoughMemory)?
+                .ok_or(StatusCode::NoEnoughMemory)?
                 .as_mut()
         };
 

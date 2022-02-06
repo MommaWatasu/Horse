@@ -1,6 +1,6 @@
-use super::memory::Allocator;
 use core::ptr::NonNull;
 use core::slice::{from_raw_parts, from_raw_parts_mut, SliceIndex};
+use crate::usb::memory::Allocator;
 
 pub struct Buffer {
     ptr: Option<NonNull<u8>>,
@@ -8,7 +8,7 @@ pub struct Buffer {
 }
 impl Buffer {
     pub fn new<const SIZE: usize>(
-        alloc: &mut llocator<SIZE>,
+        alloc: &mut Allocator<SIZE>,
         size: usize,
         align: usize,
     ) -> Self {
