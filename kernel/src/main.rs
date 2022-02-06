@@ -142,42 +142,14 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     let xhc_mmio_base = (xhc_bar & !0xf) as usize;
     let mut xhc: Controller;
     unsafe {
-        xhc = Controller::new(xhc_mmio_base);
-    };
-    status_log!(xhc.run().unwrap(), "XHC starting");
-
-    let mut port: Port;
-    let mut is_connected: bool;
-    for i in 1..xhc.max_ports() {
-        unsafe {
-            port = xhc.port_at(i);
-            is_connected = port.is_connected();
-        }
-
-        if is_connected {
-            match xhc.configure_port(&port) {
-                Ok(sc) => {
-                    status_log!(StatusCode::Success, "Configure Port: {}", sc);
-                },
-                Err(sc) => {
-                    status_log!(StatusCode::Failure, "Configure Port: {}", sc);
-                    continue;
-                }
-            }
-        }
+        xhc = Controller::new(xhc_mmio_base).unwrap();
     }
-    info!("DONE ALL PROCESSING");
+    debug!("xHC initalized");
+    unsafe {
+        status_log!(xhc.run().unwrap(), "xHC started");
+    }
     
-    /*
-    loop {
-        match xhc.process_event(); {
-            Ok(StatusCode::KSucess) => {},
-            Err(code) => {
-                status_log!(code, "Error while process_event")
-            }
-        }
-    }
-    */
+    info!("DONE ALL PROCESSING");
 
     loop {
         unsafe {

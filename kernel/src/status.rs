@@ -52,6 +52,7 @@ impl StatusCode {
             StatusCode::NoCorrespondingSetupStage => "NoCorrespondingSetupStage",
             StatusCode::TransferFailed{ slot_id } => "TransferFailed",
             StatusCode::CommandCompletionFailed{ slot_id } => "CommandCompletionFailed",
+            StatusCode::TooManyWaiters => "TooManyWaiters",
             StatusCode::InvalidPhase => "InvalidPhase",
             StatusCode::UnknownXHCISpeedID => "UnknownXHCISpeedID",
             StatusCode::NoWaiter => "NoWaiter",

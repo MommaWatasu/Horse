@@ -130,7 +130,7 @@ impl Crcr {
     pub fn pointer(&self) -> usize {
         (self.command_ring_pointer() as usize) << 6
     }
-    pub fn set_pointer(&self, ptr: usize) {
+    pub fn set_pointer(&mut self, ptr: usize) {
         let ptr = ((ptr & 0xFFFFFFFFFFFFFFC0) >> 6) as u64;
         self.set_command_ring_pointer(ptr.try_into().unwrap());
     }
@@ -149,7 +149,7 @@ impl Dcbaap {
     pub fn pointer(&self) -> usize {
         (self.device_context_base_address_array_pointer() as usize) << 6
     }
-    pub fn set_pointer(&self, ptr: usize) {
+    pub fn set_pointer(&mut self, ptr: usize) {
         let ptr = ((ptr & 0xFFFFFFFFFFFFFFC0) >> 6) as u64;
         self.set_device_context_base_address_array_pointer(ptr);
     }

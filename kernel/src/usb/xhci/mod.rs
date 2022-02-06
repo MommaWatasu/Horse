@@ -214,7 +214,7 @@ impl<'a> Controller<'a> {
         })
     }
 
-    pub fn run(&mut self) -> Result<StatusCode> {
+    pub unsafe fn run(&mut self) -> Result<StatusCode> {
         unsafe {
             (*self.op_regs).usbcmd.modify(|usbcmd| {
                 usbcmd.set_run_stop(1);
@@ -279,7 +279,7 @@ impl<'a> Controller<'a> {
         debug!("OS has owned xHC");
     }
 
-    pub fn reset_port(&mut self, port_num: u8) -> Result<()> {
+    pub unsafe fn reset_port(&mut self, port_num: u8) -> Result<()> {
         if !self.ports[port_num as usize].is_connected() {
             return Ok(());
         }
@@ -303,16 +303,18 @@ impl<'a> Controller<'a> {
                     return Err(StatusCode::InvalidPhase);
                 }
                 port.set_config_phase(PortConfigPhase::ResettingPort);
-                port.reset();
+                unsafe {
+                    port.reset();
+                }
             }
         }
         Ok(())
     }
 
-    pub fn configure_port(&self, port: &Port) {
+    pub unsafe fn configure_port(&mut self, port: &Port) {
         let mut first = None;
         for port_num in 1..=self.max_ports {
-            if !self.ports[port_num as usize].is_connected() {
+            if unsafe { !self.ports[port_num as usize].is_connected() } {
                 continue;
             }
             if first.is_none() {
@@ -511,7 +513,9 @@ impl<'a> Controller<'a> {
                             == PortConfigPhase::WaitingAddressed
                         {
                             trace!("the next port is port {}!", i);
-                            self.reset_port(i)?;
+                            unsafe {
+                                self.reset_port(i)?;
+                            }
                             break;
                         }
                     }
@@ -592,9 +596,9 @@ impl<'a> Controller<'a> {
         );
         match port.config_phase() {
             PortConfigPhase::NotConnected => {
-                if port.is_connect_status_changed() {
+                if unsafe { port.is_connect_status_changed() } {
                     port.clear_connect_status_change();
-                    self.reset_port(port_id)
+                    unsafe { self.reset_port(port_id) }
                 } else {
                     trace!("skipping reset_port: port_id = {}", port_id);
                     Ok(())
