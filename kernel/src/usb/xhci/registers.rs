@@ -1,5 +1,6 @@
 use crate::volatile::Volatile;
 use crate::{bit_getter, bit_setter};
+use crate::debug;
 
 #[repr(C)]
 pub struct HcsParam1 {
@@ -131,8 +132,8 @@ impl Crcr {
         (self.command_ring_pointer() as usize) << 6
     }
     pub fn set_pointer(&mut self, ptr: usize) {
-        let ptr = ((ptr & 0xFFFFFFFFFFFFFFC0) >> 6) as u64;
-        self.set_command_ring_pointer(ptr.try_into().unwrap());
+        let value: u8 = (ptr >> 6) as u8;
+        self.set_command_ring_pointer(value);
     }
 }
 
