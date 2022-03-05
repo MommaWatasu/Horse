@@ -6,4 +6,6 @@ cargo build
 cp ./horse-kernel ../dev-tools
 cd ../
 ./dev-tools/run_qemu.sh
-rm disk.img
+if [[ $1 != "--save-img" ]]; then
+    rm disk.iso
+fi

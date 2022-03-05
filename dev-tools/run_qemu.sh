@@ -2,7 +2,7 @@
 
 EFI_FILE=$1
 ANOTHER_FILE=$2
-DISK_IMG=./disk.img
+DISK_IMG=./disk.iso
 MOUNT_POINT=./mnt
 EFI_FILE=horse-bootloader.efi
 ANOTHER_FILE=./kernel/horse-kernel
