@@ -1,6 +1,5 @@
 use crate::volatile::Volatile;
 use crate::{bit_getter, bit_setter};
-use crate::debug;
 
 #[repr(C)]
 pub struct HcsParam1 {
@@ -8,13 +7,10 @@ pub struct HcsParam1 {
 }
 
 impl HcsParam1 {
-    pub fn max_device_slots(&self) -> u8 {
-        (self.data & 0xff) as u8
-    }
-
-    pub fn max_ports(&self) -> u8 {
-        (self.data >> 24 & 0xff) as u8
-    }
+    // RO
+    bit_getter!(data: u32; 0x000000FF; u8, pub max_device_slots);
+    // RO
+    bit_getter!(data: u32; 0xFF000000; u8, pub max_ports);
 }
 
 #[repr(C)]
@@ -23,9 +19,13 @@ pub struct HcsParam2 {
 }
 
 impl HcsParam2 {
+    // RO
+    bit_getter!(data: u32; 0x03E00000; u8, max_scratchpad_bufs_hi);
+    bit_getter!(data: u32; 0xF8000000; u8, max_scratchpad_bufs_lo);
+    
     pub fn max_scratchpad_buf(&self) -> usize {
-        let hi = (self.data >> 21 & 0b11111) as usize;
-        let lo = (self.data >> 27 & 0b11111) as usize;
+        let hi = self.max_scratchpad_bufs_hi() as usize;
+        let lo = self.max_scratchpad_bufs_lo() as usize;
         (hi << 5) | lo
     }
 }
@@ -41,6 +41,7 @@ pub struct HccParams1 {
 }
 
 impl HccParams1 {
+    // xhci extended capabilities pointer
     bit_getter!(data: u32; 0xFFFF0000; u16, pub xecp);
 }
 
@@ -83,8 +84,8 @@ impl UsbCmd {
     bit_setter!(data: u32; 0b0100; u8, pub set_interrupter_enable);
     bit_getter!(data: u32; 0b0100; u8, pub interrupter_enable);
     
-    bit_setter!(data: u32; 0b1000; u8, pub set_host_system_error_enable);
-    bit_getter!(data: u32; 0b1000; u8, pub host_system_error_enable);
+    //bit_setter!(data: u32; 0b1000; u8, pub set_host_system_error_enable);
+    //bit_getter!(data: u32; 0b1000; u8, pub host_system_error_enable);
 }
 
 #[repr(C)]
@@ -125,15 +126,15 @@ impl Crcr {
     bit_getter!(data: u64; 0x0000000000000004;  u8, pub command_abort);
     bit_setter!(data: u64; 0x0000000000000004;  u8, pub set_command_abort);
     
-    bit_getter!(data: u64; 0xFFFFFFFFFFFFFFC0;  u8, pub command_ring_pointer);
-    bit_setter!(data: u64; 0xFFFFFFFFFFFFFFC0;  u8, pub set_command_ring_pointer);
+    bit_getter!(data: u64; 0xFFFFFFFFFFFFFFC0;  u64, pub command_ring_pointer);
+    bit_setter!(data: u64; 0xFFFFFFFFFFFFFFC0;  u64, pub set_command_ring_pointer);
     
     pub fn pointer(&self) -> usize {
         (self.command_ring_pointer() as usize) << 6
     }
     pub fn set_pointer(&mut self, ptr: usize) {
-        let value: u8 = (ptr >> 6) as u8;
-        self.set_command_ring_pointer(value);
+        let ptr = ((ptr & 0xFFFFFFFFFFFFFFC0) >> 6) as u64;
+        self.set_command_ring_pointer(ptr);
     }
 }
 

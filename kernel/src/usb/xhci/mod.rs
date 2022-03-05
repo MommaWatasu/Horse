@@ -6,9 +6,15 @@ mod ring;
 mod speed;
 mod trb;
 
-use core::mem::MaybeUninit;
-use core::ptr::{
-    null_mut, null
+use core::{
+    mem::{
+        MaybeUninit,
+        transmute
+    },
+    ptr::{
+        null_mut,
+        null
+    }
 };
 use devmgr::DeviceManager;
 use ring::*;
@@ -33,25 +39,22 @@ use crate::{
     volatile::Volatile
 };
 
-const KDeviceSize: usize = 0;
-
 const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
 pub static ALLOC: spin::Mutex<Allocator<MEM_POOL_SIZE>> =
     spin::Mutex::new(Allocator::new());
 
-pub struct Controller<'a> {
-    cap_regs: *mut CapabilityRegisters,
+pub struct Controller {
     op_regs: *mut OperationalRegisters,
     devmgr: DeviceManager,
     cr: CommandRing,
     er: EventRing,
-    ports: &'a mut [Port],
+    ports: &'static mut [Port],
     max_ports: u8,
     addressing_port: Option<u8>,
     doorbell_first: *mut DoorbellRegister
 }
 
-impl<'a> Controller<'a> {
+impl Controller {
     const DEVICES_SIZE: usize = 16;
     /// # Safety
     /// mmio_base must be a valid base address for xHCI device MMIO
@@ -60,8 +63,7 @@ impl<'a> Controller<'a> {
         let max_ports = (*cap_regs).hcs_params1.read().max_ports();
         
         let dboff = (*cap_regs).db_off.read().offset();
-        let doorbell_first =
-            (mmio_base + dboff) as *mut DoorbellRegister;
+        let doorbell_first = (mmio_base + dboff) as *mut DoorbellRegister;
         
         let rtsoff = (*cap_regs).rts_off.read().offset();
         let primary_interrupter = (mmio_base + rtsoff + 0x20) as *mut InterrupterRegisterSet;
@@ -109,8 +111,7 @@ impl<'a> Controller<'a> {
                 max_scratched_buffer_pages
             );
             let mut alloc = ALLOC.lock();
-            
-            #[allow(unused_unsafe)]
+                        #[allow(unused_unsafe)]
             let buf_arr: &mut [MaybeUninit<*const u8>] = unsafe {
                 alloc
                     .alloc_slice_ext::<*const u8>(
@@ -135,7 +136,7 @@ impl<'a> Controller<'a> {
             
             #[allow(unused_unsafe)]
             let buf_arr = unsafe {
-                core::mem::transmute::<&mut [MaybeUninit<*const u8>], &mut [*const u8]>(buf_arr)
+                transmute::<&mut [MaybeUninit<*const u8>], &mut [*const u8]>(buf_arr)
             };
             buf_arr.as_ptr()
         } else {
@@ -194,12 +195,11 @@ impl<'a> Controller<'a> {
                 
             #[allow(unused_unsafe)]
             unsafe {
-                core::mem::transmute::<&mut [MaybeUninit<Port>], &mut [Port]>(ports)
+                transmute::<&mut [MaybeUninit<Port>], &mut [Port]>(ports)
             }            
         };
 
         Ok(Self {
-            cap_regs,
             op_regs,
             devmgr,
             cr,
@@ -304,7 +304,7 @@ impl<'a> Controller<'a> {
         Ok(())
     }
 
-    pub unsafe fn configure_port(&mut self, port: &Port) {
+    pub unsafe fn configure_ports(&mut self) {
         let mut first = None;
         for port_num in 1..=self.max_ports {
             if !self.ports[port_num as usize].is_connected() {
@@ -342,7 +342,6 @@ impl<'a> Controller<'a> {
             port.clear_port_reset_change();
             port.set_config_phase(PortConfigPhase::EnablingSlot);
             let cmd = EnableSlotCommand::default();
-            trace!("EnableSlotCommand pushed");
             self.cr.push(cmd.upcast());
             Self::ring_doorbell(self.doorbell_first);
         }
@@ -593,7 +592,7 @@ impl<'a> Controller<'a> {
                     port.clear_connect_status_change();
                     unsafe { self.reset_port(port_id) }
                 } else {
-                    trace!("skipping reset_port: port_id = {}", port_id);
+                    debug!("skipping reset_port: port_id = {}", port_id);
                     Ok(())
                 }
             }
@@ -601,16 +600,16 @@ impl<'a> Controller<'a> {
                 if port.is_port_reset_changed() {
                     self.enable_slot(port_id)
                 } else {
-                    trace!("skipping: enable_slot: port_id = {}", port_id);
+                    debug!("skipping: enable_slot: port_id = {}", port_id);
                     Ok(())
                 }
             }
             PortConfigPhase::EnablingSlot => {
-                trace!("skipping: port_id = {}", port_id);
+                debug!("skipping: port_id = {}", port_id);
                 Ok(())
             }
             PortConfigPhase::WaitingAddressed => {
-                trace!("waiting addressed: port_id = {}", port_id);
+                debug!("waiting addressed: port_id = {}", port_id);
                 Ok(())
             }
             phase => {
