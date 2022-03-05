@@ -1,0 +1,64 @@
+[tasks.BUILD]
+description = "build OS"
+script = ['''
+#!/bin/bash
+cd bootloader
+cargo build
+cp ./target/x86_64-unknown-uefi/debug/horse-bootloader.efi ../dev-tools
+cd ../kernel
+cargo build
+cp ./horse-kernel ../dev-tools
+cd ../
+''']
+
+[tasks.MAKE-IMAGE]
+description = "make iso image"
+script = ['''
+#!/bin/bash
+
+DISK_IMG=disk.iso
+MOUNT_POINT=mnt
+EFI_FILE=./dev-tools/horse-bootloader.efi
+ANOTHER_FILE=kernel/horse-kernel
+
+if [ ! -f $EFI_FILE ]
+then
+    echo "No such file: $EFI_FILE"
+    exit 1
+fi
+
+rm -f $DISK_IMG
+qemu-img create -f raw $DISK_IMG 200M
+mkfs.fat -n 'HORSE OS' -s 2 -f 2 -R 32 -F 32 $DISK_IMG
+
+mkdir -p $MOUNT_POINT
+sudo mount -o loop $DISK_IMG $MOUNT_POINT
+
+sudo mkdir -p $MOUNT_POINT/EFI/BOOT
+sudo cp $EFI_FILE $MOUNT_POINT/EFI/BOOT/BOOTX64.EFI
+if [ "$ANOTHER_FILE" != "" ]
+then
+    sudo cp $ANOTHER_FILE $MOUNT_POINT/
+fi
+sleep 0.5
+sudo umount $MOUNT_POINT
+''']
+dependencies = ['BUILD']
+
+[tasks.RUN]
+description = "run OS on QEMU"
+script = ['''
+DISK_IMG=disk.iso
+
+qemu-system-x86_64 \
+    -m 1G \
+    -drive if=pflash,format=raw,readonly,file=./dev-tools/OVMF/OVMF_CODE.fd \
+    -drive if=pflash,format=raw,file=./dev-tools/OVMF/OVMF_VARS.fd \
+    -drive if=ide,index=0,media=disk,format=raw,file=$DISK_IMG \
+    -device nec-usb-xhci,id=xhci \
+    -device usb-mouse -device usb-kbd \
+    -monitor stdio \
+
+rm disk.iso
+''']
+dependencies = ['MAKE-IMAGE']
