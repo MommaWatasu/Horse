@@ -126,6 +126,8 @@ fn efi_main(handle: Handle, st: SystemTable<Boot>) -> Status {
                 .unwrap();
         }
         memmap_file.close();
+    } else {
+        panic!("couldn't open memory map!")
     };
     let kernel_file = root
         .open("horse-kernel", FileMode::Read, FileAttribute::READ_ONLY)
