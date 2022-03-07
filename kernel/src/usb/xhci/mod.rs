@@ -80,7 +80,7 @@ impl Controller {
 
         // Host controller must be halted
         while (*op_regs).usbsts.read().host_controller_halted() == 0 {}
-        debug!("host controller halted");
+        trace!("host controller halted");
         
         let page_size = (*op_regs).pagesize.read().page_size();
         ALLOC.lock().boundary = page_size;
@@ -100,14 +100,14 @@ impl Controller {
         
         let max_slots = (*cap_regs).hcs_params1.read().max_device_slots();
         let slots = core::cmp::min(max_slots, Self::DEVICES_SIZE as u8);
-        debug!("up to {} slots", slots);
+        trace!("up to {} slots", slots);
         (*op_regs)
             .config
             .modify(|config| config.set_max_device_slots_enabled(slots));
         
         let max_scratched_buffer_pages = (*cap_regs).hcs_params2.read().max_scratchpad_buf();
         let scratchpad_buffer_array_ptr = if max_scratched_buffer_pages > 0 {
-            debug!(
+            trace!(
                 "max scratchpad buffer: {} pages",
                 max_scratched_buffer_pages
             );
@@ -251,7 +251,7 @@ impl Controller {
         
         let reg = match usb_leg_sup {
             None => {
-                debug!("No USB legacy support");
+                trace!("No USB legacy support");
                 return;
             },
             Some(reg) => reg as *mut Volatile<Usblegsup>
@@ -259,20 +259,20 @@ impl Controller {
         
         let mut r = unsafe { (*reg).read() };
         if r.hc_os_owned_semaphore() == 1 {
-            debug!("already os owned");
+            trace!("already os owned");
             return;
         }
         r.set_hc_os_owned_semaphore(1);
         unsafe { (*reg).write(r) };
         
-        debug!("waiting untile OS owns xHC...");
+        trace!("waiting untile OS owns xHC...");
         loop {
             let r = unsafe {(*reg).read()};
             if r.hc_bios_owned_semaphore() == 0 && r.hc_os_owned_semaphore() == 1 {
                 break;
             }
         }
-        debug!("OS has owned xHC");
+        trace!("OS has owned xHC");
     }
 
     pub unsafe fn reset_port(&mut self, port_num: u8) -> Result<()> {
@@ -314,7 +314,7 @@ impl Controller {
             if first.is_none() {
                 first = Some(port_num);
             }
-            debug!("Port {}: connected", port_num);
+            trace!("Port {}: connected", port_num);
             if self.ports[port_num as usize].config_phase() == PortConfigPhase::NotConnected {
                 if let Err(e) = self.reset_port(port_num) {
                     error!("Failed to configure the port {}: {:?}", port_num, e);
@@ -400,7 +400,7 @@ impl Controller {
                 trb.completion_code(),
             );
             let issuer_trb = unsafe { &*trb.trb_pointer() };
-            debug!("issuer = {:?}", issuer_trb);
+            trace!("issuer = {:?}", issuer_trb);
             return Err(StatusCode::TransferFailed {
                 slot_id: trb.slot_id(),
             });
@@ -416,7 +416,7 @@ impl Controller {
         dev.on_transfer_event_received(trb)?;
 
         if let Some(cmd_trb) = dev.command_trb.take() {
-            debug!("command TRB found");
+            trace!("command TRB found");
             self.cr.push(&cmd_trb);
             Self::ring_doorbell(self.doorbell_first);
         }
@@ -521,7 +521,7 @@ impl Controller {
                         .set_config_phase(PortConfigPhase::InitializingDevice);
                     dev.on_command_completion_event_received(issuer_type)?;
                     if let Some(cmd_trb) = dev.command_trb.take() {
-                        debug!("command TRB found");
+                        trace!("command TRB found");
                         self.cr.push(&cmd_trb);
                         Self::ring_doorbell(self.doorbell_first);
                     }
@@ -541,7 +541,7 @@ impl Controller {
                 } else {
                     dev.on_command_completion_event_received(issuer_type)?;
                     if let Some(cmd_trb) = dev.command_trb.take() {
-                        debug!("command TRB found");
+                        trace!("command TRB found");
                         self.cr.push(&cmd_trb);
                         Self::ring_doorbell(self.doorbell_first);
                     }
@@ -593,7 +593,7 @@ impl Controller {
                     port.clear_connect_status_change();
                     unsafe { self.reset_port(port_id) }
                 } else {
-                    debug!("skipping reset_port: port_id = {}", port_id);
+                    trace!("skipping reset_port: port_id = {}", port_id);
                     Ok(())
                 }
             }
@@ -601,16 +601,16 @@ impl Controller {
                 if port.is_port_reset_changed() {
                     self.enable_slot(port_id)
                 } else {
-                    debug!("skipping: enable_slot: port_id = {}", port_id);
+                    trace!("skipping: enable_slot: port_id = {}", port_id);
                     Ok(())
                 }
             }
             PortConfigPhase::EnablingSlot => {
-                debug!("skipping: port_id = {}", port_id);
+                trace!("skipping: port_id = {}", port_id);
                 Ok(())
             }
             PortConfigPhase::WaitingAddressed => {
-                debug!("waiting addressed: port_id = {}", port_id);
+                trace!("waiting addressed: port_id = {}", port_id);
                 Ok(())
             }
             phase => {

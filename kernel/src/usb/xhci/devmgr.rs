@@ -158,7 +158,7 @@ impl Device {
         let ep0_dci = EndpointId::DEFAULT_CONTROL_PIPE.into();
         let tr_buf = device.alloc_transfer_ring(ep0_dci, 32)?.buffer_ptr();
         let max_packet_size = port.speed().determine_max_packet_size_for_control_pipe();
-        debug!(
+        trace!(
             "port.speed() = {:?}, max_packet_size = {}",
             port.speed(),
             max_packet_size
@@ -202,7 +202,7 @@ impl Device {
 
         debug_assert_eq!(self.buf[..].len(), Self::BUF_SIZE);
         let device_desc = descriptor::from_bytes::<DeviceDescriptor>(&self.buf[..8]).unwrap();
-        debug!("USB release = {:04x}", device_desc.usb_release as u16);
+        trace!("USB release = {:04x}", device_desc.usb_release as u16);
         let ep0_ctx = self
             .input_ctx
             .update_endpoint(EndpointId::DEFAULT_CONTROL_PIPE.into());
@@ -211,7 +211,7 @@ impl Device {
         } else {
             device_desc.max_packet_size as u16
         };
-        debug!(
+        trace!(
             "update max_packet_size: {} => {}",
             ep0_ctx.max_packet_size(),
             max_packet_size
@@ -231,11 +231,11 @@ impl Device {
         let device_desc = descriptor::from_bytes::<DeviceDescriptor>(&self.buf[..18]).unwrap();
 
         self.num_configurations = device_desc.num_configurations;
-        debug!("num_configurations = {}", self.num_configurations);
+        trace!("num_configurations = {}", self.num_configurations);
 
         self.config_index = 0;
         self.init_phase = 2;
-        debug!(
+        trace!(
             "issuing Get Config Descriptor: index = {}",
             self.config_index
         );
@@ -270,17 +270,17 @@ impl Device {
             let class_driver_idx = self.class_drivers.push(class_driver).unwrap();
 
             let mut num_endpoints = 0;
-            debug!("if_desc.num_endpoints = {}", if_desc.num_endpoints);
+            trace!("if_desc.num_endpoints = {}", if_desc.num_endpoints);
             while num_endpoints < if_desc.num_endpoints {
                 if let Some(ep_desc) = desc_itr.next::<EndpointDescriptor>() {
                     let conf = EndpointConfig::from(ep_desc);
-                    debug!("{:?}", conf);
+                    trace!("{:?}", conf);
                     let ep_id = conf.ep_id;
                     self.ep_configs.push(conf);
                     num_endpoints += 1;
                     self.class_driver_idxs[ep_id.number() as usize] = Some(class_driver_idx);
                 } else if let Some(hid_desc) = desc_itr.next::<HidDescriptor>() {
-                    debug!("{:?}", hid_desc);
+                    trace!("{:?}", hid_desc);
                 }
             }
         }
@@ -293,7 +293,7 @@ impl Device {
 
             let conf_desc =
                 descriptor::from_bytes::<ConfigurationDescriptor>(&self.buf[..]).unwrap();
-            debug!(
+            trace!(
                 "issuing Set Configuration: conf_val = {}",
                 conf_desc.configuration_value
             );
@@ -312,7 +312,7 @@ impl Device {
                 .set_endpoint(conf)?;
         }
         self.init_phase = 4;
-        debug!("slot_id = {}: initialized", self.slot_id);
+        trace!("slot_id = {}: initialized", self.slot_id);
         Ok(())
     }
 
@@ -389,19 +389,19 @@ impl Device {
             match config.ep_type {
                 EndpointType::Control => {
                     ep_ctx.set_endpoint_type(4);
-                    debug!("ep_id = {:?}: Control Endpoint", config.ep_id);
+                    trace!("ep_id = {:?}: Control Endpoint", config.ep_id);
                 }
                 EndpointType::Isochronous => {
                     ep_ctx.set_endpoint_type(if config.ep_id.is_in() { 5 } else { 1 });
-                    debug!("ep_id = {:?}: Isoch Endpoint", config.ep_id);
+                    trace!("ep_id = {:?}: Isoch Endpoint", config.ep_id);
                 }
                 EndpointType::Bulk => {
                     ep_ctx.set_endpoint_type(if config.ep_id.is_in() { 6 } else { 2 });
-                    debug!("ep_id = {:?}: Bulk Endpoint", config.ep_id);
+                    trace!("ep_id = {:?}: Bulk Endpoint", config.ep_id);
                 }
                 EndpointType::Interrupt => {
                     ep_ctx.set_endpoint_type(if config.ep_id.is_in() { 7 } else { 3 });
-                    debug!("ep_id = {:?}: Interrupt Endpoint", config.ep_id);
+                    trace!("ep_id = {:?}: Interrupt Endpoint", config.ep_id);
                 }
             }
 
@@ -533,7 +533,7 @@ impl Device {
         buf_ptr: Option<NonNull<u8>>,
         transfered_size: usize,
     ) -> Result<()> {
-        debug!(
+        trace!(
             "device::on_control_completed: transfered_size = {}, dir = {}",
             transfered_size,
             setup_data.direction(),
@@ -656,7 +656,7 @@ impl Device {
                 })?;
         }
 
-        debug!("Device::control_in: ep_id = {}", ep_id.address());
+        trace!("Device::control_in: ep_id = {}", ep_id.address());
         if 15 < ep_id.number() {
             return Err(StatusCode::InvalidEndpointNumber);
         }
@@ -678,7 +678,7 @@ impl Device {
             status_stage.set_direction(0);
 
             let status_stage_trb_ptr = tr.push(status_stage.upcast());
-            debug!("status_stage_trb = {:p}", status_stage_trb_ptr);
+            trace!("status_stage_trb = {:p}", status_stage_trb_ptr);
 
             self.setup_data_map
                 .insert(data_stage_trb_ptr, setup_data)
@@ -716,7 +716,7 @@ impl Device {
                 })?;
         }
 
-        debug!("device::control_out: ep addr = {}", ep_id.address());
+        trace!("device::control_out: ep addr = {}", ep_id.address());
         if 15 < ep_id.number() {
             return Err(StatusCode::InvalidEndpointNumber);
         }
@@ -737,7 +737,7 @@ impl Device {
             status_stage.set_direction(1);
             status_stage.set_interrupt_on_completion(1);
             let status_stage_trb_ptr = tr.push(status_stage.upcast());
-            debug!("status_stage_trb = {:p}", status_stage_trb_ptr);
+            trace!("status_stage_trb = {:p}", status_stage_trb_ptr);
 
             self.setup_data_map
                 .insert(status_stage_trb_ptr, setup_data)
@@ -858,7 +858,7 @@ impl DeviceManager {
         };
         let dcbaap = dcbaap as *mut [*const DeviceContext];
 
-        debug!(
+        trace!(
             "DeviceManager has been initialized for up to {} devices",
             max_slots
         );
