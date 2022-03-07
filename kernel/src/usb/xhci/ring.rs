@@ -1,4 +1,8 @@
-use core::ptr::null_mut;
+use core::ptr::{
+    null_mut,
+    addr_of,
+    addr_of_mut
+};
 use core::mem::{
     MaybeUninit,
     transmute
@@ -7,7 +11,8 @@ use crate::{
     status::StatusCode,
     bit_getter,
     bit_setter,
-    trace
+    trace,
+    volatile::Volatile
 };
 use super::{
     ALLOC,
@@ -152,7 +157,7 @@ impl EventRing {
         self.write_dequeue_pointer(unsafe { (*self.buf).as_ptr() });
 
         unsafe {
-            (*interrupter).erstba.modify(|erstba| {
+            Volatile::unaligned_modify(addr_of_mut!((*interrupter).erstba), |erstba| {
                 erstba.set_pointer(ptr as usize);
             })
         };
@@ -185,14 +190,16 @@ impl EventRing {
     
     fn write_dequeue_pointer(&mut self, ptr: *const GenericTrb) {
         unsafe {
-            (*self.interrupter).erdp.modify(|erdp| {
+            Volatile::unaligned_modify(addr_of_mut!((*self.interrupter).erdp), |erdp| {
                 erdp.set_pointer(ptr as usize);
             })
         };
     }
     
     fn read_dequeue_pointer(&self) -> *const GenericTrb {
-        unsafe { (*self.interrupter).erdp.read().pointer() as *const GenericTrb }
+        unsafe {
+            Volatile::unaligned_read(addr_of!((*self.interrupter).erdp)).pointer() as *const GenericTrb
+        }
     }
     
     fn has_front(&self) -> bool {

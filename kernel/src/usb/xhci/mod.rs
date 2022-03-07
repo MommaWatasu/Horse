@@ -13,7 +13,8 @@ use core::{
     },
     ptr::{
         null_mut,
-        null
+        null,
+        addr_of_mut
     }
 };
 use devmgr::DeviceManager;
@@ -152,11 +153,11 @@ impl Controller {
         let mut dcbaap = Dcbaap::default();
         let device_contexts = devmgr.dcbaap();
         dcbaap.set_pointer(device_contexts as usize);
-        (*op_regs).dcbaap.write(dcbaap);
+        Volatile::unaligned_write(addr_of_mut!((*op_regs).dcbaap), dcbaap);
         
         let cr = CommandRing::with_capacity(32)?;
         //register the address of the Command Ring buffer
-        (*op_regs).crcr.modify(|value| {
+        Volatile::unaligned_modify(addr_of_mut!((*op_regs).crcr), |value| {
             value.set_ring_cycle_state(cr.cycle_bit as u8);
             value.set_command_stop(0);
             value.set_command_abort(0);
