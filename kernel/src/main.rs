@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(abi_efiapi)]
+#![feature(core_intrinsics)]
 
 mod ascii_font;
 pub mod bit_macros;
@@ -16,10 +17,8 @@ pub mod fixed_vec;
 
 use status::StatusCode;
 use log::*;
-use mouse::*;
 use console::Console;
 use core::panic::PanicInfo;
-use core::arch::asm;
 use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
 use pci::Device;
 use pci::{read_bar, scan_all_bus, read_class_code, read_vendor_id, ClassCode, PciDevices};
@@ -151,12 +150,6 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     }
     
     info!("DONE ALL PROCESSING");
-
-    loop {
-        unsafe {
-            asm!("hlt")
-        }
-    }
 }
 
 #[panic_handler]
