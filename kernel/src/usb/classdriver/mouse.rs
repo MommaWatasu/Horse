@@ -26,10 +26,9 @@ pub struct HidMouseDriver {
 impl HidMouseDriver {
     pub fn new(interface_idx: u8) -> Result<Self> {
         let graphics = Graphics::instance();
-        let (lx, ly) = graphics.resolution();
         Ok(Self {
             hid_driver: HidDriver::new(interface_idx, 8)?,
-            limit: (lx-K_MOUSE_CURSOR_WIDTH, ly-K_MOUSE_CURSOR_HEIGHT)
+            limit: graphics.resolution()
         })
     }
 }
