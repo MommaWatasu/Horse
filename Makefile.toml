@@ -16,7 +16,7 @@ description = "make iso image"
 script = ['''
 #!/bin/bash
 
-DISK_IMG=disk.iso
+DISK_IMG=horse.iso
 MOUNT_POINT=mnt
 EFI_FILE=./dev-tools/horse-bootloader.efi
 ANOTHER_FILE=kernel/horse-kernel
@@ -48,7 +48,7 @@ dependencies = ['BUILD']
 [tasks.RUN]
 description = "run OS on QEMU"
 script = ['''
-DISK_IMG=disk.iso
+DISK_IMG=horse.iso
 
 qemu-system-x86_64 \
     -m 1G \
