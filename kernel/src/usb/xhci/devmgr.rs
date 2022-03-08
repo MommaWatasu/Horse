@@ -14,7 +14,7 @@ use crate::{
         StatusCode,
         Result
     },
-    debug, trace, warn, info,
+    trace, warn, info,
     usb::{
         array_map::{
                 ArrayMap,

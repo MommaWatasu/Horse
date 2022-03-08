@@ -11,7 +11,7 @@ use crate::{
         },
         setupdata::SetupData
     },
-    trace, debug
+    trace
 };
 use super::{
     Driver,
@@ -69,7 +69,7 @@ impl Driver for HidMouseDriver {
             //debug!("mouse displacement: ({}, {})", dx, dy);
 
             let mut cursor = MOUSE_CURSOR.lock();
-            let (x, y) = cursor.pos();
+            //let (x, y) = cursor.pos();
             //debug!("mouse position: ({}, {})", x, y);
             
             cursor.move_relative((dx.into(), dy.into()), self.limit);
