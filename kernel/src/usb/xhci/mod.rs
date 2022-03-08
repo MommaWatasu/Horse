@@ -32,7 +32,7 @@ use trb::{
     PortStatusChangeEvent
 };
 use crate::{
-    status_log, debug, warn, trace, error,
+    status_log, warn, trace, error,
     status::{
         StatusCode, PortConfigPhase, Result
     },
@@ -211,6 +211,8 @@ impl Controller {
             doorbell_first
         })
     }
+    
+    pub fn get_er(&self) -> EventRing { self.er }
 
     pub unsafe fn run(&mut self) -> Result<StatusCode> {
         (*self.op_regs).usbcmd.modify(|usbcmd| {

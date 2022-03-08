@@ -89,6 +89,7 @@ impl Ring {
 pub type CommandRing = Ring;
 pub type TransferRing = Ring;
 
+#[derive(Copy, Clone)]
 pub struct EventRing {
     buf: *const [GenericTrb],
     erst: *const [EventRingSegmentTableEntry],
@@ -202,7 +203,7 @@ impl EventRing {
         }
     }
     
-    fn has_front(&self) -> bool {
+    pub fn has_front(&self) -> bool {
         unsafe { (*self.read_dequeue_pointer()).cycle_bit() == self.cycle_bit as u8 }
     }
 }

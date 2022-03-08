@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(abi_efiapi)]
 #![feature(core_intrinsics)]
+#![feature(abi_x86_interrupt)]
 
 mod ascii_font;
 pub mod bit_macros;
@@ -14,7 +15,9 @@ pub mod usb;
 pub mod volatile;
 pub mod mouse;
 pub mod fixed_vec;
+pub mod interrupt;
 
+use spin::Mutex;
 use status::StatusCode;
 use log::*;
 use console::Console;
@@ -23,9 +26,12 @@ use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
 use pci::Device;
 use pci::{read_bar, scan_all_bus, read_class_code, read_vendor_id, ClassCode, PciDevices};
 use usb::xhci::Controller;
+use interrupt::NotifyEndOfInterrupt;
 
 const BG_COLOR: PixelColor = PixelColor(0, 0, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
+
+static XHC: Mutex<usize> = Mutex::new(0);
 
 fn welcome_message() {
     print!(
@@ -109,6 +115,19 @@ fn switch_echi_to_xhci(_xhc_dev: &Device, pci_devices: &PciDevices) {
     }
 }
 
+extern "x86-interrupt" fn IntHandlerXHCI() {
+    let xhc = unsafe {
+        let XHC_addr = XHC.lock();
+        &mut *(*XHC_addr as *mut Controller)
+    };
+    while xhc.get_er().has_front() {
+        if let Err(e) = xhc.process_event() {
+            error!("Error occurs during process_event: {:?}", e);
+        }
+    }
+    unsafe { NotifyEndOfInterrupt(); }
+}
+
 #[no_mangle]
 extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     initialize(fb, mi);
@@ -142,6 +161,9 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
         xhc.configure_ports();
     }
     info!("ports configured");
+    
+    let mut XHC_addr = XHC.lock();
+    *XHC_addr = &mut xhc as *mut Controller as usize;
     
     loop {
         if let Err(e) = xhc.process_event() {
