@@ -59,6 +59,6 @@ qemu-system-x86_64 \
     -device usb-mouse -device usb-kbd \
     -monitor stdio \
 
-rm disk.iso
+rm $DISK_IMG
 ''']
 dependencies = ['MAKE-IMAGE']
