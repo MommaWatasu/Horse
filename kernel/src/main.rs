@@ -22,11 +22,12 @@ use status::StatusCode;
 use log::*;
 use console::Console;
 use core::panic::PanicInfo;
+use core::arch::asm;
 use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
 use pci::Device;
 use pci::{read_bar, scan_all_bus, read_class_code, read_vendor_id, ClassCode, PciDevices};
 use usb::xhci::Controller;
-use interrupt::NotifyEndOfInterrupt;
+use interrupt::*;
 
 const BG_COLOR: PixelColor = PixelColor(0, 0, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
@@ -115,17 +116,17 @@ fn switch_echi_to_xhci(_xhc_dev: &Device, pci_devices: &PciDevices) {
     }
 }
 
-extern "x86-interrupt" fn IntHandlerXHCI() {
+extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
     let xhc = unsafe {
-        let XHC_addr = XHC.lock();
-        &mut *(*XHC_addr as *mut Controller)
+        let xhc_addr = XHC.lock();
+        &mut *(*xhc_addr as *mut Controller)
     };
     while xhc.get_er().has_front() {
         if let Err(e) = xhc.process_event() {
             error!("Error occurs during process_event: {:?}", e);
         }
     }
-    unsafe { NotifyEndOfInterrupt(); }
+    unsafe { notify_end_of_interrupt(); }
 }
 
 #[no_mangle]
@@ -148,6 +149,10 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
             panic!("no xHC device");
         }
     };
+    
+    IDT.lock().slice_mut(0x64..0x65)[0].set_handler_fn(handler_xhci);
+    unsafe { IDT.lock().load_unsafe(); }
+    
     switch_echi_to_xhci(&xhc_dev, &pci_devices);
     let xhc_bar = read_bar(&xhc_dev, 0).unwrap();
     let xhc_mmio_base = (xhc_bar & !0xf) as usize;
@@ -162,8 +167,11 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     }
     info!("ports configured");
     
-    let mut XHC_addr = XHC.lock();
-    *XHC_addr = &mut xhc as *mut Controller as usize;
+    let mut xhc_addr = XHC.lock();
+    *xhc_addr = &mut xhc as *mut Controller as usize;
+    unsafe {
+        asm!("sti");
+    }
     
     loop {
         if let Err(e) = xhc.process_event() {
