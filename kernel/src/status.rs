@@ -24,6 +24,7 @@ pub enum StatusCode {
     TooManyWaiters,
     InvalidPhase,
     UnknownXHCISpeedID,
+    NoPCIMSI,
     NoWaiter,
     LastOfCode
 }
@@ -55,6 +56,7 @@ impl StatusCode {
             StatusCode::TooManyWaiters => "TooManyWaiters",
             StatusCode::InvalidPhase => "InvalidPhase",
             StatusCode::UnknownXHCISpeedID => "UnknownXHCISpeedID",
+            StatusCode::NoPCIMSI => "NoPCIMSI",
             StatusCode::NoWaiter => "NoWaiter",
             StatusCode::LastOfCode => "LastOfCode"
         }

@@ -4,9 +4,16 @@ pub use x86_64::structures::idt::{
     InterruptStackFrame,
     InterruptDescriptorTable
 };
+use crate::{
+    debug,
+};
 
 pub static IDT: Mutex<InterruptDescriptorTable> =
     Mutex::new(InterruptDescriptorTable::new());
+
+pub enum InterruptVector {
+    KXHCI = 64
+}
 
 pub unsafe fn notify_end_of_interrupt() {
     let end_of_interrupt: *mut u32 = 0xfee000b0 as *mut u32;

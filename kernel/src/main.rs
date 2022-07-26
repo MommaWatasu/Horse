@@ -5,6 +5,7 @@
 #![feature(abi_x86_interrupt)]
 
 mod ascii_font;
+pub mod asmfunc;
 pub mod bit_macros;
 pub mod status;
 pub mod log;
@@ -24,8 +25,7 @@ use console::Console;
 use core::panic::PanicInfo;
 use core::arch::asm;
 use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
-use pci::Device;
-use pci::{read_bar, scan_all_bus, read_class_code, read_vendor_id, ClassCode, PciDevices};
+use pci::*;
 use usb::xhci::Controller;
 use interrupt::*;
 
@@ -150,8 +150,19 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
         }
     };
     
-    IDT.lock().slice_mut(0x64..0x65)[0].set_handler_fn(handler_xhci);
+    const iv_xhci: usize = InterruptVector::KXHCI as usize;
+    IDT.lock().slice_mut(iv_xhci..iv_xhci+1)[0].set_handler_fn(handler_xhci);
     unsafe { IDT.lock().load_unsafe(); }
+    
+    let bsp_local_apic_id: u8 = unsafe { (*(0xFEE00020 as *const u32) >> 24) as u8 };
+    debug!("bsp id: {}", bsp_local_apic_id);
+    configure_msi_fixed_destination(
+        &xhc_dev.clone(),
+        bsp_local_apic_id,
+        MSITriggerMode::Level,
+        MSIDeliveryMode::Fixed,
+        InterruptVector::KXHCI as u8, 0
+    );
     
     switch_echi_to_xhci(&xhc_dev, &pci_devices);
     let xhc_bar = read_bar(&xhc_dev, 0).unwrap();

@@ -1,6 +1,20 @@
 use core::fmt::Display;
 use x86_64::instructions::port::{PortReadOnly, PortWriteOnly};
-use crate::status::StatusCode;
+use crate::{
+    status::StatusCode,
+    bit_getter, bit_setter,
+    asmfunc::{
+        ioin, ioout
+    }
+};
+
+const CONFIG_DATA: usize = 0x0cfc;
+
+fn WriteData(value: u32) {
+    ioout(CONFIG_DATA, value);
+}
+
+fn ReadData() -> u32 { ioin(CONFIG_DATA) }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ClassCode {
@@ -137,6 +151,49 @@ impl<'a> Iterator for PciDevicesIter<'a> {
     }
 }
 
+fn read_msi_capability(dev: &Device, cap_addr: u8) -> MSICapability {
+    let mut msi_cap = MSICapability::default();
+    
+    msi_cap.data = read_conf_reg(dev, cap_addr);
+    msi_cap.msg_addr = read_conf_reg(dev, cap_addr+4);
+    
+    let mut msg_data_addr = cap_addr+8;
+    if msi_cap.addr_64_capable() != 0 {
+        msi_cap.msg_upper_addr = read_conf_reg(dev, msg_data_addr);
+        msg_data_addr += 4;
+    }
+    
+    msi_cap.msg_data = read_conf_reg(dev, msg_data_addr);
+    
+    if msi_cap.per_vector_mask_capable() != 0 {
+        msi_cap.mask_bits = read_conf_reg(dev, msg_data_addr + 4);
+        msi_cap.pending_bits = read_conf_reg(dev, msg_data_addr + 8)
+    }
+    return msi_cap;
+}
+
+fn write_msi_capability(
+    dev: &Device,
+    cap_addr: u8,
+    msi_cap: &MSICapability
+) {
+    write_conf_reg(dev, cap_addr, msi_cap.data);
+    write_conf_reg(dev, cap_addr+4, msi_cap.msg_addr);
+    
+    let mut msg_data_addr = cap_addr + 8;
+    if msi_cap.addr_64_capable() != 0 {
+        write_conf_reg(dev, cap_addr+8, msi_cap.msg_upper_addr);
+        msg_data_addr = cap_addr + 12;
+    }
+    
+    write_conf_reg(dev, msg_data_addr, msi_cap.msg_data);
+    
+    if msi_cap.per_vector_mask_capable() != 0 {
+        write_conf_reg(dev, msg_data_addr + 4, msi_cap.mask_bits);
+        write_conf_reg(dev, msg_data_addr + 8, msi_cap.pending_bits);
+    }
+}
+
 struct PciIOPort {
     address_port: PortWriteOnly<u32>,
     data_port: PortReadOnly<u32>
@@ -197,7 +254,19 @@ fn calc_bar_address(bar_index: usize) -> u8 {
 }
 
 fn read_conf_reg(dev: &Device, reg_addr: u8) -> u32 {
-    PCI_PORT.lock().read_dev(dev, reg_addr)
+    PCI_PORT.lock().read_dev(dev, reg_addr);
+    return ReadData();
+}
+
+fn write_conf_reg(dev: &Device, reg_addr: u8, value: u32) {
+    PCI_PORT.lock().read_dev(dev, reg_addr);
+    WriteData(value);
+}
+
+fn read_capability_header(dev: &Device, addr: u8) -> CapabilityHeader {
+    let mut header = CapabilityHeader::default();
+    header.data = read_conf_reg(dev, addr);
+    return header;
 }
 
 pub fn read_bar(device: &Device, bar_index: usize) -> Result<u64, StatusCode> {
@@ -237,4 +306,128 @@ pub fn scan_all_bus() -> Result<PciDevices, StatusCode> {
         pci_devices.scan_bus(function)?;
     }
     return Ok(pci_devices);
+}
+
+fn configure_msi_register(
+    dev: &Device,
+    cap_addr: u8,
+    msg_addr: u32,
+    msg_data: u32,
+    num_vector_exponent: u8
+) -> StatusCode {
+    let mut msi_cap = read_msi_capability(dev, cap_addr);
+    
+    if msi_cap.multi_msg_capable() <= num_vector_exponent {
+        msi_cap.set_multi_msg_enable(msi_cap.multi_msg_capable());
+    } else {
+        msi_cap.set_multi_msg_enable(num_vector_exponent);
+    }
+    
+    msi_cap.set_msi_enable(1);
+    msi_cap.msg_addr = msg_addr;
+    msi_cap.msg_data = msg_data;
+    
+    write_msi_capability(dev, cap_addr, &msi_cap);
+    return StatusCode::Success
+}
+
+fn configure_msix_register(
+    dev: &Device,
+    cap_addr: u8,
+    msg_addr: u32,
+    msg_data: u32,
+    num_vector_exponent: u8
+) -> StatusCode {
+    return StatusCode::NotImplemented;
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct CapabilityHeader {
+    data: u32,
+}
+
+impl CapabilityHeader {
+    bit_getter!(data: u32; 0x000000FF; u8, cap_id);
+    bit_getter!(data: u32; 0x0000FF00; u8, next_ptr);
+}
+
+const CAPABILITY_MSI: u8 = 0x05;
+const CAPABILITY_MSIX: u8 = 0x11;
+
+#[repr(C)]
+#[derive(Default)]
+struct MSICapability {
+    data: u32,
+    msg_addr: u32,
+    msg_upper_addr: u32,
+    msg_data: u32,
+    mask_bits: u32,
+    pending_bits: u32
+}
+
+impl MSICapability {
+    bit_getter!(data: u32; 0x10000000; u8, per_vector_mask_capable);
+    bit_getter!(data: u32; 0x08000000; u8, addr_64_capable);
+    bit_getter!(data: u32; 0x000E0000; u8, multi_msg_capable);
+    bit_setter!(data: u32; 0x00010000; u8, set_msi_enable);
+    bit_setter!(data: u32; 0x00700000; u8, set_multi_msg_enable);
+}
+
+#[derive(PartialEq)]
+pub enum MSITriggerMode {
+    Edge = 0,
+    Level = 1
+}
+
+pub enum MSIDeliveryMode {
+    Fixed          = 0b000,
+    LowestPriority = 0b001,
+    SMI            = 0b010,
+    NMI            = 0b100,
+    INIT           = 0b101,
+    ExtINT         = 0b111,
+}
+
+fn configure_msi(
+    dev: &Device,
+    msg_addr: u32,
+    msg_data: u32,
+    num_vector_exponent: u8
+) -> StatusCode {
+    let mut cap_addr: u8 = (read_conf_reg(dev, 0x34) & 0xff as u32) as u8;
+    let mut msi_cap_addr: u8 = 0; let mut msix_cap_addr: u8 = 0;
+    while cap_addr != 0 {
+        let header = read_capability_header(dev, cap_addr);
+        if header.cap_id() == CAPABILITY_MSI {
+            msi_cap_addr = cap_addr;
+        } else if header.cap_id() == CAPABILITY_MSIX {
+            msix_cap_addr = cap_addr;
+        }
+        cap_addr = header.next_ptr();
+    }
+    
+    if msi_cap_addr != 0 {
+        return configure_msi_register(dev, msi_cap_addr, msg_addr, msg_data, num_vector_exponent);
+    } else if msix_cap_addr != 0 {
+        return configure_msix_register(dev, msix_cap_addr, msg_addr, msg_addr, num_vector_exponent);
+    }
+    return StatusCode::NoPCIMSI;
+}
+
+pub fn configure_msi_fixed_destination(
+    dev: &Device,
+    apic_id: u8,
+    trigger_mode: MSITriggerMode,
+    delivery_mode: MSIDeliveryMode,
+    vector: u8,
+    num_vector_exponent: u8
+) -> StatusCode {
+    let msg_addr: u32 = 0xFEE00000 as u32 | (apic_id as u32) << 12;
+    let mut msg_data: u32 = (delivery_mode as u32) << 8 | vector as u32;
+    if trigger_mode == MSITriggerMode::Level {
+        msg_data |= 0xc000;
+    }
+    return StatusCode::Success;
+    //return configure_msi(&dev, msg_addr, msg_data, num_vector_exponent);
 }
