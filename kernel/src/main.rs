@@ -5,7 +5,6 @@
 #![feature(abi_x86_interrupt)]
 
 mod ascii_font;
-pub mod asmfunc;
 pub mod bit_macros;
 pub mod status;
 pub mod log;
@@ -28,6 +27,10 @@ use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
 use pci::*;
 use usb::xhci::Controller;
 use interrupt::*;
+use x86_64::instructions::interrupts::{
+    enable,
+    are_enabled
+};
 
 const BG_COLOR: PixelColor = PixelColor(0, 0, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
@@ -117,6 +120,7 @@ fn switch_echi_to_xhci(_xhc_dev: &Device, pci_devices: &PciDevices) {
 }
 
 extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
+    debug!("interruption!");
     let xhc = unsafe {
         let xhc_addr = XHC.lock();
         &mut *(*xhc_addr as *mut Controller)
@@ -153,9 +157,9 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     const iv_xhci: usize = InterruptVector::KXHCI as usize;
     IDT.lock().slice_mut(iv_xhci..iv_xhci+1)[0].set_handler_fn(handler_xhci);
     unsafe { IDT.lock().load_unsafe(); }
-    
     let bsp_local_apic_id: u8 = unsafe { (*(0xFEE00020 as *const u32) >> 24) as u8 };
     debug!("bsp id: {}", bsp_local_apic_id);
+    
     configure_msi_fixed_destination(
         &xhc_dev.clone(),
         bsp_local_apic_id,
@@ -181,7 +185,7 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     let mut xhc_addr = XHC.lock();
     *xhc_addr = &mut xhc as *mut Controller as usize;
     unsafe {
-        asm!("sti");
+        enable();
     }
     
     loop {

@@ -1,20 +1,9 @@
 use core::fmt::Display;
-use x86_64::instructions::port::{PortReadOnly, PortWriteOnly};
+use x86_64::instructions::port::{Port, PortWriteOnly};
 use crate::{
     status::StatusCode,
     bit_getter, bit_setter,
-    asmfunc::{
-        ioin, ioout
-    }
 };
-
-const CONFIG_DATA: usize = 0x0cfc;
-
-fn WriteData(value: u32) {
-    ioout(CONFIG_DATA, value);
-}
-
-fn ReadData() -> u32 { ioin(CONFIG_DATA) }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ClassCode {
@@ -196,14 +185,14 @@ fn write_msi_capability(
 
 struct PciIOPort {
     address_port: PortWriteOnly<u32>,
-    data_port: PortReadOnly<u32>
+    data_port: Port<u32>
 }
 
 impl PciIOPort {
     const fn new() -> Self {
         Self {
             address_port: PortWriteOnly::new(0xcf8),
-            data_port: PortReadOnly::new(0xcfc),
+            data_port: Port::new(0xcfc),
         }
     }
 
@@ -222,9 +211,21 @@ impl PciIOPort {
             self.data_port.read()
         }
     }
+    
+    pub fn write(&mut self, bus: u8, device: u8, function: u8, reg_addr: u8, value: u32) {
+        let addr = PciIOPort::makeaddress(bus, device, function, reg_addr);
+        unsafe {
+            self.address_port.write(addr);
+            self.data_port.write(value);
+        }
+    }
 
     pub fn read_dev(&mut self, dev: &Device, reg_addr: u8) -> u32 {
         self.read(dev.bus, dev.device, dev.function, reg_addr)
+    }
+    
+    pub fn write_dev(&mut self, dev: &Device, reg_addr: u8, value: u32) {
+        self.write(dev.bus, dev.device, dev.function, reg_addr, value);
     }
 }
 
@@ -254,13 +255,11 @@ fn calc_bar_address(bar_index: usize) -> u8 {
 }
 
 fn read_conf_reg(dev: &Device, reg_addr: u8) -> u32 {
-    PCI_PORT.lock().read_dev(dev, reg_addr);
-    return ReadData();
+    PCI_PORT.lock().read_dev(dev, reg_addr)
 }
 
 fn write_conf_reg(dev: &Device, reg_addr: u8, value: u32) {
-    PCI_PORT.lock().read_dev(dev, reg_addr);
-    WriteData(value);
+    PCI_PORT.lock().write_dev(dev, reg_addr, value);
 }
 
 fn read_capability_header(dev: &Device, addr: u8) -> CapabilityHeader {
@@ -428,6 +427,5 @@ pub fn configure_msi_fixed_destination(
     if trigger_mode == MSITriggerMode::Level {
         msg_data |= 0xc000;
     }
-    return StatusCode::Success;
-    //return configure_msi(&dev, msg_addr, msg_data, num_vector_exponent);
+    return configure_msi(&dev, msg_addr, msg_data, num_vector_exponent);
 }
