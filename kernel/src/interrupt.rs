@@ -1,11 +1,7 @@
 use core::ptr::write_volatile;
 use spin::Mutex;
 pub use x86_64::structures::idt::{
-    InterruptStackFrame,
     InterruptDescriptorTable
-};
-use crate::{
-    debug,
 };
 
 pub static IDT: Mutex<InterruptDescriptorTable> =

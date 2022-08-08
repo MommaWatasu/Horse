@@ -331,11 +331,11 @@ fn configure_msi_register(
 }
 
 fn configure_msix_register(
-    dev: &Device,
-    cap_addr: u8,
-    msg_addr: u32,
-    msg_data: u32,
-    num_vector_exponent: u8
+    _dev: &Device,
+    _cap_addr: u8,
+    _msg_addr: u32,
+    _msg_data: u32,
+    _num_vector_exponent: u8
 ) -> StatusCode {
     return StatusCode::NotImplemented;
 }
@@ -394,7 +394,7 @@ fn configure_msi(
     msg_data: u32,
     num_vector_exponent: u8
 ) -> StatusCode {
-    let mut cap_addr: u8 = (read_conf_reg(dev, 0x34) & 0xff as u32) as u8;
+    let mut cap_addr: u8 = (read_conf_reg(dev, 0x34) & 0xff) as u8;
     let mut msi_cap_addr: u8 = 0; let mut msix_cap_addr: u8 = 0;
     while cap_addr != 0 {
         let header = read_capability_header(dev, cap_addr);

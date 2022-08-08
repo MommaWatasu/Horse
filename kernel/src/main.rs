@@ -22,14 +22,13 @@ use status::StatusCode;
 use log::*;
 use console::Console;
 use core::panic::PanicInfo;
-use core::arch::asm;
 use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
 use pci::*;
 use usb::xhci::Controller;
 use interrupt::*;
-use x86_64::instructions::interrupts::{
-    enable,
-    are_enabled
+use x86_64::{
+    instructions::interrupts::enable,
+    structures::idt::InterruptStackFrame
 };
 
 const BG_COLOR: PixelColor = PixelColor(0, 0, 0);
@@ -154,19 +153,18 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
         }
     };
     
-    const iv_xhci: usize = InterruptVector::KXHCI as usize;
-    IDT.lock().slice_mut(iv_xhci..iv_xhci+1)[0].set_handler_fn(handler_xhci);
+    IDT.lock()[InterruptVector::KXHCI as usize].set_handler_fn(handler_xhci);
     unsafe { IDT.lock().load_unsafe(); }
     let bsp_local_apic_id: u8 = unsafe { (*(0xFEE00020 as *const u32) >> 24) as u8 };
     debug!("bsp id: {}", bsp_local_apic_id);
     
-    configure_msi_fixed_destination(
+    status_log!(configure_msi_fixed_destination(
         &xhc_dev.clone(),
         bsp_local_apic_id,
         MSITriggerMode::Level,
         MSIDeliveryMode::Fixed,
         InterruptVector::KXHCI as u8, 0
-    );
+    ), "Configure msi");
     
     switch_echi_to_xhci(&xhc_dev, &pci_devices);
     let xhc_bar = read_bar(&xhc_dev, 0).unwrap();
@@ -184,17 +182,25 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     
     let mut xhc_addr = XHC.lock();
     *xhc_addr = &mut xhc as *mut Controller as usize;
-    unsafe {
-        enable();
-    }
+    enable();
     
+    /*
     loop {
         if let Err(e) = xhc.process_event() {
             error!("Error occurs during process_event: {:?}", e);
         }
     }
+    */
+    
+    hlt_loop();
     
     info!("DONE ALL PROCESSING");
+}
+
+fn hlt_loop() -> ! {
+    loop {
+        x86_64::instructions::hlt();
+    }
 }
 
 #[panic_handler]
