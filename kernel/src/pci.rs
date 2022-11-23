@@ -1,6 +1,7 @@
 use core::fmt::Display;
 use x86_64::instructions::port::{Port, PortWriteOnly};
 use crate::{
+    debug, 
     status::StatusCode,
     bit_getter, bit_setter,
 };
@@ -148,8 +149,8 @@ fn read_msi_capability(dev: &Device, cap_addr: u8) -> MSICapability {
     
     let mut msg_data_addr = cap_addr+8;
     if msi_cap.addr_64_capable() != 0 {
-        msi_cap.msg_upper_addr = read_conf_reg(dev, msg_data_addr);
-        msg_data_addr += 4;
+        msi_cap.msg_upper_addr = read_conf_reg(dev, cap_addr+8);
+        msg_data_addr = cap_addr + 12;
     }
     
     msi_cap.msg_data = read_conf_reg(dev, msg_data_addr);
@@ -366,8 +367,8 @@ struct MSICapability {
 }
 
 impl MSICapability {
-    bit_getter!(data: u32; 0x10000000; u8, per_vector_mask_capable);
-    bit_getter!(data: u32; 0x08000000; u8, addr_64_capable);
+    bit_getter!(data: u32; 0x01000000; u8, per_vector_mask_capable);
+    bit_getter!(data: u32; 0x00800000; u8, addr_64_capable);
     bit_getter!(data: u32; 0x000E0000; u8, multi_msg_capable);
     bit_setter!(data: u32; 0x00010000; u8, set_msi_enable);
     bit_setter!(data: u32; 0x00700000; u8, set_multi_msg_enable);
@@ -387,7 +388,7 @@ pub enum MSIDeliveryMode {
     INIT           = 0b101,
     ExtINT         = 0b111,
 }
-//cheking...
+
 fn configure_msi(
     dev: &Device,
     msg_addr: u32,
@@ -409,11 +410,11 @@ fn configure_msi(
     if msi_cap_addr != 0 {
         return configure_msi_register(dev, msi_cap_addr, msg_addr, msg_data, num_vector_exponent);
     } else if msix_cap_addr != 0 {
-        return configure_msix_register(dev, msix_cap_addr, msg_addr, msg_addr, num_vector_exponent);
+        return configure_msix_register(dev, msix_cap_addr, msg_addr, msg_data, num_vector_exponent);
     }
     return StatusCode::NoPCIMSI;
 }
-//checked!
+
 pub fn configure_msi_fixed_destination(
     dev: &Device,
     apic_id: u8,

@@ -121,9 +121,10 @@ fn switch_echi_to_xhci(_xhc_dev: &Device, pci_devices: &PciDevices) {
 extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
     debug!("interruption!");
     let xhc = unsafe {
-        let xhc_addr = XHC.lock();
+        let xhc_addr = XHC.lock();//There is a problem
         &mut *(*xhc_addr as *mut Controller)
     };
+    debug!("{}", xhc.get_er().has_front());
     while xhc.get_er().has_front() {
         if let Err(e) = xhc.process_event() {
             error!("Error occurs during process_event: {:?}", e);
