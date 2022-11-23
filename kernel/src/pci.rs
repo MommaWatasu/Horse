@@ -191,8 +191,8 @@ struct PciIOPort {
 impl PciIOPort {
     const fn new() -> Self {
         Self {
-            address_port: PortWriteOnly::new(0xcf8),
-            data_port: Port::new(0xcfc),
+            address_port: PortWriteOnly::new(0x0cf8u16),//IO Port Address of the CONFIG_ADDRESS Register
+            data_port: Port::new(0x0cfcu16),            //IO Port Address of the CONFIG_DATA Register
         }
     }
 
@@ -230,11 +230,11 @@ impl PciIOPort {
 }
 
 pub fn read_vendor_id(bus: u8, device: u8, function: u8) -> u16 {
-    (PCI_PORT.lock().read(bus, device, function, 0x18)) as u16
+    ((PCI_PORT.lock().read(bus, device, function, 0x00)) & 0xffff) as u16
 }
 
 pub fn read_header_type(bus: u8, device: u8, function: u8) -> u8 {
-    (PCI_PORT.lock().read(bus, device, function, 0x0c) >> 16 & 0xff) as u8
+    ((PCI_PORT.lock().read(bus, device, function, 0x0c) >> 16) & 0xff) as u8
 }
 
 pub fn read_class_code(bus: u8, device: u8, function: u8) -> ClassCode {
@@ -387,7 +387,7 @@ pub enum MSIDeliveryMode {
     INIT           = 0b101,
     ExtINT         = 0b111,
 }
-
+//cheking...
 fn configure_msi(
     dev: &Device,
     msg_addr: u32,
@@ -413,7 +413,7 @@ fn configure_msi(
     }
     return StatusCode::NoPCIMSI;
 }
-
+//checked!
 pub fn configure_msi_fixed_destination(
     dev: &Device,
     apic_id: u8,

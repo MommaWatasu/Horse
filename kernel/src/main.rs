@@ -153,13 +153,14 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
         }
     };
     
+    //set the IDT entry
     IDT.lock()[InterruptVector::KXHCI as usize].set_handler_fn(handler_xhci);
     unsafe { IDT.lock().load_unsafe(); }
     let bsp_local_apic_id: u8 = unsafe { (*(0xFEE00020 as *const u32) >> 24) as u8 };
     debug!("bsp id: {}", bsp_local_apic_id);
     
     status_log!(configure_msi_fixed_destination(
-        &xhc_dev.clone(),
+        &xhc_dev,
         bsp_local_apic_id,
         MSITriggerMode::Level,
         MSIDeliveryMode::Fixed,
