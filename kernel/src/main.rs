@@ -5,6 +5,7 @@
 #![feature(abi_x86_interrupt)]
 
 mod ascii_font;
+mod queue;
 pub mod bit_macros;
 pub mod status;
 pub mod log;
@@ -17,17 +18,30 @@ pub mod mouse;
 pub mod fixed_vec;
 pub mod interrupt;
 
-use spin::once::Once;
+use spin::{
+    Mutex,
+    once::Once
+};
 use status::StatusCode;
 use log::*;
 use console::Console;
-use core::panic::PanicInfo;
+use core::{
+    arch::asm,
+    panic::PanicInfo
+};
 use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
+use queue::ArrayQueue;
 use pci::*;
 use usb::xhci::Controller;
 use interrupt::*;
 use x86_64::{
-    instructions::interrupts::enable,
+    instructions::{
+        interrupts::{
+            enable,//sti
+            disable//cli
+        },
+        hlt
+    },
     structures::idt::InterruptStackFrame
 };
 
@@ -35,6 +49,13 @@ const BG_COLOR: PixelColor = PixelColor(0, 0, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
 
 static XHC: Once<usize> = Once::new();
+
+#[derive(Clone, Copy, Debug)]
+enum Message {
+    NoInterruption,
+    InterruptXHCI
+}
+static interruption_queue: Mutex<ArrayQueue<Message, 32>> = Mutex::new(ArrayQueue::new());
 
 fn welcome_message() {
     print!(
@@ -119,16 +140,8 @@ fn switch_echi_to_xhci(_xhc_dev: &Device, pci_devices: &PciDevices) {
 }
 
 extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
-    let xhc_addr = XHC.get().unwrap();
-    unsafe {
-        let xhc = *xhc_addr as *mut Controller;
-        while (*xhc).get_er().has_front() {
-            if let Err(e) = (*xhc).process_event() {
-                error!("Error occurs during process_event: {:?}", e);
-            }
-        }
-        notify_end_of_interrupt();
-    }
+    interruption_queue.lock().push(Message::InterruptXHCI);
+    unsafe { notify_end_of_interrupt(); }
 }
 
 #[no_mangle]
@@ -180,27 +193,28 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     }
     info!("ports configured");
     
-    //let mut xhc_addr = XHC.lock();
-    //*xhc_addr = &mut xhc as *mut Controller as usize;
     XHC.call_once(|| &mut xhc as *mut Controller as usize);
-    enable();
-    
-    /*
-    loop {
-        if let Err(e) = xhc.process_event() {
-            error!("Error occurs during process_event: {:?}", e);
-        }
-    }
-    */
-    
-    hlt_loop();
-    
-    info!("DONE ALL PROCESSING");
-}
+    interruption_queue.lock().initialize(Message::NoInterruption);
 
-fn hlt_loop() -> ! {
     loop {
-        x86_64::instructions::hlt();
+        disable();
+        if interruption_queue.lock().count == 0 {
+            unsafe { asm!("sti", "hlt") };//don't touch this line!These instructions must be in a row.
+            continue;
+        }
+        let msg = interruption_queue.lock().pop().unwrap();
+        enable();
+
+        match msg {
+            Message::InterruptXHCI => {
+                while xhc.get_er().has_front() {
+                    if let Err(e) = xhc.process_event() {
+                        error!("Error occurs during processing event: {:?}", e);
+                    }
+                }
+            }
+            Message::NoInterruption => {}
+        }
     }
 }
 
