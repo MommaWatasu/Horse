@@ -17,7 +17,7 @@ pub mod mouse;
 pub mod fixed_vec;
 pub mod interrupt;
 
-use spin::Mutex;
+use spin::once::Once;
 use status::StatusCode;
 use log::*;
 use console::Console;
@@ -34,7 +34,7 @@ use x86_64::{
 const BG_COLOR: PixelColor = PixelColor(0, 0, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
 
-static XHC: Mutex<usize> = Mutex::new(0);
+static XHC: Once<usize> = Once::new();
 
 fn welcome_message() {
     print!(
@@ -119,18 +119,16 @@ fn switch_echi_to_xhci(_xhc_dev: &Device, pci_devices: &PciDevices) {
 }
 
 extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
-    debug!("interruption!");
-    let xhc = unsafe {
-        let xhc_addr = XHC.lock();//There is a problem
-        &mut *(*xhc_addr as *mut Controller)
-    };
-    debug!("{}", xhc.get_er().has_front());
-    while xhc.get_er().has_front() {
-        if let Err(e) = xhc.process_event() {
-            error!("Error occurs during process_event: {:?}", e);
+    let xhc_addr = XHC.get().unwrap();
+    unsafe {
+        let xhc = *xhc_addr as *mut Controller;
+        while (*xhc).get_er().has_front() {
+            if let Err(e) = (*xhc).process_event() {
+                error!("Error occurs during process_event: {:?}", e);
+            }
         }
+        notify_end_of_interrupt();
     }
-    unsafe { notify_end_of_interrupt(); }
 }
 
 #[no_mangle]
@@ -182,8 +180,9 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
     }
     info!("ports configured");
     
-    let mut xhc_addr = XHC.lock();
-    *xhc_addr = &mut xhc as *mut Controller as usize;
+    //let mut xhc_addr = XHC.lock();
+    //*xhc_addr = &mut xhc as *mut Controller as usize;
+    XHC.call_once(|| &mut xhc as *mut Controller as usize);
     enable();
     
     /*

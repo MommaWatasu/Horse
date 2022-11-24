@@ -1,7 +1,6 @@
 use core::fmt::Display;
 use x86_64::instructions::port::{Port, PortWriteOnly};
 use crate::{
-    debug, 
     status::StatusCode,
     bit_getter, bit_setter,
 };
