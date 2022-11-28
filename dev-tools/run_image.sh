@@ -16,7 +16,7 @@ fi
 
 qemu-system-x86_64 \
     -m 1G \
-    -drive if=pflash,format=raw,readonly,file=./dev-tools/OVMF/OVMF_CODE.fd \
+    -drive if=pflash,format=raw,readonly=on,file=./dev-tools/OVMF/OVMF_CODE.fd \
     -drive if=pflash,format=raw,file=./dev-tools/OVMF/OVMF_VARS.fd \
     -drive if=ide,index=0,media=disk,format=raw,file=$DISK_IMG \
     -device nec-usb-xhci,id=xhci \
