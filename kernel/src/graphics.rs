@@ -1,73 +1,13 @@
-use crate::ascii_font::FONTS;
-use crate::println;
+use crate::{
+    ascii_font::FONTS,
+    println
+};
 use core::mem::MaybeUninit;
-
-#[derive(Debug, Copy, Clone)]
-#[repr(u32)]
-pub enum PixelFormat {
-    Rgb = 0,
-    Bgr,
-    Bitmask,
-    BltOnly,
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[repr(C)]
-pub struct PixelBitmask {
-    pub red: u32,
-    pub green: u32,
-    pub blue: u32,
-    pub reserved: u32,
-}
-
-#[derive(Debug, Copy, Clone)]
-#[repr(C)]
-pub struct ModeInfo {
-    pub version: u32,
-    pub hor_res: u32,
-    pub ver_res: u32,
-    pub format: PixelFormat,
-    pub mask: PixelBitmask,
-    pub stride: u32,
-}
-
-impl ModeInfo {
-    pub fn resolution(&self) -> (usize, usize) {
-        (self.hor_res as usize, self.ver_res as usize)
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct FrameBuffer {
-    base: *mut u8,
-    size: usize,
-}
-
-impl FrameBuffer {
-    pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.base
-    }
-
-    pub fn size(&self) -> usize {
-        self.size
-    }
-    /// Write to th index-th byte of the framebuffer
-    ///
-    /// # Safety
-    /// This is unsafe : no bound check.
-    pub unsafe fn write_byte(&mut self, index: usize, val: u8) {
-        self.base.add(index).write_volatile(val);
-    }
-
-    /// Write to th index-th byte of the framebuffer
-    ///
-    /// # Safety
-    /// This is unsafe : no bound check.
-    pub unsafe fn write_value(&mut self, index: usize, value: [u8; 3]) {
-        (self.base.add(index) as *mut [u8; 3]).write_volatile(value)
-    }
-}
+use libloader::{
+    FrameBufferInfo,
+    ModeInfo,
+    PixelFormat
+};
 
 #[derive(Copy, Clone, Debug)]
 pub struct PixelColor(pub u8, pub u8, pub u8); // RGB
@@ -78,19 +18,19 @@ static mut GRAPHICS_INITIALIZED: bool = false;
 
 #[derive(Copy, Clone)]
 pub struct Graphics {
-    fb: FrameBuffer,
+    fb: FrameBufferInfo,
     mi: ModeInfo,
-    pixel_writer: unsafe fn(&mut FrameBuffer, usize, &PixelColor),
+    pixel_writer: unsafe fn(&mut FrameBufferInfo, usize, &PixelColor),
     rotated: bool,
     double_scaled: bool,
 }
 
 impl Graphics {
-    pub fn new(fb: FrameBuffer, mi: ModeInfo) -> Self {
-        unsafe fn write_pixel_rgb(fb: &mut FrameBuffer, index: usize, rgb: &PixelColor) {
+    pub fn new(fb: FrameBufferInfo, mi: ModeInfo) -> Self {
+        unsafe fn write_pixel_rgb(fb: &mut FrameBufferInfo, index: usize, rgb: &PixelColor) {
             fb.write_value(index, [rgb.0, rgb.1, rgb.2]);
         }
-        unsafe fn write_pixel_bgr(fb: &mut FrameBuffer, index: usize, rgb: &PixelColor) {
+        unsafe fn write_pixel_bgr(fb: &mut FrameBufferInfo, index: usize, rgb: &PixelColor) {
             fb.write_value(index, [rgb.2, rgb.1, rgb.0]);
         }
         let pixel_writer = match mi.format {
@@ -123,7 +63,7 @@ impl Graphics {
     ///
     /// # Safety
     /// This is unsafe : handle raw pointers.
-    pub unsafe fn initialize_instance(fb: *mut FrameBuffer, mi: *mut ModeInfo) {
+    pub unsafe fn initialize_instance(fb: *mut FrameBufferInfo, mi: *mut ModeInfo) {
         core::ptr::write(RAW_GRAPHICS.as_mut_ptr(), Graphics::new(*fb, *mi));
         GRAPHICS_INITIALIZED = true;
     }
@@ -223,7 +163,7 @@ impl Graphics {
         }
     }
 
-    pub fn fb(&self) -> FrameBuffer {
+    pub fn fb(&self) -> FrameBufferInfo {
         self.fb
     }
 

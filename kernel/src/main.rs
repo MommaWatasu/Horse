@@ -29,7 +29,7 @@ use core::{
     arch::asm,
     panic::PanicInfo
 };
-use graphics::{FrameBuffer, Graphics, ModeInfo, PixelColor};
+use graphics::{Graphics, PixelColor};
 use queue::ArrayQueue;
 use pci::*;
 use usb::xhci::Controller;
@@ -43,6 +43,13 @@ use x86_64::{
         hlt
     },
     structures::idt::InterruptStackFrame
+};
+
+extern crate libloader;
+use libloader::{
+    FrameBufferInfo,
+    ModeInfo,
+    MemoryMap
 };
 
 const BG_COLOR: PixelColor = PixelColor(0, 0, 0);
@@ -72,7 +79,7 @@ fn welcome_message() {
     println!("Horse is the OS made by Momma Watasu. This OS is distributed under the MIT license.")
 }
 
-fn initialize(fb: *mut FrameBuffer, mi: *mut ModeInfo) {
+fn initialize(fb: *mut FrameBufferInfo, mi: *mut ModeInfo) {
     unsafe { Graphics::initialize_instance(fb, mi) }
     Console::initialize(&FG_COLOR, &BG_COLOR);
     Graphics::instance().clear(&BG_COLOR);
@@ -145,7 +152,7 @@ extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
 }
 
 #[no_mangle]
-extern "sysv64" fn kernel_main(fb: *mut FrameBuffer, mi: *mut ModeInfo) -> ! {
+extern "sysv64" fn kernel_main(fb: *mut FrameBufferInfo, mi: *mut ModeInfo) -> ! {
     initialize(fb, mi);
     welcome_message();
 
