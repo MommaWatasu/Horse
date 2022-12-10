@@ -7,5 +7,5 @@ cp ./horse-kernel ../dev-tools
 cd ../
 ./dev-tools/run_qemu.sh
 if [[ $1 != "--save-img" ]]; then
-    rm disk.iso
+    rm Horse.iso
 fi

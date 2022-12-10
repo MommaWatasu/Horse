@@ -5,7 +5,10 @@
 #![feature(abi_x86_interrupt)]
 
 mod ascii_font;
+mod memory_manager;
+mod paging;
 mod queue;
+mod segment;
 pub mod bit_macros;
 pub mod status;
 pub mod log;
@@ -18,41 +21,45 @@ pub mod mouse;
 pub mod fixed_vec;
 pub mod interrupt;
 
-use spin::{
-    Mutex,
-    once::Once
-};
-use status::StatusCode;
-use log::*;
 use console::Console;
+use graphics::{Graphics, PixelColor};
+use interrupt::*;
+use log::*;
+use memory_manager::*;
+use pci::*;
+use queue::ArrayQueue;
+use status::StatusCode;
+use usb::xhci::Controller;
+
+extern crate libloader;
+use libloader::{
+    is_available,
+    FrameBufferInfo,
+    ModeInfo,
+    MemoryMap
+};
+
 use core::{
     arch::asm,
     panic::PanicInfo
 };
-use graphics::{Graphics, PixelColor};
-use queue::ArrayQueue;
-use pci::*;
-use usb::xhci::Controller;
-use interrupt::*;
+use spin::{
+    Mutex,
+    once::Once
+};
 use x86_64::{
     instructions::{
         interrupts::{
             enable,//sti
             disable//cli
         },
-        hlt
     },
     structures::idt::InterruptStackFrame
 };
 
-extern crate libloader;
-use libloader::{
-    FrameBufferInfo,
-    ModeInfo,
-    MemoryMap
-};
-
-const BG_COLOR: PixelColor = PixelColor(0, 0, 0);
+const UEFI_PAGE_SIZE: u64 = 0x1000;
+const BYTES_PER_FRAME: u64 = 4096;//4KiB
+const BG_COLOR: PixelColor = PixelColor(153, 76, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
 
 static XHC: Once<usize> = Once::new();
@@ -62,7 +69,7 @@ enum Message {
     NoInterruption,
     InterruptXHCI
 }
-static interruption_queue: Mutex<ArrayQueue<Message, 32>> = Mutex::new(ArrayQueue::new());
+static INTERRUPTION_QUEUE: Mutex<ArrayQueue<Message, 32>> = Mutex::new(ArrayQueue::new());
 
 fn welcome_message() {
     print!(
@@ -147,14 +154,41 @@ fn switch_echi_to_xhci(_xhc_dev: &Device, pci_devices: &PciDevices) {
 }
 
 extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
-    interruption_queue.lock().push(Message::InterruptXHCI);
+    INTERRUPTION_QUEUE.lock().push(Message::InterruptXHCI);
     unsafe { notify_end_of_interrupt(); }
 }
 
 #[no_mangle]
-extern "sysv64" fn kernel_main(fb: *mut FrameBufferInfo, mi: *mut ModeInfo) -> ! {
+extern "sysv64" fn kernel_main_virt(fb: *mut FrameBufferInfo, mi: *mut ModeInfo, memory_map: *const MemoryMap) -> ! {
     initialize(fb, mi);
     welcome_message();
+
+    //setup memory allocator
+    segment::initialize();
+    unsafe { paging::initialize(); }
+
+    let mut memory_manager = BitmapMemoryManager::new();
+    let mut available_end = 0;
+    for desc in unsafe { *memory_map }.descriptors() {
+        if available_end < desc.phys_start {
+            memory_manager.mark_allocated(
+                FrameID::from_u64(available_end / BYTES_PER_FRAME),
+                ((desc.phys_start - available_end) / BYTES_PER_FRAME) as usize
+            );
+        }
+
+        let phys_end = desc.phys_start + desc.page_count * UEFI_PAGE_SIZE;
+        if is_available(desc.ty) {
+            available_end = phys_end;
+        } else {
+            memory_manager.mark_allocated(
+                FrameID::from_u64(desc.phys_start / BYTES_PER_FRAME),
+                (desc.page_count * UEFI_PAGE_SIZE / BYTES_PER_FRAME) as usize
+            );
+        }
+    }
+    memory_manager.set_memory_range(FrameID::new(1), FrameID::from_u64(available_end / BYTES_PER_FRAME));
+    //end of setup memory manager
 
     let pci_devices = find_pci_devices();
     let xhc_dev = find_xhc(&pci_devices);
@@ -201,15 +235,15 @@ extern "sysv64" fn kernel_main(fb: *mut FrameBufferInfo, mi: *mut ModeInfo) -> !
     info!("ports configured");
     
     XHC.call_once(|| &mut xhc as *mut Controller as usize);
-    interruption_queue.lock().initialize(Message::NoInterruption);
+    INTERRUPTION_QUEUE.lock().initialize(Message::NoInterruption);
 
     loop {
         disable();
-        if interruption_queue.lock().count == 0 {
+        if INTERRUPTION_QUEUE.lock().count == 0 {
             unsafe { asm!("sti", "hlt") };//don't touch this line!These instructions must be in a row.
             continue;
         }
-        let msg = interruption_queue.lock().pop().unwrap();
+        let msg = INTERRUPTION_QUEUE.lock().pop().unwrap();
         enable();
 
         match msg {

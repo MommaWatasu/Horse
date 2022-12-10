@@ -3,7 +3,6 @@ use core::{
     mem::MaybeUninit
 };
 use crate::{
-    debug,
     StatusCode
 };
 

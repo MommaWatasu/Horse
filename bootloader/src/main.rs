@@ -117,14 +117,14 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
             *const (),
             extern "sysv64" fn(
                 fb: *mut FrameBufferInfo, mi: *mut ModeInfo,
-                memmap: MemoryMap) -> (),
+                memmap: *const MemoryMap) -> (),
         >(entry_point_addr as *const ())
     };
 
     //exit bootservices and get MemoryMap
     let memory_map = exit_boot_services(handler, st);
 
-    kernel_entry(&mut fb, &mut mi, memory_map);
+    kernel_entry(&mut fb, &mut mi, &memory_map);
     uefi::Status::SUCCESS
 }
 
@@ -136,9 +136,8 @@ fn dump(file: &mut RegularFile, bt: &BootServices) {
     for (i, d) in descriptors.enumerate() {
         fwriteln!(
             file,
-            "{}, {:x}, {:?}, {:08x}, {:x}, {:x}",
+            "{}, {:?}, {:08x}, {:x}, {:x}",
             i,
-            d.ty.0,
             d.ty,
             d.phys_start,
             d.page_count,
@@ -195,11 +194,11 @@ fn set_gop_mode(gop: &mut GraphicsOutput) {
     }
 
     if let Some(mode) = mode {
-        gop.set_mode(&mode).expect("Error2");
+        gop.set_mode(&mode);
     }
 }
 
-fn exit_boot_services(handler: Handle, st: SystemTable<Boot>) -> MemoryMap{
+fn exit_boot_services(handler: Handle, st: SystemTable<Boot>) -> MemoryMap {
     let mmap_size = st.boot_services().memory_map_size();
     let max_mmap_size = mmap_size.map_size + BUFFER_MARGIN;
     let mmap_buf = vec![0; max_mmap_size].leak();
@@ -216,7 +215,7 @@ fn exit_boot_services(handler: Handle, st: SystemTable<Boot>) -> MemoryMap{
         let (ptr, _, _) = descriptors.into_raw_parts();
         MemoryMap::new(ptr, mmap_size)
     };
-    return memory_map
+    return memory_map;
 }
 
 unsafe extern "efiapi" fn exit_signal(_: uefi::Event, _: Option<NonNull<c_void>>) {

@@ -17,8 +17,20 @@ kernel_main:
   hlt
   jmp .fin
 
+global load_gdt ; fn load_gdt(limit: u16, offset: usize)
+load_gdt:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 10
+  mov [rsp], di ; limit
+  mov [rsp + 2], rsi ; offset
+  lgdt [rsp]
+  mov rsp, rbp
+  pop rbp
+  ret
+
 global set_ds_all ; fn set_ds_all(value: u64)
-.set_ds_all:
+set_ds_all:
   mov ds, di
   mov es, di
   mov fs, di
@@ -26,7 +38,7 @@ global set_ds_all ; fn set_ds_all(value: u64)
   ret
 
 global set_cs_ss ; fn set_cs_ss(cs: u16, ss: u16)
-.set_cs_ss:
+set_cs_ss:
   push rbp
   mov rbp, rsp
   mov ss, si
@@ -37,4 +49,9 @@ global set_cs_ss ; fn set_cs_ss(cs: u16, ss: u16)
 .next:
   mov rsp, rbp
   pop rbp
+  ret
+
+global set_cr3 ; fn set_cr3(u64)
+set_cr3:
+  mov cr3, rdi
   ret
