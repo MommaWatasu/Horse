@@ -5,8 +5,10 @@ use uefi::table::boot::{
     MemoryMapSize,
     MemoryType
 };
-use core::iter::Iterator;
-use core::slice::from_raw_parts;
+use core::{
+    iter::Iterator,
+    slice::from_raw_parts
+};
 
 //MemoryMap
 #[repr(C)]
