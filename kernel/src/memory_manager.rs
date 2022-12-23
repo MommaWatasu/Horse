@@ -1,39 +1,82 @@
-use crate::StatusCode;
+use crate::{
+    MemoryMap,
+    StatusCode
+};
 use crate::debug;
-use core::mem::size_of;
+use libloader::is_available;
+use core::{
+    marker::Sync,
+    mem::size_of
+};
+use spin::mutex::{
+    Mutex,
+    MutexGuard
+};
 
-type MapLineType = u64;
-const BYTES_PER_FRAME: usize = 4096;//4KiB
+type MapLineType = usize;
+const UEFI_PAGE_SIZE: u64 = 4096;
+pub const BYTES_PER_FRAME: usize = 4096;//4KiB
 //TODO: find the cause of crash when the MAX_PHYSICS_MEMORY_BYTES set to more than 16GB
-const MAX_PHYSICS_MEMORY_BYTES: usize = 16 * 1024 * 1024 * 1024;//16GiB
+const MAX_PHYSICS_MEMORY_BYTES: usize = 128 * 1024 * 1024 * 1024;//16GiB
 const FRAME_COUNT: usize = MAX_PHYSICS_MEMORY_BYTES / BYTES_PER_FRAME;
 const BITS_PER_MAP_LINE: usize = 8 * size_of::<MapLineType>();//8 * sizeof::<MapLineType>
+const MAP_LINE_COUNT: usize = FRAME_COUNT / BITS_PER_MAP_LINE;
 
-pub struct FrameID{
-    id: usize
-}
+#[derive(Clone, Copy, PartialEq)]
+pub struct FrameID(usize);
 
 impl FrameID {
-    const BEGIN: Self = Self{ id: 0 };
-    const END: Self = Self{ id: FRAME_COUNT };
-    pub fn new(id: usize) -> Self { Self{id} }
-    pub fn from_u64(id: u64) -> Self {Self{ id: id as usize }}
-    fn id(&self) -> usize { self.id }
+    const MIN: Self = Self(0);
+    const MAX: Self = Self(FRAME_COUNT);
+    pub fn new(id: usize) -> Self { Self(id) }
+    pub fn phys_addr(&self) -> *mut u8 { (self.id() * BYTES_PER_FRAME) as *mut u8 }
+    pub fn from_phys_addr(ptr: *mut u8) -> Self { Self(ptr as usize / BYTES_PER_FRAME) }
+    fn id(&self) -> usize { self.0 }
 }
-//depends on whether unsgined long is 4-bits or not
+
+static MEMORY_MANAGER: Mutex<BitmapMemoryManager> = Mutex::new(BitmapMemoryManager::new());
+pub fn frame_manager_instance() -> MutexGuard<'static, BitmapMemoryManager> {
+    MEMORY_MANAGER.lock()
+}
+
 pub struct BitmapMemoryManager {
-    alloc_map: [MapLineType; FRAME_COUNT/BITS_PER_MAP_LINE],
+    alloc_map: [MapLineType; MAP_LINE_COUNT],
     range_begin: FrameID,
     range_end: FrameID
 }
 
+unsafe impl Sync for BitmapMemoryManager {}
+
 impl BitmapMemoryManager {
     pub const fn new() -> Self {
         Self {
-            alloc_map: [0; FRAME_COUNT/BITS_PER_MAP_LINE],
-            range_begin: FrameID::BEGIN,
-            range_end: FrameID::END
+            alloc_map: [0; MAP_LINE_COUNT],
+            range_begin: FrameID::MIN,
+            range_end: FrameID::MAX
         }
+    }
+
+    pub fn initialize(&mut self, memory_map: MemoryMap) {
+        let mut available_end: u64 = 0;
+        for desc in memory_map.descriptors() {
+            if available_end < desc.phys_start {
+                self.mark_allocated(
+                    FrameID::new(available_end as usize / BYTES_PER_FRAME),
+                    (desc.phys_start - available_end) as usize / BYTES_PER_FRAME
+                );
+            }
+
+            let phys_end = desc.phys_start + desc.page_count * UEFI_PAGE_SIZE;
+            if is_available(desc.ty) {
+                available_end = phys_end;
+            } else {
+                self.mark_allocated(
+                    FrameID::new(desc.phys_start as usize / BYTES_PER_FRAME),
+                    (desc.page_count * UEFI_PAGE_SIZE) as usize / BYTES_PER_FRAME
+                );
+            }
+        }
+        self.set_memory_range(FrameID::new(1), FrameID::new(available_end as usize/ BYTES_PER_FRAME));
     }
 
     pub fn allocate(&mut self, n_frames: usize) -> Result<FrameID, StatusCode> {

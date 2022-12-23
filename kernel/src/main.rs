@@ -1,31 +1,34 @@
 #![no_std]
 #![no_main]
 #![feature(abi_efiapi)]
-#![feature(core_intrinsics)]
 #![feature(abi_x86_interrupt)]
+#![feature(core_intrinsics)]
+#![feature(default_alloc_error_handler)]
 
 mod ascii_font;
-mod memory_manager;
+mod memory_allocator;
 mod paging;
 mod queue;
 mod segment;
-pub mod bit_macros;
-pub mod status;
-pub mod log;
-pub mod graphics;
 pub mod console;
+pub mod bit_macros;
+pub mod fixed_vec;
+pub mod graphics;
+pub mod interrupt;
+pub mod log;
+pub mod memory_manager;
+pub mod mouse;
 pub mod pci;
+pub mod status;
 pub mod usb;
 pub mod volatile;
-pub mod mouse;
-pub mod fixed_vec;
-pub mod interrupt;
 
 use console::Console;
 use graphics::{Graphics, PixelColor};
 use interrupt::*;
 use log::*;
 use memory_manager::*;
+use memory_allocator::KernelMemoryAllocator;
 use pci::*;
 use queue::ArrayQueue;
 use status::StatusCode;
@@ -33,12 +36,12 @@ use usb::xhci::Controller;
 
 extern crate libloader;
 use libloader::{
-    is_available,
     FrameBufferInfo,
     ModeInfo,
     MemoryMap
 };
 
+extern crate alloc;
 use core::{
     arch::asm,
     panic::PanicInfo
@@ -57,8 +60,6 @@ use x86_64::{
     structures::idt::InterruptStackFrame
 };
 
-const UEFI_PAGE_SIZE: u64 = 0x1000;
-const BYTES_PER_FRAME: u64 = 4096;//4KiB
 const BG_COLOR: PixelColor = PixelColor(153, 76, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
 
@@ -70,13 +71,15 @@ enum Message {
     InterruptXHCI
 }
 static INTERRUPTION_QUEUE: Mutex<ArrayQueue<Message, 32>> = Mutex::new(ArrayQueue::new());
+#[global_allocator]
+static ALLOCATOR: KernelMemoryAllocator = KernelMemoryAllocator::new();
 
 fn welcome_message() {
     print!(
         r"
         ___    ___
        /  /   /  /
-      /  /   /  / _______  _____  _____   ______
+      /  /   /  / _______  _____  _____  ______
      /  /___/  / / ___  / / ___/ / ___/ / __  /
     /  ____   / / /  / / / /     \_ \  / /___/
    /  /   /  / / /__/ / / /     __/ / / /___
@@ -160,35 +163,15 @@ extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
 
 #[no_mangle]
 extern "sysv64" fn kernel_main_virt(fb: *mut FrameBufferInfo, mi: *mut ModeInfo, memory_map: *const MemoryMap) -> ! {
-    initialize(fb, mi);
-    welcome_message();
-
     //setup memory allocator
     segment::initialize();
     unsafe { paging::initialize(); }
+    //frame_manager_instance().initialize(unsafe { *memory_map });
 
-    let mut memory_manager = BitmapMemoryManager::new();
-    let mut available_end = 0;
-    for desc in unsafe { *memory_map }.descriptors() {
-        if available_end < desc.phys_start {
-            memory_manager.mark_allocated(
-                FrameID::from_u64(available_end / BYTES_PER_FRAME),
-                ((desc.phys_start - available_end) / BYTES_PER_FRAME) as usize
-            );
-        }
-
-        let phys_end = desc.phys_start + desc.page_count * UEFI_PAGE_SIZE;
-        if is_available(desc.ty) {
-            available_end = phys_end;
-        } else {
-            memory_manager.mark_allocated(
-                FrameID::from_u64(desc.phys_start / BYTES_PER_FRAME),
-                (desc.page_count * UEFI_PAGE_SIZE / BYTES_PER_FRAME) as usize
-            );
-        }
-    }
-    memory_manager.set_memory_range(FrameID::new(1), FrameID::from_u64(available_end / BYTES_PER_FRAME));
-    //end of setup memory manager
+    //initialize graphics
+    initialize(fb, mi);
+    welcome_message();
+    debug!("bitmapmemorymanager size: {}", core::mem::size_of::<BitmapMemoryManager>());
 
     let pci_devices = find_pci_devices();
     let xhc_dev = find_xhc(&pci_devices);
@@ -223,10 +206,7 @@ extern "sysv64" fn kernel_main_virt(fb: *mut FrameBufferInfo, mi: *mut ModeInfo,
     switch_echi_to_xhci(&xhc_dev, &pci_devices);
     let xhc_bar = read_bar(&xhc_dev, 0).unwrap();
     let xhc_mmio_base = (xhc_bar & !0xf) as usize;
-    let mut xhc: Controller;
-    unsafe {
-        xhc = Controller::new(xhc_mmio_base).unwrap();
-    }
+    let mut xhc = unsafe { Controller::new(xhc_mmio_base).unwrap() };//there is a problem here
     debug!("xHC initalized");
     unsafe {
         status_log!(xhc.run().unwrap(), "xHC started");

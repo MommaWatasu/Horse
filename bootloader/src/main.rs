@@ -37,7 +37,7 @@ use uefi::{
         console::gop::{GraphicsOutput, Mode, ModeInfo},
         media::{
             file::{
-                File, RegularFile
+                Directory, File, RegularFile
             },
         }
     },
@@ -46,6 +46,7 @@ use uefi::{
         AllocateType,
         EventType,
         MemoryDescriptor,
+        MemoryType,
         OpenProtocolParams,
         OpenProtocolAttributes,
         Tpl
@@ -81,7 +82,7 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
             None
         )
         .map(|_| ())
-        .expect("Error1");
+        .unwrap();
     }
 
     if st.firmware_vendor().to_string() != "EDK II" {
@@ -109,9 +110,7 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
     mmap_file.close();
 
     //load kernel file
-    let mut kernel_file = open_file(&mut root, &cstr16!("horse-kernel"));
-    let entry_point_addr = load_kernel(&mut kernel_file, &st);
-    kernel_file.close();
+    let entry_point_addr = load_kernel(&mut root, &st);
     let kernel_entry = unsafe {
         transmute::<
             *const (),
@@ -146,26 +145,38 @@ fn dump(file: &mut RegularFile, bt: &BootServices) {
     }
 }
 
-fn load_kernel(file: &mut RegularFile, st: &SystemTable<Boot>) -> usize {
-    let buf = read_file_to_vec(file);
+fn load_kernel(root: &mut Directory, st: &SystemTable<Boot>) -> usize {
+    let mut debug_file = create_file(root, &cstr16!("debug_file.txt"));
+    //open kernel file
+    let mut kernel_file = open_file(root, &cstr16!("horse-kernel"));
+    let buf = read_file_to_vec(&mut kernel_file);
     let elf = elf::Elf::parse(&buf).expect("failed to parse ELF");
 
+    //find kernel_start and kernel_end
     let mut kernel_start = u64::MAX;
-    let mut kernel_end = u64::MIN;
+    let mut kernel_end = 0;
     for ph in elf.program_headers.iter() {
         if ph.p_type != elf::program_header::PT_LOAD {
             continue;
         }
         kernel_start = kernel_start.min(ph.p_vaddr);
         kernel_end = kernel_end.max(ph.p_vaddr + ph.p_memsz);
+        fwriteln!(debug_file, "start: {}, end: {}", ph.p_vaddr, ph.p_vaddr + ph.p_memsz);
     }
-    let n_of_pages = (kernel_end - kernel_start + UEFI_PAGE_SIZE - 1) / UEFI_PAGE_SIZE;
+
+    //allocate pages for kernel file
+    let n_of_pages = ((kernel_end - kernel_start + UEFI_PAGE_SIZE - 1) / UEFI_PAGE_SIZE) as usize;
+    fwriteln!(debug_file, "start address is: {:08x}", kernel_start);
+    fwriteln!(debug_file, "end address is: {:08x}", kernel_end);
+    fwriteln!(debug_file, "kernel_size: {:08x}", kernel_end - kernel_start);
+    debug_file.close();
     st.boot_services().allocate_pages(
         AllocateType::Address(kernel_start),
         boot::MemoryType::LOADER_DATA,
         n_of_pages.try_into().unwrap(),
-    ).unwrap();
+    ).expect("failed to allocate pages for kernel");
 
+    //load kernel file
     for ph in elf.program_headers.iter() {
         if ph.p_type != elf::program_header::PT_LOAD {
             continue;
@@ -194,7 +205,7 @@ fn set_gop_mode(gop: &mut GraphicsOutput) {
     }
 
     if let Some(mode) = mode {
-        gop.set_mode(&mode);
+        gop.set_mode(&mode).expect("failed to setup GOP mode");
     }
 }
 

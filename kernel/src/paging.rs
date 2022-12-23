@@ -6,8 +6,6 @@ use core::{
     }
 };
 
-use crate::debug;
-
 const PAGE_DIRECTORY_COUNT: usize = 64;
 const PAGE_SIZE_4K: usize = 4096;
 const PAGE_SIZE_2M: usize = 512 * PAGE_SIZE_4K;
