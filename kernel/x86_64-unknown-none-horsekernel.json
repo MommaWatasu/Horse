@@ -17,6 +17,7 @@
   "post-link-args": {
     "ld": [
       "-entry=kernel_main",
+      "--image-base=0x100000",
       "-static",
       "-nostdlib",
       "-ohorse-kernel"

@@ -1,8 +1,7 @@
 use crate::{
     MemoryMap,
-    StatusCode
+    StatusCode,
 };
-use crate::debug;
 use libloader::is_available;
 use core::{
     marker::Sync,
@@ -85,13 +84,13 @@ impl BitmapMemoryManager {
         loop {
             i = 0;
             while i < n_frames {
-                i += 1;
                 if start_frame_id + i >= self.range_end.id() {
                     return Err(StatusCode::NoEnoughMemory);
                 }
-                if self.get_bit(FrameID::new(start_frame_id + 1)) {
+                if self.get_bit(FrameID::new(start_frame_id + i)) {
                     break;
                 }
+                i += 1;
             }
             if i == n_frames {
                 self.mark_allocated(FrameID::new(start_frame_id), n_frames);

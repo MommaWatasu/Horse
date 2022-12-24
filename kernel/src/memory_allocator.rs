@@ -23,7 +23,7 @@ impl From<Layout> for AllocateMode {
         let size = l.size().max(l.align());
         match BLOCK_SIZES.iter().position(|s| *s >= size) {
             Some(index) => Self::Block(index),
-            None => Self::Frame((size + BYTES_PER_FRAME) / BYTES_PER_FRAME)
+            None => Self::Frame((size + BYTES_PER_FRAME-1) / BYTES_PER_FRAME)
         }
     }
 }
