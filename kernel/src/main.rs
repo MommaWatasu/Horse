@@ -91,8 +91,9 @@ fn welcome_message() {
 
 fn initialize(fb: *mut FrameBufferInfo, mi: *mut ModeInfo) {
     unsafe { Graphics::initialize_instance(fb, mi) }
-    Console::initialize(&FG_COLOR, &BG_COLOR);
-    Graphics::instance().clear(&BG_COLOR);
+    let graphics = Graphics::instance();
+    Console::initialize(graphics.resolution(), &FG_COLOR, &BG_COLOR);
+    graphics.clear(&BG_COLOR);
 }
 
 fn find_pci_devices() -> PciDevices {
@@ -171,7 +172,6 @@ extern "sysv64" fn kernel_main_virt(fb: *mut FrameBufferInfo, mi: *mut ModeInfo,
     //initialize graphics
     initialize(fb, mi);
     welcome_message();
-    debug!("bitmapmemorymanager size: {}", core::mem::size_of::<BitmapMemoryManager>());
 
     let pci_devices = find_pci_devices();
     let xhc_dev = find_xhc(&pci_devices);
@@ -241,6 +241,6 @@ extern "sysv64" fn kernel_main_virt(fb: *mut FrameBufferInfo, mi: *mut ModeInfo,
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("{}", info);
+    //error!("{}", info);
     loop {}
 }

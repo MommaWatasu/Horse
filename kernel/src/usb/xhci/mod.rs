@@ -35,7 +35,7 @@ use trb::{
     PortStatusChangeEvent
 };
 use crate::{
-    status_log, warn, trace, error
+    status_log, warn, trace, error,
     status::{
         StatusCode, PortConfigPhase, Result
     },

@@ -839,7 +839,7 @@ impl DeviceManager {
         let device_ctx: &mut DeviceContext = unsafe{ usb_obj_alloc::<DeviceContext>()?.as_mut() };
         unsafe { DeviceContext::initialize_ptr(device_ctx as *mut DeviceContext) };
 
-        let device: *mut Device = unsafe { usb_obj_alloc::<Device>()?.as_ptr() };
+        let device: *mut Device = usb_obj_alloc::<Device>()?.as_ptr();
 
         let input_ctx = unsafe {
             Device::initialize_ptr(
