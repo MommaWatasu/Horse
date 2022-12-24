@@ -1,12 +1,11 @@
-use core::ptr::{
-    null,
-    null_mut,
-    NonNull,
-    addr_of_mut
-};
-use core::mem::{
-    MaybeUninit,
-    size_of
+use core::{
+    mem::size_of,
+    ptr::{
+        null,
+        null_mut,
+        NonNull,
+        addr_of_mut
+    }
 };
 use crate::{
     fixed_vec::FixedVec,
@@ -32,13 +31,13 @@ use crate::{
             InterfaceDescriptor,
             DescIter
         },
+        memory::*,
         setupdata::*,
         setupdata::request_type,
         endpoint::*
     },
 };
 use super::{
-    ALLOC,
     DoorbellRegister,
     context::*,
     Port,
@@ -121,7 +120,7 @@ impl Device {
             init_phase_ptr.write(-1);
 
             let buf_ptr: *mut Buffer = addr_of_mut!((*ptr).buf);
-            buf_ptr.write(Buffer::new(&mut *ALLOC.lock(), Self::BUF_SIZE, 64));
+            buf_ptr.write(Buffer::new(Self::BUF_SIZE, 64));
 
             let num_configurations_ptr = addr_of_mut!((*ptr).num_configurations);
             num_configurations_ptr.write(0);
@@ -327,18 +326,9 @@ impl Device {
                 info!("keyboard found");
                 use classdriver::HidKeyboardDriver;
                 let keyboard_driver = unsafe {
-                    let keyboard_driver: &mut MaybeUninit<HidKeyboardDriver> = ALLOC
-                        .lock()
-                        .alloc_obj::<HidKeyboardDriver>()
-                        .ok_or(StatusCode::NoEnoughMemory)?
-                        .as_mut();
-                    keyboard_driver
-                        .as_mut_ptr()
-                        .write(HidKeyboardDriver::new(if_desc.interface_number)?);
-                    core::mem::transmute::<
-                        &mut MaybeUninit<HidKeyboardDriver>,
-                        &mut HidKeyboardDriver,
-                    >(keyboard_driver)
+                    let keyboard_driver: *mut HidKeyboardDriver = usb_obj_alloc::<HidKeyboardDriver>()?.as_ptr();
+                    keyboard_driver.write(HidKeyboardDriver::new(if_desc.interface_number)?);
+                    keyboard_driver.as_mut().unwrap()
                 };
                 Ok(keyboard_driver)
             }
@@ -346,17 +336,9 @@ impl Device {
                 info!("mouse found");
                 use classdriver::HidMouseDriver;
                 let mouse_driver = unsafe {
-                    let mouse_driver: &mut MaybeUninit<HidMouseDriver> = ALLOC
-                        .lock()
-                        .alloc_obj::<HidMouseDriver>()
-                        .ok_or(StatusCode::NoEnoughMemory)?
-                        .as_mut();
-                    mouse_driver
-                        .as_mut_ptr()
-                        .write(HidMouseDriver::new(if_desc.interface_number)?);
-                    core::mem::transmute::<&mut MaybeUninit<HidMouseDriver>, &mut HidMouseDriver>(
-                        mouse_driver,
-                    )
+                    let mouse_driver: *mut HidMouseDriver = usb_obj_alloc::<HidMouseDriver>()?.as_ptr();
+                    mouse_driver.write(HidMouseDriver::new(if_desc.interface_number)?);
+                    mouse_driver.as_mut().unwrap()
                 };
                 Ok(mouse_driver)
             }
@@ -820,42 +802,17 @@ impl DeviceManager {
         doorbells: *mut DoorbellRegister,
         scratchpad_buf_arr: *const *const u8,
     ) -> Result<Self> {
-        let mut malloc = ALLOC.lock();
-
-        let devices: &mut [MaybeUninit<Option<&'static mut Device>>] = unsafe {
-            malloc
-                .alloc_slice::<Option<&'static mut Device>>(max_slots + 1)
-                .ok_or(StatusCode::NoEnoughMemory)?
-                .as_mut()
-        };
+        let devices: &mut [Option<&'static mut Device>] = unsafe { usb_slice_alloc::<Option<&'static mut Device>>(max_slots+1)?.as_mut() };
         for p in devices.iter_mut() {
-            *p = MaybeUninit::new(None);
+            *p = None;
         }
-        let devices = unsafe {
-            core::mem::transmute::<
-                &mut [MaybeUninit<Option<&'static mut Device>>],
-                &mut [Option<&'static mut Device>],
-            >(devices)
-        };
 
         // NOTE: DCBAA: alignment = 64-bytes, boundary = PAGESIZE
-        let dcbaap: &mut [MaybeUninit<*const DeviceContext>] = unsafe {
-            malloc
-                .alloc_slice_ext::<*const DeviceContext>(max_slots + 1, 64, None)
-                .ok_or(StatusCode::NoEnoughMemory)?
-                .as_mut()
-        };
+        let dcbaap: &mut [*const DeviceContext] = unsafe{ usb_slice_ext_alloc::<*const DeviceContext>(max_slots+1, 64, None)?.as_mut() };
         for p in dcbaap.iter_mut() {
-            *p = MaybeUninit::new(null());
+            *p = null();
         }
-        dcbaap[0] = MaybeUninit::new(scratchpad_buf_arr as *const _);
-
-        let dcbaap = unsafe {
-            core::mem::transmute::<
-                &mut [MaybeUninit<*const DeviceContext>],
-                &mut [*const DeviceContext],
-            >(dcbaap)
-        };
+        dcbaap[0] = scratchpad_buf_arr as *const _;
         let dcbaap = dcbaap as *mut [*const DeviceContext];
 
         trace!(
@@ -879,28 +836,14 @@ impl DeviceManager {
             return Err(StatusCode::DeviceAlreadyAllocated);
         }
 
-        let device_ctx: &mut MaybeUninit<DeviceContext> = unsafe {
-            ALLOC
-                .lock()
-                .alloc_obj::<DeviceContext>()
-                .ok_or(StatusCode::NoEnoughMemory)?
-                .as_mut()
-        };
-        unsafe { DeviceContext::initialize_ptr(device_ctx.as_mut_ptr()) };
-        let device_ctx =
-            device_ctx as *const MaybeUninit<DeviceContext> as *const DeviceContext;
+        let device_ctx: &mut DeviceContext = unsafe{ usb_obj_alloc::<DeviceContext>()?.as_mut() };
+        unsafe { DeviceContext::initialize_ptr(device_ctx as *mut DeviceContext) };
 
-        let device: &mut MaybeUninit<Device> = unsafe {
-            ALLOC
-                .lock()
-                .alloc_obj::<Device>()
-                .ok_or(StatusCode::NoEnoughMemory)?
-                .as_mut()
-        };
+        let device: *mut Device = unsafe { usb_obj_alloc::<Device>()?.as_ptr() };
 
         let input_ctx = unsafe {
             Device::initialize_ptr(
-                device.as_mut_ptr() as *mut Device,
+                device,
                 device_ctx,
                 self.doorbells.add(slot_id - 1),
                 slot_id as u8,
@@ -908,10 +851,7 @@ impl DeviceManager {
             )?
         };
 
-        let device =
-            unsafe { core::mem::transmute::<&mut MaybeUninit<Device>, &mut Device>(device) };
-
-        self.devices[slot_id] = Some(device);
+        self.devices[slot_id] = unsafe { Some(device.as_mut().unwrap()) };
 
         unsafe {
             (*self.device_context_pointers)

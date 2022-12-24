@@ -9,12 +9,15 @@ mod trb;
 use core::{
     mem::{
         MaybeUninit,
+        align_of,
+        size_of,
         transmute
     },
     ptr::{
+        addr_of_mut,
         null_mut,
         null,
-        addr_of_mut
+        slice_from_raw_parts_mut
     }
 };
 use devmgr::DeviceManager;
@@ -32,17 +35,13 @@ use trb::{
     PortStatusChangeEvent
 };
 use crate::{
-    status_log, warn, trace, error,
+    status_log, warn, trace, error
     status::{
         StatusCode, PortConfigPhase, Result
     },
-    usb::memory::Allocator,
+    usb::memory::*,
     volatile::Volatile
 };
-
-const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
-pub static ALLOC: spin::Mutex<Allocator<MEM_POOL_SIZE>> =
-    spin::Mutex::new(Allocator::new());
 
 pub struct Controller {
     op_regs: *mut OperationalRegisters,
@@ -83,7 +82,6 @@ impl Controller {
         trace!("host controller halted");
         
         let page_size = (*op_regs).pagesize.read().page_size();
-        ALLOC.lock().boundary = page_size;
         
         Self::request_hc_ownership(mmio_base, cap_regs);
         
@@ -111,34 +109,19 @@ impl Controller {
                 "max scratchpad buffer: {} pages",
                 max_scratched_buffer_pages
             );
-            let mut alloc = ALLOC.lock();
-                        #[allow(unused_unsafe)]
-            let buf_arr: &mut [MaybeUninit<*const u8>] = unsafe {
-                alloc
-                    .alloc_slice_ext::<*const u8>(
-                        max_scratched_buffer_pages,
-                        64,
-                        Some(page_size)
-                    )
-                    .ok_or(StatusCode::NoEnoughMemory)?
-                    .as_mut()
+            let buf_arr: &mut [*const u8] = {
+                usb_slice_ext_alloc::<*const u8>(
+                    max_scratched_buffer_pages,
+                    64,
+                    Some(page_size)
+                )?
+                .as_mut()
             };
-            
+
             for ptr in buf_arr.iter_mut() {
-                #[allow(unused_unsafe)]
-                let buf: &mut [u8] = unsafe {
-                    alloc
-                        .alloc(page_size, page_size, Some(page_size))
-                        .ok_or(StatusCode::NoEnoughMemory)?
-                        .as_mut()
-                };
-                *ptr = MaybeUninit::new(buf.as_ptr());
+                let buf: &mut [u8] = usb_alloc(page_size, page_size, Some(page_size))?.as_mut();
+                *ptr = buf.as_ptr();
             }
-            
-            #[allow(unused_unsafe)]
-            let buf_arr = unsafe {
-                transmute::<&mut [MaybeUninit<*const u8>], &mut [*const u8]>(buf_arr)
-            };
             buf_arr.as_ptr()
         } else {
             null()
@@ -175,29 +158,16 @@ impl Controller {
         (*op_regs).usbcmd.modify(|usbcmd| {
             usbcmd.set_interrupter_enable(1);
         });
-        
         let ports = {
             let port_regs_base = ((op_regs as usize) + 0x400) as *mut PortRegisterSet;
-            
-            #[allow(unused_unsafe)]
-            let ports: &mut [MaybeUninit<Port>] = unsafe {
-                ALLOC
-                    .lock()
-                    .alloc_slice::<Port>((max_ports + 1) as usize)
-                    .ok_or(StatusCode::NoEnoughMemory)?
-                    .as_mut()
-            };
-            
-            ports[0] = MaybeUninit::new(Port::new(0, null_mut()));
+            let ports: &mut [Port] = usb_slice_alloc::<Port>(max_ports as usize+1)?.as_mut();
+
+            ports[0] = Port::new(0, null_mut());
             for port_num in 1..=max_ports {
-                let port_regs = port_regs_base.add((port_num - 1) as usize);
-                ports[port_num as usize] = MaybeUninit::new(Port::new(port_num, port_regs));
+                let port_regs = port_regs_base.add((port_num-1) as usize);
+                ports[port_num as usize] = Port::new(port_num, port_regs);
             }
-                
-            #[allow(unused_unsafe)]
-            unsafe {
-                transmute::<&mut [MaybeUninit<Port>], &mut [Port]>(ports)
-            }            
+            ports
         };
 
         Ok(Self {

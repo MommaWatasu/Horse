@@ -1,21 +1,20 @@
-use core::ptr::{
-    null_mut,
-    addr_of,
-    addr_of_mut
-};
-use core::mem::{
-    MaybeUninit,
-    transmute
+use core::{
+    mem::zeroed,
+    ptr::{
+        null_mut,
+        addr_of,
+        addr_of_mut
+    }
 };
 use crate::{
     status::StatusCode,
     bit_getter,
     bit_setter,
     trace,
+    usb::memory::*,
     volatile::Volatile
 };
 use super::{
-    ALLOC,
     trb::{
         GenericTrb,
         Link,
@@ -32,19 +31,12 @@ pub struct Ring {
 
 impl Ring {
     pub fn with_capacity(buf_size: usize) -> Result<Self, StatusCode> {
-        let buf: &mut [MaybeUninit<GenericTrb>] = unsafe {
-            ALLOC
-                .lock()
-                .alloc_slice_ext::<GenericTrb>(buf_size, 64, Some(64 * 1024))
-                .ok_or(StatusCode::NoEnoughMemory)?
-                .as_mut()  
+        let buf: &mut [GenericTrb] = unsafe {
+            usb_slice_ext_alloc::<GenericTrb>(buf_size, 64, Some(64*1024))?.as_mut()
         };
         for p in buf.iter_mut() {
-            *p = MaybeUninit::zeroed();
+            *p = unsafe { zeroed() };
         }
-        let buf = unsafe {
-            transmute::<&mut [MaybeUninit<GenericTrb>], &mut [GenericTrb]>(buf)
-        };
         Ok(Self{
             buf,
             cycle_bit: true,
@@ -99,37 +91,19 @@ pub struct EventRing {
 
 impl EventRing {
     pub fn with_capacity(buf_size: usize) -> Result<Self, StatusCode> {
-        let mut alloc = ALLOC.lock();
-        
-        let buf: &mut [MaybeUninit<GenericTrb>] = unsafe {
-            alloc
-                .alloc_slice_ext::<GenericTrb>(buf_size, 64, Some(64 * 1024))
-                .ok_or(StatusCode::NoEnoughMemory)?
-                .as_mut()
+        let buf: &mut [GenericTrb] = unsafe {
+            usb_slice_ext_alloc::<GenericTrb>(buf_size, 64, Some(64 * 1024))?.as_mut()
         };
         for p in buf.iter_mut() {
-            *p = MaybeUninit::zeroed();
+            *p = unsafe { zeroed() };
         }
-        let buf = unsafe {
-            transmute::<&mut [MaybeUninit<GenericTrb>], &mut [GenericTrb]>(buf)
-        };
         let buf = buf as *const [GenericTrb];
-        
-        let table: &mut [MaybeUninit<EventRingSegmentTableEntry>] = unsafe {
-            alloc
-                .alloc_slice_ext::<EventRingSegmentTableEntry>(1, 64, Some(64 * 1024))
-                .ok_or(StatusCode::NoEnoughMemory)?
-                .as_mut()
+        let table: &mut [EventRingSegmentTableEntry] = unsafe {
+            usb_slice_ext_alloc::<EventRingSegmentTableEntry>(1, 64, Some(64 * 1024))?.as_mut()
         };
         for p in table.iter_mut() {
-            *p = MaybeUninit::zeroed();
+            *p = unsafe { zeroed() };
         }
-        let table = unsafe {
-            transmute::<
-                &mut [MaybeUninit<EventRingSegmentTableEntry>],
-                &mut [EventRingSegmentTableEntry],
-            >(table)
-        };
         unsafe {
             table[0].set_pointer((*buf).as_ptr() as usize);
             table[0].set_ring_segment_size((*buf).len() as u16);

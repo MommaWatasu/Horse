@@ -8,12 +8,12 @@ use crate::{
             EndpointConfig,
             EndpointType
         },
+        memory::*,
         setupdata::{
             SetupData,
             HidRequest
         },
         setupdata::request_type,
-        xhci::ALLOC
     },
     warn, trace
 };
@@ -36,14 +36,13 @@ impl HidDriver {
     const BUF_SIZE: usize = 1024;
 
     pub fn new(interface_idx: u8, in_packet_size: usize) -> Result<Self> {
-        let mut alloc = ALLOC.lock();
         Ok(Self {
             interface_idx,
             in_packet_size,
             ep_interrupt_in: None,
             ep_interrupt_out: None,
-            buf: Buffer::new(&mut *alloc, Self::BUF_SIZE, 64),
-            prev_buf: Buffer::new(&mut *alloc, Self::BUF_SIZE, 64),
+            buf: Buffer::new(Self::BUF_SIZE, 64),
+            prev_buf: Buffer::new(Self::BUF_SIZE, 64),
             init_phase: 0,
         })
     }

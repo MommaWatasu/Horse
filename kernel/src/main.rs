@@ -166,7 +166,7 @@ extern "sysv64" fn kernel_main_virt(fb: *mut FrameBufferInfo, mi: *mut ModeInfo,
     //setup memory allocator
     segment::initialize();
     unsafe { paging::initialize(); }
-    //frame_manager_instance().initialize(unsafe { *memory_map });
+    frame_manager_instance().initialize(unsafe { *memory_map });
 
     //initialize graphics
     initialize(fb, mi);

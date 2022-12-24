@@ -1,23 +1,17 @@
 use core::ptr::NonNull;
 use core::slice::{from_raw_parts, from_raw_parts_mut, SliceIndex};
-use crate::usb::memory::Allocator;
+use crate::usb::memory::*;
 
 pub struct Buffer {
     ptr: Option<NonNull<u8>>,
     size: usize,
 }
 impl Buffer {
-    pub fn new<const SIZE: usize>(
-        alloc: &mut Allocator<SIZE>,
+    pub fn new(
         size: usize,
         align: usize,
     ) -> Self {
-        let buf = unsafe {
-            alloc
-                .alloc(size, align, None)
-                .expect("memory shortage")
-                .as_mut()
-        };
+        let buf = unsafe { usb_alloc(size, align, None).expect("no enough memory").as_mut() };
         Self {
             ptr: Some(unsafe { NonNull::new_unchecked(buf.as_mut_ptr()) }),
             size,
