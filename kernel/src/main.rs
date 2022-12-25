@@ -3,7 +3,6 @@
 #![feature(abi_efiapi)]
 #![feature(abi_x86_interrupt)]
 #![feature(core_intrinsics)]
-#![feature(default_alloc_error_handler)]
 #![feature(default_free_fn)]
 
 mod ascii_font;
@@ -82,7 +81,8 @@ fn welcome_message() {
         r"
         ___    ___
        /  /   /  /
-      /  /   /  / _______  _____  _____  ______
+      /  /   
+      #![feature(default_alloc_error_handler)]/  / _______  _____  _____  ______
      /  /___/  / / ___  / / ___/ / ___/ / __  /
     /  ____   / / /  / / / /     \_ \  / /___/
    /  /   /  / / /__/ / / /     __/ / / /___
@@ -244,6 +244,6 @@ extern "sysv64" fn kernel_main_virt(fb: *mut FrameBufferInfo, mi: *mut ModeInfo,
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    //error!("{}", info);
+    error!("{}", info);
     loop {}
 }

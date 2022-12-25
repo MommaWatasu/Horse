@@ -1,12 +1,9 @@
 use alloc::alloc::*;
 use core::{
-    mem::{align_of, size_of, MaybeUninit},
+    mem::{align_of, size_of},
     ptr::{NonNull, slice_from_raw_parts_mut},
 };
-use crate::{
-    StatusCode,
-    trace,
-};
+use crate::StatusCode;
 
 pub unsafe fn usb_alloc(mut size: usize, align: usize, boundary: Option<usize>) -> Result<NonNull<[u8]>, StatusCode> {
     let boundary = boundary.unwrap_or(4096);

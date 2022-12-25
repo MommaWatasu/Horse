@@ -5,7 +5,6 @@ use alloc::{
 use core::{fmt::Write, mem::MaybeUninit};
 
 use crate::graphics::{Graphics, PixelColor};
-use crate::debug;
 
 static mut RAW_CONSOLE: MaybeUninit<Console> = MaybeUninit::<Console>::uninit();
 

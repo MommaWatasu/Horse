@@ -12,7 +12,6 @@ use crate::{
         Coord,
         PixelWriter
     },
-    StatusCode,
     window::Window
 };
 
@@ -112,7 +111,7 @@ impl<T: PixelWriter + Default> LayerManager<T> {
 
     pub fn up_down(&mut self, id: u32, height: LayerHeight) -> Result<(), ()> {
         if height.is_hide() {
-            self.hide(id);
+            self.hide(id)?;
             return Ok(())
         }
         let mut new_height = height.height().unwrap();

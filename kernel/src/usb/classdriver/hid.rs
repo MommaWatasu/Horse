@@ -8,7 +8,6 @@ use crate::{
             EndpointConfig,
             EndpointType
         },
-        memory::*,
         setupdata::{
             SetupData,
             HidRequest

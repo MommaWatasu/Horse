@@ -7,17 +7,10 @@ mod speed;
 mod trb;
 
 use core::{
-    mem::{
-        MaybeUninit,
-        align_of,
-        size_of,
-        transmute
-    },
     ptr::{
         addr_of_mut,
         null_mut,
         null,
-        slice_from_raw_parts_mut
     }
 };
 use devmgr::DeviceManager;
