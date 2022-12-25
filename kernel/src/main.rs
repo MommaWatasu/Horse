@@ -4,6 +4,7 @@
 #![feature(abi_x86_interrupt)]
 #![feature(core_intrinsics)]
 #![feature(default_alloc_error_handler)]
+#![feature(default_free_fn)]
 
 mod ascii_font;
 mod memory_allocator;
@@ -15,6 +16,7 @@ pub mod bit_macros;
 pub mod fixed_vec;
 pub mod graphics;
 pub mod interrupt;
+pub mod layer;
 pub mod log;
 pub mod memory_manager;
 pub mod mouse;
@@ -22,6 +24,7 @@ pub mod pci;
 pub mod status;
 pub mod usb;
 pub mod volatile;
+pub mod window;
 
 use console::Console;
 use graphics::{Graphics, PixelColor};
