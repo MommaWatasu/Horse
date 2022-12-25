@@ -2,40 +2,95 @@ use crate::{
     ascii_font::FONTS,
     println
 };
-use core::mem::MaybeUninit;
+use core::{
+    mem::MaybeUninit,
+    ops::AddAssign
+};
 use libloader::{
     FrameBufferInfo,
     ModeInfo,
     PixelFormat
 };
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct PixelColor(pub u8, pub u8, pub u8); // RGB
+
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct Coord {
+    pub x: usize,
+    pub y: usize
+}
+
+impl Coord {
+    pub fn new(x: usize, y: usize) -> Self { Self{x, y} }
+}
+
+impl AddAssign for Coord {
+    fn add_assign(&mut self, other: Self) {
+        self.x += other.x;
+        self.y += other.y;
+    }
+}
+
+pub trait PixelWriter {
+    fn write(&mut self, x: usize, y: usize, c: &PixelColor);
+}
+
+#[derive(Copy, Clone)]
+struct FrameBufferWriter {
+    format: PixelFormat,
+    stride: usize,
+    fb: FrameBufferInfo
+}
+
+impl FrameBufferWriter {
+    pub fn new(format: PixelFormat, stride: u32, fb: FrameBufferInfo) -> Self {
+        Self {
+            format,
+            stride: stride as usize,
+            fb
+        }
+    }
+}
+
+impl PixelWriter for FrameBufferWriter {
+    fn write(&mut self, x: usize, y: usize, c: &PixelColor) {
+        let pixel_index = y * self.stride + x;
+        let base = 4 * pixel_index;
+        match &self.format {
+            PixelFormat::Rgb => {
+                unsafe {
+                    self.fb.write_value(base, [c.0, c.1, c.2]);
+                }
+            },
+            PixelFormat::Bgr => {
+                unsafe {
+                    self.fb.write_value(base, [c.2, c.1, c.0]);
+                }
+            }
+            _ => panic!("not supported")
+        }
+    }
+}
 
 // static singleton pointer
 static mut RAW_GRAPHICS: MaybeUninit<Graphics> = MaybeUninit::<Graphics>::uninit();
 static mut GRAPHICS_INITIALIZED: bool = false;
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct Graphics {
     fb: FrameBufferInfo,
     mi: ModeInfo,
-    pixel_writer: unsafe fn(&mut FrameBufferInfo, usize, &PixelColor),
+    pixel_writer: FrameBufferWriter,
     rotated: bool,
     double_scaled: bool,
 }
 
 impl Graphics {
     pub fn new(fb: FrameBufferInfo, mi: ModeInfo) -> Self {
-        unsafe fn write_pixel_rgb(fb: &mut FrameBufferInfo, index: usize, rgb: &PixelColor) {
-            fb.write_value(index, [rgb.0, rgb.1, rgb.2]);
-        }
-        unsafe fn write_pixel_bgr(fb: &mut FrameBufferInfo, index: usize, rgb: &PixelColor) {
-            fb.write_value(index, [rgb.2, rgb.1, rgb.0]);
-        }
         let pixel_writer = match mi.format {
-            PixelFormat::Rgb => write_pixel_rgb,
-            PixelFormat::Bgr => write_pixel_bgr,
+            PixelFormat::Rgb => FrameBufferWriter::new(mi.format, mi.stride, fb),
+            PixelFormat::Bgr => FrameBufferWriter::new(mi.format, mi.stride, fb),
             _ => {
                 panic!("This pixel format is not supported by the drawing demo");
             }
@@ -64,7 +119,7 @@ impl Graphics {
     /// # Safety
     /// This is unsafe : handle raw pointers.
     pub unsafe fn initialize_instance(fb: *mut FrameBufferInfo, mi: *mut ModeInfo) {
-        core::ptr::write(RAW_GRAPHICS.as_mut_ptr(), Graphics::new(*fb, *mi));
+        RAW_GRAPHICS.write(Graphics::new(*fb, *mi).clone());
         GRAPHICS_INITIALIZED = true;
     }
 
@@ -89,23 +144,15 @@ impl Graphics {
         if self.double_scaled {
             x *= 2;
             y *= 2;
-            self.write_actual_pixel(x, y, color);
-            self.write_actual_pixel(x + 1, y, color);
-            self.write_actual_pixel(x, y + 1, color);
-            self.write_actual_pixel(x + 1, y + 1, color);
+            self.pixel_writer.write(x, y, color);
+            self.pixel_writer.write(x + 1, y, color);
+            self.pixel_writer.write(x, y + 1, color);
+            self.pixel_writer.write(x + 1, y + 1, color);
         } else {
-            self.write_actual_pixel(x, y, color);
+            self.pixel_writer.write(x, y, color);
         }
     }
-
-    fn write_actual_pixel(&mut self, x: usize, y: usize, color: &PixelColor) {
-        let pixel_index = y * (self.mi.stride as usize) + x;
-        let base = 4 * pixel_index;
-        unsafe {
-            (self.pixel_writer)(&mut self.fb, base, color);
-        }
-    }
-
+    
     pub fn write_ascii(&mut self, x: usize, y: usize, c: char, color: &PixelColor) {
         if (c as u32) > 0x7f {
             return;
