@@ -123,7 +123,7 @@ impl BitmapMemoryManager {
         let line_idx = frame.id() / BITS_PER_MAP_LINE;
         let bit_idx = frame.id() % BITS_PER_MAP_LINE;
 
-        return (self.alloc_map[line_idx] & ((1 << bit_idx) as MapLineType)) != 0;
+        return (self.alloc_map[line_idx] & (1 as MapLineType) << bit_idx) != 0;
     }
 
     fn set_bit(&mut self, frame: FrameID, allocated: bool) {
@@ -131,9 +131,9 @@ impl BitmapMemoryManager {
         let bit_idx = frame.id() % BITS_PER_MAP_LINE;
 
         if allocated {
-            self.alloc_map[line_idx] |= ((1 as MapLineType) << bit_idx) as MapLineType
+            self.alloc_map[line_idx] |= (1 as MapLineType) << bit_idx
         } else {
-            self.alloc_map[line_idx] &= ((1 as MapLineType) << bit_idx) as MapLineType
+            self.alloc_map[line_idx] &= (1 as MapLineType) << bit_idx
         }
     }
 }
