@@ -4,6 +4,7 @@ use crate::{
     mouse::*,
     Graphics,
     PixelColor,
+    graphics::Coord,
     usb::{
         endpoint::{
             EndpointId,
@@ -18,18 +19,31 @@ use super::{
     HidDriver,
     TransferRequest
 };
+use spin::Mutex;
+
+pub static MOUSE_CURSOR: Mutex<MouseCursor>
+    = Mutex::new(MouseCursor::new(PixelColor(0, 0, 0), Coord::new(100, 100)));
 
 pub struct HidMouseDriver {
     hid_driver: HidDriver,
-    limit: (usize, usize)
+    screen_size: Coord
 }
 impl HidMouseDriver {
     pub fn new(interface_idx: u8) -> Result<Self> {
         let graphics = Graphics::instance();
         Ok(Self {
             hid_driver: HidDriver::new(interface_idx, 8)?,
-            limit: graphics.resolution()
+            screen_size: Coord::from_tuple(graphics.resolution())
         })
+    }
+
+    pub fn update(&mut self) {
+        let _button = self.hid_driver.buffer()[0];
+        let dx = self.hid_driver.buffer()[1] as usize;
+        let dy = self.hid_driver.buffer()[2] as usize;
+
+        let mut cursor = MOUSE_CURSOR.lock();
+        cursor.move_relative(Coord::new(dx, dy), self.screen_size);
     }
 }
 impl Driver for HidMouseDriver {
@@ -57,23 +71,7 @@ impl Driver for HidMouseDriver {
             .hid_driver
             .on_interrupt_completed(ep_id, buf_ptr, transfered_size)?;
 
-        // FIXME
-        {
-            static MOUSE_CURSOR: spin::Mutex<MouseCursor> =
-                spin::Mutex::new(MouseCursor::new(PixelColor(0, 0, 0), (100, 100)));
-
-            let _button = self.hid_driver.buffer()[0];
-            let dx = self.hid_driver.buffer()[1];
-            let dy = self.hid_driver.buffer()[2];
-
-            //debug!("mouse displacement: ({}, {})", dx, dy);
-
-            let mut cursor = MOUSE_CURSOR.lock();
-            //let (x, y) = cursor.pos();
-            //debug!("mouse position: ({}, {})", x, y);
-            
-            cursor.move_relative((dx.into(), dy.into()), self.limit);
-        }
+        self.update();
 
         Ok(req)
     }

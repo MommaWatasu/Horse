@@ -83,17 +83,45 @@ impl FrameBufferInfo {
     /// # Safety
     /// This is unsafe : no bound check.
     pub unsafe fn write_value(&mut self, index: usize, value: [u8; 3]) {
-        (self.fb.add(index) as *mut [u8; 3]).write_volatile(value)
+        (self.fb.add(index) as *mut [u8; 3]).write_volatile(value);
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+/// thread-safe FrameBuffer used for Layer Manager
+#[derive(Copy, Clone, Debug, Default)]
+pub struct TSFrameBuffer {
+    fb: usize
+}
+
+impl TSFrameBuffer {
+    pub unsafe fn new(ptr: &mut FrameBufferInfo) -> Self {
+        return Self {fb: ptr.as_mut_ptr() as usize}
+    }
+
+    pub unsafe fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.fb as *mut u8
+    }
+
+    pub unsafe fn write_byte(&mut self, index: usize, val: u8) {
+        self.as_mut_ptr().add(index).write_volatile(val);
+    }
+
+    pub unsafe fn write_value(&mut self, index: usize, value: [u8; 3]) {
+        (self.as_mut_ptr().add(index) as *mut [u8; 3]).write_volatile(value);
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
 #[repr(u32)]
 pub enum PixelFormat {
     Rgb = 0,
     Bgr,
     Bitmask,
     BltOnly,
+}
+
+impl Default for PixelFormat {
+    fn default() -> Self { Self::Rgb }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

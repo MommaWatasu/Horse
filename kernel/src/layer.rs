@@ -1,6 +1,7 @@
 use alloc::{
-    rc::Rc,
-    vec::Vec
+    sync::Arc,
+    vec::Vec,
+    vec
 };
 use core::{
     cell::RefCell,
@@ -10,16 +11,20 @@ use crate::{
     error,
     graphics::{
         Coord,
+        FrameBufferWriter,
         PixelWriter
     },
     window::Window
 };
+use spin::{Mutex, Once};
+
+pub static LAYER_MANAGER: Once<Mutex<LayerManager<FrameBufferWriter>>> = Once::new();
 
 #[derive(Clone, Default, PartialEq)]
-struct Layer {
+pub struct Layer {
     id: u32,
     pos: Coord,
-    window: Rc<Window>
+    window: Arc<Window>
 }
 
 impl Layer {
@@ -32,12 +37,12 @@ impl Layer {
 
     pub fn id(&self) -> u32 { self.id }
 
-    pub fn set_window(&mut self, window: Rc<Window>) -> &mut Self {
+    pub fn set_window(&mut self, window: Arc<Window>) -> &mut Self {
         self.window = window;
         return self
     }
 
-    pub fn get_window(&self) -> Rc<Window> { self.window.clone() }
+    pub fn get_window(&self) -> Arc<Window> { self.window.clone() }
 
     pub fn move_absolute(&mut self, pos: Coord) -> &mut Self {
         self.pos = pos;
@@ -70,19 +75,20 @@ impl LayerHeight {
     }
 }
 
-#[derive(Default)]
-struct LayerManager<T: PixelWriter> {
+pub struct LayerManager<T: PixelWriter> {
     writer: T,
     layers: Vec<RefCell<Layer>>,
     layer_stack: Vec<RefCell<Layer>>,
     layer_id: u32
 }
 
-impl<T: PixelWriter + Default> LayerManager<T> {
+impl<T: PixelWriter> LayerManager<T> {
     pub fn new(writer: T) -> Self {
-        Self {
+        return Self {
             writer,
-            ..default()
+            layers: vec![],
+            layer_stack: vec![],
+            layer_id: 0
         }
     }
 

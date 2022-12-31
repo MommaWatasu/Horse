@@ -1,10 +1,13 @@
 use crate::{
     Graphics,
-    PixelColor
+    PixelColor,
+    graphics::Coord,
+    layer::LAYER_MANAGER
 };
-pub const K_MOUSE_CURSOR_HEIGHT: usize = 24;
-pub const K_MOUSE_CURSOR_WIDTH: usize = 15;
-pub const MOUSE_CURSOR_SHAPE: [&str; K_MOUSE_CURSOR_HEIGHT] = [
+pub const MOUSE_CURSOR_HEIGHT: usize = 24;
+pub const MOUSE_CURSOR_WIDTH: usize = 15;
+pub const MOUSE_TRANSPARENT_COLOR: PixelColor = PixelColor(0, 0, 1);
+pub const MOUSE_CURSOR_SHAPE: [&str; MOUSE_CURSOR_HEIGHT] = [
 "@              ",
 "@@             ",
 "@.@            ",
@@ -64,20 +67,26 @@ pub fn erase_mouse_cursor(position: (usize, usize), limit: (usize, usize), erase
 }
 
 pub struct MouseCursor {
+    layer_id: u32,
     erase_color: PixelColor,
-    position: (usize, usize)
+    position: Coord
 }
 
 impl MouseCursor {
-    pub const fn new(erase_color: PixelColor, position: (usize, usize)) -> Self {
+    pub const fn new(erase_color: PixelColor, position: Coord) -> Self {
         return MouseCursor{
+            layer_id: 0,
             erase_color,
             position
         }
     }
+
+    pub fn set_layer_id(&mut self, id: u32) {
+        self.layer_id = id;
+    }
     
-    pub fn pos(&mut self) -> (usize, usize) { self.position }
-    
+    pub fn pos(&mut self) -> Coord { self.position }
+/*
     pub fn move_relative(&mut self, displacement: (usize, usize), limit: (usize, usize)) {
         erase_mouse_cursor(self.position, limit, &self.erase_color);
         if displacement.0 >= 128 {
@@ -109,5 +118,15 @@ impl MouseCursor {
             }
         }
         draw_mouse_cursor(self.position, limit);
+    }
+*/
+    pub fn move_relative(&mut self, displacement: Coord, screen_size: Coord) {
+        let mut new_pos = self.position + displacement;
+        new_pos = new_pos.elem_min(screen_size - Coord::from_tuple((1, 1)));
+        new_pos = new_pos.elem_max(Coord::from_tuple((0, 0)));
+
+        let mut layer_manager = LAYER_MANAGER.get().unwrap().lock();
+        layer_manager.move_absolute(self.layer_id, new_pos);
+        layer_manager.draw();
     }
 }

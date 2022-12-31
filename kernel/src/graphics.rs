@@ -4,10 +4,15 @@ use crate::{
 };
 use core::{
     mem::MaybeUninit,
-    ops::AddAssign
+    ops::{
+        Add,
+        AddAssign,
+        Sub
+    }
 };
 use libloader::{
     FrameBufferInfo,
+    TSFrameBuffer,
     ModeInfo,
     PixelFormat
 };
@@ -22,7 +27,36 @@ pub struct Coord {
 }
 
 impl Coord {
-    pub fn new(x: usize, y: usize) -> Self { Self{x, y} }
+    pub const fn new(x: usize, y: usize) -> Self { Self{x, y} }
+    pub fn from_tuple(pos: (usize, usize)) -> Self {
+        Self{
+            x: pos.0,
+            y: pos.1
+        }
+    }
+    pub fn elem_min(self, other: Self) -> Self {
+        return Self {
+            x: self.x.min(other.x),
+            y: self.y.min(other.y)
+        }
+    }
+    pub fn elem_max(self, other: Self) -> Self {
+        return Self {
+            x: self.x.max(other.x),
+            y: self.y.max(other.y)
+        }
+    }
+}
+
+impl Add for Coord {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        return Self {
+            x: self.x + other.x,
+            y: self.y + other.y
+        }
+    }
 }
 
 impl AddAssign for Coord {
@@ -32,23 +66,34 @@ impl AddAssign for Coord {
     }
 }
 
+impl Sub for Coord {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        return Self {
+            x: self.x - other.x,
+            y: self.y - other.y
+        }
+    }
+}
+
 pub trait PixelWriter {
     fn write(&mut self, x: usize, y: usize, c: &PixelColor);
 }
 
-#[derive(Copy, Clone)]
-struct FrameBufferWriter {
+#[derive(Clone, Copy, Default)]
+pub struct FrameBufferWriter {
     format: PixelFormat,
     stride: usize,
-    fb: FrameBufferInfo
+    fb: TSFrameBuffer
 }
 
 impl FrameBufferWriter {
-    pub fn new(format: PixelFormat, stride: u32, fb: FrameBufferInfo) -> Self {
+    pub fn new(format: PixelFormat, stride: u32, fb: &mut FrameBufferInfo) -> Self {
         Self {
             format,
             stride: stride as usize,
-            fb
+            fb: unsafe { TSFrameBuffer::new(fb) }
         }
     }
 }
@@ -87,10 +132,10 @@ pub struct Graphics {
 }
 
 impl Graphics {
-    pub fn new(fb: FrameBufferInfo, mi: ModeInfo) -> Self {
+    pub fn new(mut fb: FrameBufferInfo, mi: ModeInfo) -> Self {
         let pixel_writer = match mi.format {
-            PixelFormat::Rgb => FrameBufferWriter::new(mi.format, mi.stride, fb),
-            PixelFormat::Bgr => FrameBufferWriter::new(mi.format, mi.stride, fb),
+            PixelFormat::Rgb => FrameBufferWriter::new(mi.format, mi.stride, &mut fb),
+            PixelFormat::Bgr => FrameBufferWriter::new(mi.format, mi.stride, &mut fb),
             _ => {
                 panic!("This pixel format is not supported by the drawing demo");
             }
@@ -217,6 +262,11 @@ impl Graphics {
     pub fn mi(&self) -> ModeInfo {
         self.mi
     }
+
+    pub fn pixel_writer(&self) -> FrameBufferWriter {
+        self.pixel_writer
+    }
+
     pub fn text_writer(
         &mut self,
         first_x: usize,

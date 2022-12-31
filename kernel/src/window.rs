@@ -2,24 +2,27 @@ use alloc::{
     vec::Vec,
     vec
 };
-use crate::graphics::{
-    Coord,
-    PixelColor,
-    PixelWriter
+use crate::{
+    container_of,
+    graphics::{
+        Coord,
+        PixelColor,
+        PixelWriter
+    }
 };
 
-pub struct WindowWriter {
-    window: &'static mut Window
-}
+#[derive(Clone, Default, PartialEq)]
+pub struct WindowWriter {}
 
 impl PixelWriter for WindowWriter {
     fn write(&mut self, x: usize, y: usize, c: &PixelColor) {
-        self.window.data[x][y] = *c;
+        container_of!(self, mutable Window, writer).data[x][y] = *c;
     }
 }
 
 #[derive(Clone, Default, PartialEq)]
 pub struct Window {
+    writer: WindowWriter,
     width: usize,
     height: usize,
     data: Vec<Vec<PixelColor>>,
@@ -29,12 +32,15 @@ pub struct Window {
 impl Window {
     pub fn new(width: usize, height: usize) -> Self {
         Self {
+            writer: WindowWriter{},
             width,
             height,
             data: vec![vec![PixelColor::default(); width]; height],
             transparent_color:  None
         }
     }
+
+    pub fn writer(&mut self) -> &mut WindowWriter {&mut self.writer}
 
     pub fn set_transparent_color(&mut self, c: Option<PixelColor>) {
         self.transparent_color = c;
