@@ -41,7 +41,10 @@ use mouse::{
 use pci::*;
 use queue::ArrayQueue;
 use status::StatusCode;
-use usb::xhci::Controller;
+use usb::{
+    memory::*,
+    xhci::Controller
+};
 use window::*;
 
 extern crate libloader;
@@ -208,6 +211,8 @@ extern "sysv64" fn kernel_main_virt(fb: *mut FrameBufferInfo, mi: *mut ModeInfo,
     segment::initialize();
     unsafe { paging::initialize(); }
     frame_manager_instance().initialize(unsafe { *memory_map });
+    //initialize allocator for usb
+    initialize_usballoc();
 
     //initialize graphics
     initialize(fb, mi);
@@ -268,7 +273,7 @@ extern "sysv64" fn kernel_main_virt(fb: *mut FrameBufferInfo, mi: *mut ModeInfo,
 
         match msg {
             Message::InterruptXHCI => {
-                while xhc.get_er().has_front() 
+                while xhc.get_er().has_front() {
                     if let Err(e) = xhc.process_event() {
                         error!("Error occurs during processing event: {:?}", e);
                     }

@@ -11,7 +11,7 @@ impl Buffer {
         size: usize,
         align: usize,
     ) -> Self {
-        let buf = unsafe { usb_alloc(size, align, None).expect("no enough memory").as_mut() };
+        let buf = unsafe { usballoc().alloc(size, align, None).expect("no enough memory").as_mut() };
         Self {
             ptr: Some(unsafe { NonNull::new_unchecked(buf.as_mut_ptr()) }),
             size,

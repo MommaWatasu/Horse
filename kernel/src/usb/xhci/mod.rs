@@ -103,16 +103,17 @@ impl Controller {
                 max_scratched_buffer_pages
             );
             let buf_arr: &mut [*const u8] = {
-                usb_slice_ext_alloc::<*const u8>(
+                usballoc().alloc_slice_ext::<*const u8>(
                     max_scratched_buffer_pages,
                     64,
                     Some(page_size)
-                )?
+                )
+                .unwrap()
                 .as_mut()
             };
 
             for ptr in buf_arr.iter_mut() {
-                let buf: &mut [u8] = usb_alloc(page_size, page_size, Some(page_size))?.as_mut();
+                let buf: &mut [u8] = usballoc().alloc(page_size, page_size, Some(page_size)).unwrap().as_mut();
                 *ptr = buf.as_ptr();
             }
             buf_arr.as_ptr()
@@ -153,7 +154,7 @@ impl Controller {
         });
         let ports = {
             let port_regs_base = ((op_regs as usize) + 0x400) as *mut PortRegisterSet;
-            let ports: &mut [Port] = usb_slice_alloc::<Port>(max_ports as usize+1)?.as_mut();
+            let ports: &mut [Port] = usballoc().alloc_slice::<Port>(max_ports as usize+1).unwrap().as_mut();
 
             ports[0] = Port::new(0, null_mut());
             for port_num in 1..=max_ports {

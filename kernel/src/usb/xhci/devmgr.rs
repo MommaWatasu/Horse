@@ -326,7 +326,8 @@ impl Device {
                 info!("keyboard found");
                 use classdriver::HidKeyboardDriver;
                 let keyboard_driver = unsafe {
-                    let keyboard_driver: *mut HidKeyboardDriver = usb_obj_alloc::<HidKeyboardDriver>()?.as_ptr();
+                    let keyboard_driver: *mut HidKeyboardDriver
+                        = usballoc().alloc_obj::<HidKeyboardDriver>().unwrap().as_ptr();
                     keyboard_driver.write(HidKeyboardDriver::new(if_desc.interface_number)?);
                     keyboard_driver.as_mut().unwrap()
                 };
@@ -336,7 +337,8 @@ impl Device {
                 info!("mouse found");
                 use classdriver::HidMouseDriver;
                 let mouse_driver = unsafe {
-                    let mouse_driver: *mut HidMouseDriver = usb_obj_alloc::<HidMouseDriver>()?.as_ptr();
+                    let mouse_driver: *mut HidMouseDriver
+                        = usballoc().alloc_obj::<HidMouseDriver>().unwrap().as_ptr();
                     mouse_driver.write(HidMouseDriver::new(if_desc.interface_number)?);
                     mouse_driver.as_mut().unwrap()
                 };
@@ -802,13 +804,17 @@ impl DeviceManager {
         doorbells: *mut DoorbellRegister,
         scratchpad_buf_arr: *const *const u8,
     ) -> Result<Self> {
-        let devices: &mut [Option<&'static mut Device>] = unsafe { usb_slice_alloc::<Option<&'static mut Device>>(max_slots+1)?.as_mut() };
+        let devices: &mut [Option<&'static mut Device>] = unsafe {
+            usballoc().alloc_slice::<Option<&'static mut Device>>(max_slots+1).unwrap().as_mut()
+        };
         for p in devices.iter_mut() {
             *p = None;
         }
 
         // NOTE: DCBAA: alignment = 64-bytes, boundary = PAGESIZE
-        let dcbaap: &mut [*const DeviceContext] = unsafe{ usb_slice_ext_alloc::<*const DeviceContext>(max_slots+1, 64, None)?.as_mut() };
+        let dcbaap: &mut [*const DeviceContext] = unsafe{
+            usballoc().alloc_slice_ext::<*const DeviceContext>(max_slots+1, 64, None).unwrap().as_mut()
+        };
         for p in dcbaap.iter_mut() {
             *p = null();
         }
@@ -836,10 +842,12 @@ impl DeviceManager {
             return Err(StatusCode::DeviceAlreadyAllocated);
         }
 
-        let device_ctx: &mut DeviceContext = unsafe{ usb_obj_alloc::<DeviceContext>()?.as_mut() };
+        let device_ctx: &mut DeviceContext = unsafe{
+            usballoc().alloc_obj::<DeviceContext>().unwrap().as_mut()
+        };
         unsafe { DeviceContext::initialize_ptr(device_ctx as *mut DeviceContext) };
 
-        let device: *mut Device = usb_obj_alloc::<Device>()?.as_ptr();
+        let device: *mut Device = usballoc().alloc_obj::<Device>().unwrap().as_ptr();
 
         let input_ctx = unsafe {
             Device::initialize_ptr(

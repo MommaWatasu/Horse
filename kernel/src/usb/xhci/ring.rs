@@ -32,7 +32,7 @@ pub struct Ring {
 impl Ring {
     pub fn with_capacity(buf_size: usize) -> Result<Self, StatusCode> {
         let buf: &mut [GenericTrb] = unsafe {
-            usb_slice_ext_alloc::<GenericTrb>(buf_size, 64, Some(64*1024))?.as_mut()
+            usballoc().alloc_slice_ext::<GenericTrb>(buf_size, 64, Some(64*1024)).unwrap().as_mut()
         };
         for p in buf.iter_mut() {
             *p = unsafe { zeroed() };
@@ -92,14 +92,14 @@ pub struct EventRing {
 impl EventRing {
     pub fn with_capacity(buf_size: usize) -> Result<Self, StatusCode> {
         let buf: &mut [GenericTrb] = unsafe {
-            usb_slice_ext_alloc::<GenericTrb>(buf_size, 64, Some(64 * 1024))?.as_mut()
+            usballoc().alloc_slice_ext::<GenericTrb>(buf_size, 64, Some(64 * 1024)).unwrap().as_mut()
         };
         for p in buf.iter_mut() {
             *p = unsafe { zeroed() };
         }
         let buf = buf as *const [GenericTrb];
         let table: &mut [EventRingSegmentTableEntry] = unsafe {
-            usb_slice_ext_alloc::<EventRingSegmentTableEntry>(1, 64, Some(64 * 1024))?.as_mut()
+            usballoc().alloc_slice_ext::<EventRingSegmentTableEntry>(1, 64, Some(64 * 1024)).unwrap().as_mut()
         };
         for p in table.iter_mut() {
             *p = unsafe { zeroed() };
