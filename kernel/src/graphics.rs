@@ -194,7 +194,7 @@ impl Graphics {
             self.pixel_writer.write(x, y + 1, color);
             self.pixel_writer.write(x + 1, y + 1, color);
         } else {
-            self.pixel_writer.write(x, y, color);
+            self.pixel_writer().write(x, y, color);
         }
     }
     

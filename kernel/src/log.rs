@@ -101,7 +101,8 @@ macro_rules! trace {
 }
 
 pub fn _print(args: core::fmt::Arguments) {
-    let console = crate::console::Console::instance();
+    let mut locked_console = crate::console::Console::instance();
+    let console = locked_console.as_mut().unwrap();
     console.write_fmt(args).unwrap();
 }
 

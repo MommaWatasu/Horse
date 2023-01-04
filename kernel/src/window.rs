@@ -11,31 +11,35 @@ use crate::{
     }
 };
 
-#[derive(Clone, Default, PartialEq)]
-pub struct WindowWriter {}
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct WindowWriter(usize, usize);
 
-impl PixelWriter for WindowWriter {
-    fn write(&mut self, x: usize, y: usize, c: &PixelColor) {
+impl WindowWriter {
+    pub fn write(&self, x: usize, y: usize, c: &PixelColor) {
         container_of!(self, mutable Window, writer).data[x][y] = *c;
+    }
+
+    pub fn size(&self) -> (usize, usize) {
+        (self.0, self.1)
     }
 }
 
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct Window {
-    writer: WindowWriter,
-    width: usize,
-    height: usize,
-    data: Vec<Vec<PixelColor>>,
+    pub writer: WindowWriter,
+    pub width: usize,
+    pub height: usize,
+    pub data: Vec<Vec<PixelColor>>,
     transparent_color: Option<PixelColor>
 }
 
 impl Window {
     pub fn new(width: usize, height: usize) -> Self {
         Self {
-            writer: WindowWriter{},
+            writer: WindowWriter(width, height),
             width,
             height,
-            data: vec![vec![PixelColor::default(); width]; height],
+            data: vec![vec![PixelColor::default(); height]; width],
             transparent_color:  None
         }
     }
@@ -47,10 +51,12 @@ impl Window {
     }
 
     fn at(&self, x: usize, y: usize) -> &PixelColor {
-        &self.data[y][x]
+        &self.data[x][y]
     }
 
     pub fn draw_to<T: PixelWriter>(&self, writer: &mut T, position: Coord) {
+        use crate::Graphics;
+        let graphics = Graphics::instance();
         if self.transparent_color.is_none() {
             for y in 0..self.height {
                 for x in 0..self.width {

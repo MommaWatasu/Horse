@@ -36,13 +36,15 @@ use memory_allocator::KernelMemoryAllocator;
 use mouse::{
     MOUSE_CURSOR_HEIGHT,
     MOUSE_CURSOR_WIDTH,
-    MOUSE_TRANSPARENT_COLOR
+    MOUSE_TRANSPARENT_COLOR,
+    draw_mouse_cursor
 };
 use pci::*;
 use queue::ArrayQueue;
 use status::StatusCode;
 use usb::{
     memory::*,
+    classdriver::mouse::MOUSE_CURSOR,
     xhci::Controller
 };
 use window::*;
@@ -107,19 +109,18 @@ fn initialize(fb: *mut FrameBufferInfo, mi: *mut ModeInfo) {
     unsafe { Graphics::initialize_instance(fb, mi) }
     let graphics = Graphics::instance();
     let resolution = graphics.resolution();
-    Console::initialize(resolution, &FG_COLOR, &BG_COLOR);
     graphics.clear(&BG_COLOR);
 
-    let mut bgwindow = Arc::new(Window::new(resolution.1, resolution.0));
-    //let mut bgwindow = Arc::new(Window::new(40, 100));
-    /*
+    let mut bgwindow = Arc::new(Window::new(resolution.0, resolution.1));
     let bgwriter = Arc::get_mut(&mut bgwindow).unwrap().writer();
+    Console::initialize(bgwriter, resolution, &FG_COLOR, &BG_COLOR);
 
     let mut mouse_window = Arc::new(Window::new(MOUSE_CURSOR_WIDTH, MOUSE_CURSOR_HEIGHT));
     Arc::get_mut(&mut mouse_window).unwrap().set_transparent_color(Some(MOUSE_TRANSPARENT_COLOR));
+    draw_mouse_cursor(Arc::get_mut(&mut mouse_window).unwrap().writer(), Coord::new(0, 0));
 
-    LAYER_MANAGER.call_once(|| Mutex::new(LayerManager::new(graphics.pixel_writer())));
-    let mut layer_manager = LAYER_MANAGER.get().unwrap().lock();
+    unsafe { LAYER_MANAGER.call_once(|| LayerManager::new(graphics.pixel_writer())) };
+    let mut layer_manager = unsafe { LAYER_MANAGER.get_mut().unwrap() };
 
     let bglayer_id = layer_manager.new_layer()
         .borrow_mut()
@@ -132,11 +133,12 @@ fn initialize(fb: *mut FrameBufferInfo, mi: *mut ModeInfo) {
         .set_window(mouse_window)
         .move_absolute(Coord::new(resolution.0 / 2, resolution.1 / 2))
         .id();
-
+    layer_manager.get_window(mouse_layer_id);
+    
+    MOUSE_CURSOR.lock().set_layer_id(mouse_layer_id);
     layer_manager.up_down(bglayer_id, LayerHeight::Height(0));
     layer_manager.up_down(mouse_layer_id, LayerHeight::Height(1));
     layer_manager.draw();
-    */
 }
 
 fn find_pci_devices() -> PciDevices {

@@ -1,8 +1,10 @@
 use crate::{
     Graphics,
     PixelColor,
+    PixelWriter,
     graphics::Coord,
-    layer::LAYER_MANAGER
+    layer::LAYER_MANAGER,
+    WindowWriter
 };
 pub const MOUSE_CURSOR_HEIGHT: usize = 24;
 pub const MOUSE_CURSOR_WIDTH: usize = 15;
@@ -33,7 +35,7 @@ pub const MOUSE_CURSOR_SHAPE: [&str; MOUSE_CURSOR_HEIGHT] = [
 "         @.@   ",
 "         @@@   "
 ];
-
+/*
 pub fn draw_mouse_cursor(position: (usize, usize), limit: (usize, usize)) {
     let graphics = Graphics::instance();
     let lx: usize = limit.0 - position.0;
@@ -49,6 +51,25 @@ pub fn draw_mouse_cursor(position: (usize, usize), limit: (usize, usize)) {
                     graphics.write_pixel(position.0 + dx, position.1 + dy, &PixelColor(255, 255, 255));
                 },
                 _=>{}
+            }
+        }
+    }
+}
+*/
+pub fn draw_mouse_cursor(pixel_writer: &WindowWriter, position: Coord) {
+    for (dy, l) in MOUSE_CURSOR_SHAPE.iter().enumerate() {
+        for (dx, c) in l.chars().enumerate() {
+            //crate::debug!("dx: {}", dx);
+            match c {
+                '@' => {
+                    pixel_writer.write(position.x + dx, position.y + dy, &PixelColor(0, 0, 0));
+                },
+                '.' => {
+                    pixel_writer.write(position.x + dx, position.y + dy, &PixelColor(255, 255, 255));
+                },
+                _ => {
+                    pixel_writer.write(position.x + dx, position.y + dy, &MOUSE_TRANSPARENT_COLOR)
+                }
             }
         }
     }
@@ -125,7 +146,7 @@ impl MouseCursor {
         new_pos = new_pos.elem_min(screen_size - Coord::from_tuple((1, 1)));
         new_pos = new_pos.elem_max(Coord::from_tuple((0, 0)));
 
-        let mut layer_manager = LAYER_MANAGER.get().unwrap().lock();
+        let mut layer_manager = unsafe { LAYER_MANAGER.get_mut().unwrap() };
         layer_manager.move_absolute(self.layer_id, new_pos);
         layer_manager.draw();
     }

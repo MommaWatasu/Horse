@@ -2,17 +2,30 @@ use alloc::{
     vec::Vec,
     vec
 };
-use core::{fmt::Write, mem::MaybeUninit};
+use core::fmt::Write;
+use spin::{
+    Mutex,
+    MutexGuard,
+    Once
+};
 
-use crate::graphics::{Graphics, PixelColor};
+use crate::{
+    ascii_font::FONTS,
+    graphics::{
+        PixelColor,
+        PixelWriter
+    },
+    window::WindowWriter
+};
 
-static mut RAW_CONSOLE: MaybeUninit<Console> = MaybeUninit::<Console>::uninit();
+static RAW_CONSOLE: Mutex<Option<Console>> = Mutex::new(None);
 
 pub const LINE_HEIGHT: usize = 18;
 pub const MARGIN: usize = 8;
 
 #[derive(Debug, Clone)]
 pub struct Console {
+    pixel_writer: usize,
     buffer: Vec<Vec<char>>,
     size: (usize, usize),
     fg_color: PixelColor,
@@ -23,9 +36,10 @@ pub struct Console {
 }
 
 impl Console {
-    fn new(resolution: (usize, usize), fg_color: &PixelColor, bg_color: &PixelColor) -> Self {
+    fn new(pixel_writer: &WindowWriter, resolution: (usize, usize), fg_color: &PixelColor, bg_color: &PixelColor) -> Self {
         let size = (resolution.0 / MARGIN, resolution.1 / LINE_HEIGHT);
         Console {
+            pixel_writer: pixel_writer as *const WindowWriter as usize,
             buffer: vec![vec![0.into(); size.0 + 1]; size.1],
             size,
             fg_color: *fg_color,
@@ -36,12 +50,16 @@ impl Console {
         }
     }
 
-    pub fn initialize(resolution: (usize, usize), fg_color: &PixelColor, bg_color: &PixelColor) {
-        unsafe { RAW_CONSOLE.write(Console::new(resolution, fg_color, bg_color).clone()) };
+    pub fn initialize(pixel_writer: &WindowWriter, resolution: (usize, usize), fg_color: &PixelColor, bg_color: &PixelColor) {
+        *RAW_CONSOLE.lock() = Some(Console::new(pixel_writer, resolution, fg_color, bg_color));
     }
 
-    pub fn instance() -> &'static mut Console {
-        unsafe { &mut *RAW_CONSOLE.as_mut_ptr() }
+    pub fn instance() -> MutexGuard<'static, Option<Console>> {
+        RAW_CONSOLE.lock()
+    }
+
+    pub fn pixel_writer(&self) -> &WindowWriter {
+        unsafe { &*(self.pixel_writer as *const WindowWriter) }
     }
 
     pub fn columns(&self) -> usize { self.size.0 }
@@ -55,17 +73,17 @@ impl Console {
         self.actual_row(self.cursor_row)
     }
 
-    pub fn newline(&mut self, graphics: &mut Graphics) {
+    pub fn newline(&mut self) {
         self.cursor_column = 0;
         if self.cursor_row < self.rows() - 1 {
             self.cursor_row += 1;
         } else {
-            // clear
-            Graphics::instance().clear(&self.bg_color);
+            clear(self.pixel_writer(), &self.bg_color);
             self.buffer_row_offset = (self.buffer_row_offset + 1) % self.rows();
             for row in 0..(self.rows() - 1) {
                 for column in 0..(self.columns() - 1) {
-                    graphics.write_ascii(
+                    write_ascii(
+                        self.pixel_writer(),
                         8 * column + MARGIN,
                         LINE_HEIGHT * row + MARGIN,
                         self.buffer[self.actual_row(row)][column],
@@ -78,13 +96,13 @@ impl Console {
         }
     }
     pub fn put_string(&mut self, s: &str) {
-        let graphics = Graphics::instance();
         for c in s.chars() {
             if c == '\n' {
-                self.newline(graphics);
+                self.newline();
             }
             if self.cursor_column < self.columns() && c as u32 >= 0x20 {
-                graphics.write_ascii(
+                write_ascii(
+                    self.pixel_writer(),
                     8 * self.cursor_column + MARGIN,
                     LINE_HEIGHT * self.cursor_row + MARGIN,
                     c,
@@ -94,7 +112,7 @@ impl Console {
                 self.buffer[row][self.cursor_column] = c;
                 self.cursor_column += 1;
                 if self.cursor_column == self.columns()-1 {
-                    self.newline(graphics);
+                    self.newline();
                 }
             }
         }
@@ -105,5 +123,31 @@ impl Write for Console {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         self.put_string(s);
         Ok(())
+    }
+}
+
+use crate::graphics::Graphics;
+fn clear(pixel_writer: &WindowWriter, color: &PixelColor) {
+    let (width, height) = pixel_writer.size();
+    for y in 0..height {
+        for x in 0..width {
+            pixel_writer.write(x, y, color);
+            //Graphics::instance().pixel_writer().write(x, y, color);
+        }
+    }
+}
+
+fn write_ascii(pixel_writer: &WindowWriter, x: usize, y: usize, c: char, color: &PixelColor) {
+    if (c as u32) > 0x7f {
+        return;
+    }
+    let font: [u8; 16] = FONTS[c as usize];
+    for (dy, line) in font.iter().enumerate() {
+        for dx in 0..8 {
+            if (line << dx) & 0x80 != 0 {
+                pixel_writer.write(x + dx, y + dy, &color);
+                //Graphics::instance().pixel_writer().write(x + dx, y + dy, &color);
+            }
+        }
     }
 }
