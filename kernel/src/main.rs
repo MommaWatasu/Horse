@@ -22,6 +22,7 @@ pub mod memory_manager;
 pub mod mouse;
 pub mod pci;
 pub mod status;
+pub mod timer;
 pub mod usb;
 pub mod volatile;
 pub mod window;
@@ -42,6 +43,7 @@ use mouse::{
 use pci::*;
 use queue::ArrayQueue;
 use status::StatusCode;
+use timer::*;
 use usb::{
     memory::*,
     classdriver::mouse::MOUSE_CURSOR,

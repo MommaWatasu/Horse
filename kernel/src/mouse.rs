@@ -4,7 +4,8 @@ use crate::{
     PixelWriter,
     graphics::Coord,
     layer::LAYER_MANAGER,
-    WindowWriter
+    WindowWriter,
+    timer::*
 };
 pub const MOUSE_CURSOR_HEIGHT: usize = 24;
 pub const MOUSE_CURSOR_WIDTH: usize = 15;
@@ -148,6 +149,10 @@ impl MouseCursor {
 
         let mut layer_manager = unsafe { LAYER_MANAGER.get_mut().unwrap() };
         layer_manager.move_absolute(self.layer_id, new_pos);
+        start_lapic_timer();
         layer_manager.draw();
+        let elapsed = lapic_timer_elapsed();
+        stop_lapic_timer();
+        crate::println!("Mouse Interruption: elapsed = {}", elapsed);
     }
 }
