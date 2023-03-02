@@ -16,7 +16,7 @@ use crate::{
     },
     window::Window
 };
-use spin::{Mutex, Once};
+use spin::Once;
 
 pub static mut LAYER_MANAGER: Once<LayerManager<FrameBufferWriter>> = Once::new();
 
@@ -94,7 +94,7 @@ impl<T: PixelWriter> LayerManager<T> {
 
     pub fn new_layer(&mut self) -> Arc<RefCell<Layer>> {
         self.layer_id += 1;
-        let mut layer = Arc::new(RefCell::new(Layer::new(self.layer_id)));
+        let layer = Arc::new(RefCell::new(Layer::new(self.layer_id)));
         self.layers.push(layer.clone());
         return layer.clone()
     }
@@ -144,11 +144,6 @@ impl<T: PixelWriter> LayerManager<T> {
             return Err(())
         }
         Ok(())
-    }
-
-    pub fn get_window(&mut self, id: u32) {
-        let layer = self.find_layer(id).unwrap();
-        crate::debug!("{}", layer.borrow().window.height);
     }
 
     fn find_layer(&self, id: u32) -> Result<Arc<RefCell<Layer>>, ()> {

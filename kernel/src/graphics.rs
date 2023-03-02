@@ -1,5 +1,9 @@
 use crate::{
     ascii_font::FONTS,
+    framebuffer:: {
+        FrameBuffer,
+        FrameBufferConfig
+    },
     println
 };
 use core::{
@@ -11,9 +15,7 @@ use core::{
     }
 };
 use libloader::{
-    FrameBufferInfo,
     TSFrameBuffer,
-    ModeInfo,
     PixelFormat
 };
 
@@ -81,7 +83,7 @@ pub trait PixelWriter {
     fn write(&mut self, x: usize, y: usize, c: &PixelColor);
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub struct FrameBufferWriter {
     format: PixelFormat,
     stride: usize,
@@ -89,10 +91,10 @@ pub struct FrameBufferWriter {
 }
 
 impl FrameBufferWriter {
-    pub fn new(format: PixelFormat, stride: u32, fb: &mut FrameBufferInfo) -> Self {
+    pub fn new(format: PixelFormat, stride: usize, fb: *mut u8) -> Self {
         Self {
             format,
-            stride: stride as usize,
+            stride,
             fb: unsafe { TSFrameBuffer::new(fb) }
         }
     }
@@ -124,32 +126,18 @@ static mut GRAPHICS_INITIALIZED: bool = false;
 
 #[derive(Clone)]
 pub struct Graphics {
-    fb: FrameBufferInfo,
-    mi: ModeInfo,
-    pixel_writer: FrameBufferWriter,
+    fb: FrameBuffer,
     rotated: bool,
     double_scaled: bool,
 }
 
 impl Graphics {
-    pub fn new(mut fb: FrameBufferInfo, mi: ModeInfo) -> Self {
-        let pixel_writer = match mi.format {
-            PixelFormat::Rgb => FrameBufferWriter::new(mi.format, mi.stride, &mut fb),
-            PixelFormat::Bgr => FrameBufferWriter::new(mi.format, mi.stride, &mut fb),
-            _ => {
-                panic!("This pixel format is not supported by the drawing demo");
-            }
-        };
-
-        // Hardcode for GPD Pocket resolution
-        let rotated = mi.resolution() == (1200, 1920);
-        let double_scaled = mi.resolution() == (1200, 1920);
+    pub fn new(fb_config: FrameBufferConfig) -> Self {
         Graphics {
-            fb,
-            mi,
-            pixel_writer,
-            rotated,
-            double_scaled,
+            fb: FrameBuffer::new(fb_config),
+            // Hardcode for GPD Pocket resolution
+            rotated: fb_config.resolution == (1200, 1920),
+            double_scaled: fb_config.resolution == (1200, 1920),
         }
     }
 
@@ -163,8 +151,8 @@ impl Graphics {
     ///
     /// # Safety
     /// This is unsafe : handle raw pointers.
-    pub unsafe fn initialize_instance(fb: *mut FrameBufferInfo, mi: *mut ModeInfo) {
-        RAW_GRAPHICS.write(Graphics::new(*fb, *mi).clone());
+    pub unsafe fn initialize_instance(fb_config: *mut FrameBufferConfig) {
+        RAW_GRAPHICS.write(Graphics::new(*fb_config).clone());
         GRAPHICS_INITIALIZED = true;
     }
 
@@ -189,10 +177,10 @@ impl Graphics {
         if self.double_scaled {
             x *= 2;
             y *= 2;
-            self.pixel_writer.write(x, y, color);
-            self.pixel_writer.write(x + 1, y, color);
-            self.pixel_writer.write(x, y + 1, color);
-            self.pixel_writer.write(x + 1, y + 1, color);
+            self.pixel_writer().write(x, y, color);
+            self.pixel_writer().write(x + 1, y, color);
+            self.pixel_writer().write(x, y + 1, color);
+            self.pixel_writer().write(x + 1, y + 1, color);
         } else {
             self.pixel_writer().write(x, y, color);
         }
@@ -237,7 +225,7 @@ impl Graphics {
     }
 
     pub fn resolution(&self) -> (usize, usize) {
-        let r = self.mi.resolution();
+        let r = self.fb.config.resolution;
         let r = if self.rotated { (r.1, r.0) } else { r };
         if self.double_scaled {
             (r.0 / 2, r.1 / 2)
@@ -255,16 +243,8 @@ impl Graphics {
         }
     }
 
-    pub fn fb(&self) -> FrameBufferInfo {
-        self.fb
-    }
-
-    pub fn mi(&self) -> ModeInfo {
-        self.mi
-    }
-
     pub fn pixel_writer(&self) -> FrameBufferWriter {
-        self.pixel_writer
+        self.fb.writer
     }
 
     pub fn text_writer(

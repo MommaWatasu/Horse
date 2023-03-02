@@ -344,7 +344,10 @@ impl Device {
                 };
                 Ok(mouse_driver)
             }
-            _ => Err(StatusCode::UnsupportedInterface),
+            (c, s, p) => {
+                crate::debug!("identifer: ({}, {}, {})", c, s, p);
+                Err(StatusCode::UnsupportedInterface)
+            },
         }
     }
 

@@ -108,7 +108,6 @@ impl BitmapMemoryManager {
     }
 
     pub fn mark_allocated(&mut self, start_frame: FrameID, n_frames: usize) {
-        //debug!("start_id: {}, frames: {}", start_frame.id(), n_frames);
         for i in 0..n_frames {
             self.set_bit(FrameID::new(start_frame.id() + i), true);
         }

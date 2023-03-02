@@ -6,15 +6,11 @@ use core::fmt::Write;
 use spin::{
     Mutex,
     MutexGuard,
-    Once
 };
 
 use crate::{
     ascii_font::FONTS,
-    graphics::{
-        PixelColor,
-        PixelWriter
-    },
+    graphics::PixelColor,
     window::WindowWriter
 };
 
@@ -26,7 +22,7 @@ pub const MARGIN: usize = 8;
 #[derive(Debug, Clone)]
 pub struct Console {
     pixel_writer: usize,
-    buffer: Vec<Vec<char>>,
+    pub buffer: Vec<Vec<char>>,
     size: (usize, usize),
     fg_color: PixelColor,
     bg_color: PixelColor,
@@ -36,7 +32,8 @@ pub struct Console {
 }
 
 impl Console {
-    fn new(pixel_writer: &WindowWriter, resolution: (usize, usize), fg_color: &PixelColor, bg_color: &PixelColor) -> Self {
+    pub fn new(pixel_writer: &WindowWriter, resolution: (usize, usize), fg_color: &PixelColor, bg_color: &PixelColor) -> Self {
+        clear(pixel_writer, bg_color);
         let size = (resolution.0 / MARGIN, resolution.1 / LINE_HEIGHT);
         Console {
             pixel_writer: pixel_writer as *const WindowWriter as usize,
@@ -126,13 +123,11 @@ impl Write for Console {
     }
 }
 
-use crate::graphics::Graphics;
 fn clear(pixel_writer: &WindowWriter, color: &PixelColor) {
     let (width, height) = pixel_writer.size();
     for y in 0..height {
         for x in 0..width {
             pixel_writer.write(x, y, color);
-            //Graphics::instance().pixel_writer().write(x, y, color);
         }
     }
 }
@@ -146,7 +141,6 @@ fn write_ascii(pixel_writer: &WindowWriter, x: usize, y: usize, c: char, color: 
         for dx in 0..8 {
             if (line << dx) & 0x80 != 0 {
                 pixel_writer.write(x + dx, y + dy, &color);
-                //Graphics::instance().pixel_writer().write(x + dx, y + dy, &color);
             }
         }
     }

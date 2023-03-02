@@ -2,21 +2,30 @@ use alloc::{
     vec::Vec,
     vec
 };
+use core::ptr::null_mut;
+
 use crate::{
     container_of,
+    framebuffer::{
+        FrameBuffer,
+        FrameBufferConfig
+    },
     graphics::{
         Coord,
         PixelColor,
         PixelWriter
     }
 };
+use libloader::PixelFormat;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WindowWriter(usize, usize);
 
 impl WindowWriter {
     pub fn write(&self, x: usize, y: usize, c: &PixelColor) {
-        container_of!(self, mutable Window, writer).data[x][y] = *c;
+        let window = container_of!(self, mutable Window, writer);
+        window.data[x][y] = *c;
+        window.shadow_buffer.writer.write(x, y, c);
     }
 
     pub fn size(&self) -> (usize, usize) {
@@ -27,19 +36,28 @@ impl WindowWriter {
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct Window {
     pub writer: WindowWriter,
-    pub width: usize,
-    pub height: usize,
-    pub data: Vec<Vec<PixelColor>>,
+    width: usize,
+    height: usize,
+    data: Vec<Vec<PixelColor>>,
+    pub shadow_buffer: FrameBuffer,
     transparent_color: Option<PixelColor>
 }
 
 impl Window {
-    pub fn new(width: usize, height: usize) -> Self {
+    pub fn new(width: usize, height: usize, format: PixelFormat) -> Self {
+        let config = FrameBufferConfig {
+            fb: null_mut(),
+            stride: 0,
+            resolution: (width, height),
+            format
+        };
+        let mut shadow_buffer = FrameBuffer::new(config);
         Self {
             writer: WindowWriter(width, height),
             width,
             height,
             data: vec![vec![PixelColor::default(); height]; width],
+            shadow_buffer,
             transparent_color:  None
         }
     }
@@ -55,8 +73,6 @@ impl Window {
     }
 
     pub fn draw_to<T: PixelWriter>(&self, writer: &mut T, position: Coord) {
-        use crate::Graphics;
-        let graphics = Graphics::instance();
         if self.transparent_color.is_none() {
             for y in 0..self.height {
                 for x in 0..self.width {

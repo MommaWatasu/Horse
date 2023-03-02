@@ -2,16 +2,12 @@ use alloc::{
     vec::Vec,
     vec
 };
-use alloc::alloc::*;
 use core::{
     mem::{align_of, size_of},
     ptr::{NonNull, slice_from_raw_parts_mut},
 };
 use spin::Once;
-use crate::{
-    StatusCode,
-    trace
-};
+use crate::trace;
 
 const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
 pub static mut USB_ALLOC: Once<USBAlloc<MEM_POOL_SIZE>> = Once::new();

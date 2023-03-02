@@ -1,10 +1,12 @@
-#![feature(abi_efiapi)]
 #![feature(alloc_error_handler)]
 #![feature(vec_into_raw_parts)]//into_raw_part
 #![no_std]
 #![no_main]
 
+mod fb;
 mod file;
+
+use fb::*;
 use file::*;
 
 #[macro_use]
@@ -14,10 +16,7 @@ use alloc::{
     vec::Vec
 };
 extern crate libloader;
-use libloader::{
-    FrameBufferInfo,
-    MemoryMap
-};
+use libloader::MemoryMap;
 use log::error;
 use goblin::elf;
 use core::{
@@ -34,7 +33,7 @@ use core::{
 use uefi::{
     prelude::*,
     proto::{
-        console::gop::{GraphicsOutput, Mode, ModeInfo},
+        console::gop::{GraphicsOutput, Mode},
         media::{
             file::{
                 Directory, File, RegularFile
@@ -46,7 +45,6 @@ use uefi::{
         AllocateType,
         EventType,
         MemoryDescriptor,
-        MemoryType,
         OpenProtocolParams,
         OpenProtocolAttributes,
         Tpl
@@ -91,14 +89,9 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
     }
 
     //make FrameBufferInfo to send to kernel
-    let mut mi = gop.current_mode_info();
-    let mut fb = gop.frame_buffer();
-    let fb_pt = fb.as_mut_ptr();
-    let fb_size = fb.size();
-    let mut fb = FrameBufferInfo {
-        fb: fb_pt,
-        size: fb_size,
-    };
+    let mi = gop.current_mode_info();
+    let fb = gop.frame_buffer();
+    let mut fb_config = FrameBufferConfig::new(fb, mi);
     drop(protocol);
 
     // open file protocol
@@ -115,7 +108,7 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
         transmute::<
             *const (),
             extern "sysv64" fn(
-                fb: *mut FrameBufferInfo, mi: *mut ModeInfo,
+                fb_config: *mut FrameBufferConfig,
                 memmap: *const MemoryMap) -> (),
         >(entry_point_addr as *const ())
     };
@@ -123,7 +116,7 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
     //exit bootservices and get MemoryMap
     let memory_map = exit_boot_services(handler, st);
 
-    kernel_entry(&mut fb, &mut mi, &memory_map);
+    kernel_entry(&mut fb_config, &memory_map);
     uefi::Status::SUCCESS
 }
 
@@ -146,7 +139,6 @@ fn dump(file: &mut RegularFile, bt: &BootServices) {
 }
 
 fn load_kernel(root: &mut Directory, st: &SystemTable<Boot>) -> usize {
-    let mut debug_file = create_file(root, &cstr16!("debug_file.txt"));
     //open kernel file
     let mut kernel_file = open_file(root, &cstr16!("horse-kernel"));
     let buf = read_file_to_vec(&mut kernel_file);
@@ -161,15 +153,10 @@ fn load_kernel(root: &mut Directory, st: &SystemTable<Boot>) -> usize {
         }
         kernel_start = kernel_start.min(ph.p_vaddr);
         kernel_end = kernel_end.max(ph.p_vaddr + ph.p_memsz);
-        fwriteln!(debug_file, "start: {}, end: {}", ph.p_vaddr, ph.p_vaddr + ph.p_memsz);
     }
 
     //allocate pages for kernel file
     let n_of_pages = ((kernel_end - kernel_start + UEFI_PAGE_SIZE - 1) / UEFI_PAGE_SIZE) as usize;
-    fwriteln!(debug_file, "start address is: {:08x}", kernel_start);
-    fwriteln!(debug_file, "end address is: {:08x}", kernel_end);
-    fwriteln!(debug_file, "kernel_size: {:08x}", kernel_end - kernel_start);
-    debug_file.close();
     st.boot_services().allocate_pages(
         AllocateType::Address(kernel_start),
         boot::MemoryType::LOADER_DATA,

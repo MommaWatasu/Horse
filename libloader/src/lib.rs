@@ -88,14 +88,14 @@ impl FrameBufferInfo {
 }
 
 /// thread-safe FrameBuffer used for Layer Manager
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct TSFrameBuffer {
     fb: usize
 }
 
 impl TSFrameBuffer {
-    pub unsafe fn new(ptr: &mut FrameBufferInfo) -> Self {
-        return Self {fb: ptr.as_mut_ptr() as usize}
+    pub unsafe fn new(ptr: *mut u8) -> Self {
+        return Self {fb: ptr as usize}
     }
 
     pub unsafe fn as_mut_ptr(&mut self) -> *mut u8 {
@@ -111,7 +111,7 @@ impl TSFrameBuffer {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u32)]
 pub enum PixelFormat {
     Rgb = 0,
