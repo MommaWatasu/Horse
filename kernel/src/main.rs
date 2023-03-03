@@ -105,22 +105,22 @@ fn welcome_message() {
 }
 
 fn initialize(fb_config: *mut FrameBufferConfig) {
-    unsafe { Graphics::initialize_instance(fb_config) }
+    let fb_config_ref = unsafe { *fb_config };
+    let resolution = fb_config_ref.resolution;
+    unsafe { Graphics::initialize_instance(fb_config_ref) }
     let graphics = Graphics::instance();
-    let shadow_format = unsafe { (*fb_config).format };
-    let resolution = graphics.resolution();
     graphics.clear(&BG_COLOR);
 
-    let mut bgwindow = Arc::new(Window::new(resolution.0, resolution.1, shadow_format));
+    let mut bgwindow = Arc::new(Window::new(resolution.0, resolution.1, fb_config_ref.format));
     let bgwriter = Arc::get_mut(&mut bgwindow).unwrap().writer();
     Console::new(bgwriter, resolution, &FG_COLOR, &BG_COLOR);
     Console::initialize(bgwriter, resolution, &FG_COLOR, &BG_COLOR);
 
-    let mut mouse_window = Arc::new(Window::new(MOUSE_CURSOR_WIDTH, MOUSE_CURSOR_HEIGHT, shadow_format));
+    let mut mouse_window = Arc::new(Window::new(MOUSE_CURSOR_WIDTH, MOUSE_CURSOR_HEIGHT, fb_config_ref.format));
     Arc::get_mut(&mut mouse_window).unwrap().set_transparent_color(Some(MOUSE_TRANSPARENT_COLOR));
     draw_mouse_cursor(Arc::get_mut(&mut mouse_window).unwrap().writer(), Coord::new(0, 0));
 
-    unsafe { LAYER_MANAGER.call_once(|| LayerManager::new(graphics.pixel_writer())) };
+    unsafe { LAYER_MANAGER.call_once(|| LayerManager::new(fb_config_ref)) };
     let layer_manager = unsafe { LAYER_MANAGER.get_mut().unwrap() };
 
     let bglayer_id = layer_manager.new_layer()

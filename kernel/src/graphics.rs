@@ -151,8 +151,8 @@ impl Graphics {
     ///
     /// # Safety
     /// This is unsafe : handle raw pointers.
-    pub unsafe fn initialize_instance(fb_config: *mut FrameBufferConfig) {
-        RAW_GRAPHICS.write(Graphics::new(*fb_config).clone());
+    pub unsafe fn initialize_instance(fb_config: FrameBufferConfig) {
+        RAW_GRAPHICS.write(Graphics::new(fb_config));
         GRAPHICS_INITIALIZED = true;
     }
 

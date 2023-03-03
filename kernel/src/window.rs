@@ -72,14 +72,11 @@ impl Window {
         &self.data[x][y]
     }
 
-    pub fn draw_to<T: PixelWriter>(&self, writer: &mut T, position: Coord) {
+    pub fn draw_to(&self, fb: &mut FrameBuffer, position: Coord) {
         if self.transparent_color.is_none() {
-            for y in 0..self.height {
-                for x in 0..self.width {
-                    writer.write(position.x + x, position.y + y, self.at(x, y))
-                }
-            }
+            unsafe { fb.copy(position, &self.shadow_buffer); }
         } else {
+            let mut writer = fb.writer;
             let tc = &self.transparent_color.unwrap();
             let mut c: &PixelColor;
             for y in 0..self.height {

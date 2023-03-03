@@ -14,11 +14,13 @@ use crate::{
         FrameBufferWriter,
         PixelWriter
     },
+    FrameBuffer,
+    FrameBufferConfig,
     window::Window
 };
 use spin::Once;
 
-pub static mut LAYER_MANAGER: Once<LayerManager<FrameBufferWriter>> = Once::new();
+pub static mut LAYER_MANAGER: Once<LayerManager> = Once::new();
 
 #[derive(Clone, Default, PartialEq)]
 pub struct Layer {
@@ -54,8 +56,8 @@ impl Layer {
         return self
     }
 
-    pub fn draw_to<T: PixelWriter>(&self, writer: &mut T) {
-        self.window.draw_to(writer, self.pos);
+    pub fn draw_to(&self, fb: &mut FrameBuffer) {
+        self.window.draw_to(fb, self.pos);
     }
 }
 
@@ -75,17 +77,17 @@ impl LayerHeight {
     }
 }
 
-pub struct LayerManager<T: PixelWriter> {
-    writer: T,
+pub struct LayerManager {
+    fb: FrameBuffer,
     layers: Vec<Arc<RefCell<Layer>>>,
     layer_stack: Vec<Arc<RefCell<Layer>>>,
     layer_id: u32
 }
 
-impl<T: PixelWriter> LayerManager<T> {
-    pub fn new(writer: T) -> Self {
+impl LayerManager {
+    pub fn new(fb_config: FrameBufferConfig) -> Self {
         return Self {
-            writer,
+            fb: FrameBuffer::new(fb_config),
             layers: vec![],
             layer_stack: vec![],
             layer_id: 0
@@ -101,7 +103,7 @@ impl<T: PixelWriter> LayerManager<T> {
 
     pub fn draw(&mut self) {
         for layer in &self.layer_stack {
-            layer.borrow().draw_to(&mut self.writer);
+            layer.borrow().draw_to(&mut self.fb);
         }
     }
 

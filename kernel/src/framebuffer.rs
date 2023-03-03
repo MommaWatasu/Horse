@@ -75,11 +75,6 @@ impl FrameBuffer {
             }
         };
 
-        use crate::{
-            graphics::PixelWriter,
-            PixelColor
-        };
-
         return Self {
             config,
             buffer,
