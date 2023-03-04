@@ -113,7 +113,6 @@ fn initialize(fb_config: *mut FrameBufferConfig) {
 
     let mut bgwindow = Arc::new(Window::new(resolution.0, resolution.1, fb_config_ref.format));
     let bgwriter = Arc::get_mut(&mut bgwindow).unwrap().writer();
-    Console::new(bgwriter, resolution, &FG_COLOR, &BG_COLOR);
     Console::initialize(bgwriter, resolution, &FG_COLOR, &BG_COLOR);
 
     let mut mouse_window = Arc::new(Window::new(MOUSE_CURSOR_WIDTH, MOUSE_CURSOR_HEIGHT, fb_config_ref.format));

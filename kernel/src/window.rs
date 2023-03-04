@@ -28,6 +28,11 @@ impl WindowWriter {
         window.shadow_buffer.writer.write(x, y, c);
     }
 
+    pub fn move_buffer(&self, dst: Coord, src: Coord, size: Coord) {
+        let window = container_of!(self, mutable Window, writer);
+        unsafe { window.shadow_buffer.move_buffer(dst, src, size); }
+    }
+
     pub fn size(&self) -> (usize, usize) {
         (self.0, self.1)
     }

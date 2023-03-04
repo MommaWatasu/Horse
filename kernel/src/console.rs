@@ -10,7 +10,10 @@ use spin::{
 
 use crate::{
     ascii_font::FONTS,
-    graphics::PixelColor,
+    graphics::{
+        Coord,
+        PixelColor
+    },
     window::WindowWriter
 };
 
@@ -75,21 +78,8 @@ impl Console {
         if self.cursor_row < self.rows() - 1 {
             self.cursor_row += 1;
         } else {
-            clear(self.pixel_writer(), &self.bg_color);
-            self.buffer_row_offset = (self.buffer_row_offset + 1) % self.rows();
-            for row in 0..(self.rows() - 1) {
-                for column in 0..(self.columns() - 1) {
-                    write_ascii(
-                        self.pixel_writer(),
-                        8 * column + MARGIN,
-                        LINE_HEIGHT * row + MARGIN,
-                        self.buffer[self.actual_row(row)][column],
-                        &self.fg_color,
-                    );
-                }
-            }
-            let cursor_row = self.actual_cursor_row();
-            self.buffer[cursor_row] = vec![0.into(); self.columns() + 1].clone();
+            self.pixel_writer().move_buffer(Coord::new(0, MARGIN), Coord::new(0, LINE_HEIGHT+MARGIN), Coord::new(8 * self.columns(), LINE_HEIGHT * (self.rows()-1)-2));
+            fill_rectangle(self.pixel_writer(), Coord::new(0, LINE_HEIGHT * (self.rows()-1) + MARGIN), Coord::new(8 * self.columns(), 16), &self.bg_color);
         }
     }
     pub fn put_string(&mut self, s: &str) {
@@ -105,8 +95,6 @@ impl Console {
                     c,
                     &self.fg_color,
                 );
-                let row = self.actual_cursor_row();
-                self.buffer[row][self.cursor_column] = c;
                 self.cursor_column += 1;
                 if self.cursor_column == self.columns()-1 {
                     self.newline();
@@ -128,6 +116,14 @@ fn clear(pixel_writer: &WindowWriter, color: &PixelColor) {
     for y in 0..height {
         for x in 0..width {
             pixel_writer.write(x, y, color);
+        }
+    }
+}
+
+fn fill_rectangle(pixel_writer: &WindowWriter, pos: Coord, size: Coord, color: &PixelColor) {
+    for y in 0..size.y {
+        for x in 0..size.x {
+            pixel_writer.write(pos.x + x, pos.y + y, color)
         }
     }
 }
