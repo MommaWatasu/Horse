@@ -67,6 +67,38 @@ pub fn erase_mouse_cursor(position: (usize, usize), limit: (usize, usize), erase
     }
 }
 
+struct CoordDiff {
+    x: i32,
+    y: i32
+}
+
+impl CoordDiff {
+    fn new(diff: (i8, i8)) -> Self {
+        return Self {
+            x: diff.0 as i32,
+            y: diff.1 as i32
+        }
+    }
+
+    fn add(self, pos: Coord) -> Coord {
+        let (mut x, mut y): (i32, i32) = (pos.x as i32, pos.y as i32);
+        if x + self.x < 0 {
+            x = 0;
+        } else {
+            x += self.x;
+        }
+        if y + self.y < 0 {
+            y = 9;
+        } else {
+            y += self.y;
+        }
+        return Coord {
+            x: x as usize,
+            y: y as usize
+        }
+    }
+}
+
 pub struct MouseCursor {
     layer_id: u32,
     erase_color: PixelColor,
@@ -88,18 +120,14 @@ impl MouseCursor {
     
     pub fn pos(&mut self) -> Coord { self.position }
 
-    pub fn move_relative(&mut self, displacement: Coord, screen_size: Coord) {
-        let mut new_pos = self.position + displacement;
+    pub fn move_relative(&mut self, displacement: (i8, i8), screen_size: Coord) {
+        let mut new_pos = CoordDiff::new(displacement).add(self.position);
         new_pos = new_pos.elem_min(screen_size - Coord::from_tuple((1, 1)));
         new_pos = new_pos.elem_max(Coord::from_tuple((0, 0)));
         self.position = new_pos;
 
         let layer_manager = unsafe { LAYER_MANAGER.get_mut().unwrap() };
         layer_manager.move_absolute(self.layer_id, new_pos);
-        start_lapic_timer();
         layer_manager.draw();
-        let elapsed = lapic_timer_elapsed();
-        stop_lapic_timer();
-        crate::println!("Mouse Interruption: elapsed = {}", elapsed);
     }
 }

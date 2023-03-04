@@ -39,11 +39,11 @@ impl HidMouseDriver {
 
     pub fn update(&mut self) {
         let _button = self.hid_driver.buffer()[0];
-        let dx = self.hid_driver.buffer()[1] as usize;
-        let dy = self.hid_driver.buffer()[2] as usize;
+        let dx = self.hid_driver.buffer()[1] as i8;
+        let dy = self.hid_driver.buffer()[2] as i8;
 
         let mut cursor = MOUSE_CURSOR.lock();
-        cursor.move_relative(Coord::new(dx, dy), self.screen_size);
+        cursor.move_relative((dx, dy), self.screen_size);
     }
 }
 impl Driver for HidMouseDriver {
