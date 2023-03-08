@@ -78,8 +78,8 @@ impl Console {
         if self.cursor_row < self.rows() - 1 {
             self.cursor_row += 1;
         } else {
-            self.pixel_writer().move_buffer(Coord::new(0, MARGIN), Coord::new(0, LINE_HEIGHT+MARGIN), Coord::new(8 * self.columns(), LINE_HEIGHT * (self.rows()-1)-2));
-            fill_rectangle(self.pixel_writer(), Coord::new(0, LINE_HEIGHT * (self.rows()-1) + MARGIN), Coord::new(8 * self.columns(), 16), &self.bg_color);
+            self.pixel_writer().move_buffer(Coord::new(0, 0), Coord::new(0, LINE_HEIGHT), Coord::new(8 * self.columns(), LINE_HEIGHT * (self.rows()-1)));
+            fill_rectangle(self.pixel_writer(), Coord::new(0, LINE_HEIGHT * (self.rows()-1)), Coord::new(8 * self.columns(), LINE_HEIGHT), &self.bg_color);
         }
     }
     pub fn put_string(&mut self, s: &str) {
@@ -90,8 +90,8 @@ impl Console {
             if self.cursor_column < self.columns() && c as u32 >= 0x20 {
                 write_ascii(
                     self.pixel_writer(),
-                    8 * self.cursor_column + MARGIN,
-                    LINE_HEIGHT * self.cursor_row + MARGIN,
+                    MARGIN * self.cursor_column,
+                    LINE_HEIGHT * self.cursor_row,
                     c,
                     &self.fg_color,
                 );
