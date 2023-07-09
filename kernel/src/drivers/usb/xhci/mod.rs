@@ -32,7 +32,7 @@ use crate::{
     status::{
         StatusCode, PortConfigPhase, Result
     },
-    usb::memory::*,
+    drivers::usb::memory::*,
     volatile::Volatile
 };
 

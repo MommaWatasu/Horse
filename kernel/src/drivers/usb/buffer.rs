@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 use core::slice::{from_raw_parts, from_raw_parts_mut, SliceIndex};
-use crate::usb::memory::*;
+use super::memory::*;
 
 pub struct Buffer {
     ptr: Option<NonNull<u8>>,

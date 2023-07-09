@@ -14,7 +14,7 @@ use crate::{
         Result
     },
     trace, warn, info,
-    usb::{
+    drivers::usb::{
         array_map::{
                 ArrayMap,
                 ArrayMapError

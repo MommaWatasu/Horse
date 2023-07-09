@@ -3,6 +3,7 @@ use x86_64::instructions::port::{Port, PortWriteOnly};
 use crate::{
     status::StatusCode,
     bit_getter, bit_setter,
+    status_log, trace
 };
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -138,6 +139,33 @@ impl<'a> Iterator for PciDevicesIter<'a> {
             Some(r)
         }
     }
+}
+
+pub fn find_pci_devices() -> PciDevices {
+    let pci_devices: PciDevices;
+    match scan_all_bus() {
+        Ok(v) => {
+            pci_devices = v;
+            status_log!(StatusCode::Success, "Scanning Bus")
+        },
+        Err(_code) => {
+            panic!("Scanning Bus");
+        }
+    }
+    for dev in pci_devices.iter() {
+        let vendor_id = read_vendor_id(dev.bus, dev.device, dev.function);
+        let class_code = read_class_code(dev.bus, dev.device, dev.function);
+        trace!(
+            "{}.{}.{}:, vend {:04x}, class {}, head {:02x}",
+            dev.bus,
+            dev.device,
+            dev.function,
+            vendor_id,
+            class_code,
+            dev.header_type
+        );
+    }
+    pci_devices
 }
 
 fn read_msi_capability(dev: &Device, cap_addr: u8) -> MSICapability {

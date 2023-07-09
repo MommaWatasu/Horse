@@ -1,6 +1,6 @@
 use core::mem::transmute;
 use crate::{bit_getter, bit_setter};
-use crate::usb::{
+use crate::drivers::usb::{
     endpoint::EndpointId,
     setupdata::SetupData
 };

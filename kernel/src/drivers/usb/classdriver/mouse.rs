@@ -5,7 +5,7 @@ use crate::{
     Graphics,
     PixelColor,
     graphics::Coord,
-    usb::{
+    drivers::usb::{
         endpoint::{
             EndpointId,
             EndpointConfig

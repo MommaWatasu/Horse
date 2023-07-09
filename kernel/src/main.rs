@@ -9,9 +9,11 @@ mod memory_allocator;
 mod paging;
 mod queue;
 mod segment;
+
+pub mod bit_macros;
 pub mod console;
 pub mod container_of;
-pub mod bit_macros;
+pub mod drivers;
 pub mod fixed_vec;
 pub mod framebuffer;
 pub mod graphics;
@@ -20,10 +22,8 @@ pub mod layer;
 pub mod log;
 pub mod memory_manager;
 pub mod mouse;
-pub mod pci;
 pub mod status;
 pub mod timer;
-pub mod usb;
 pub mod volatile;
 pub mod window;
 
@@ -41,15 +41,17 @@ use mouse::{
     MOUSE_TRANSPARENT_COLOR,
     draw_mouse_cursor
 };
-use pci::*;
+use drivers::{
+    pci::*,
+    usb::{
+        memory::*,
+        classdriver::mouse::MOUSE_CURSOR,
+        xhci::Controller
+    }
+};
 use queue::ArrayQueue;
 use status::StatusCode;
 use timer::*;
-use usb::{
-    memory::*,
-    classdriver::mouse::MOUSE_CURSOR,
-    xhci::Controller
-};
 use window::*;
 
 extern crate libloader;
@@ -138,33 +140,6 @@ fn initialize(fb_config: *mut FrameBufferConfig) {
     layer_manager.up_down(bglayer_id, LayerHeight::Height(0));
     layer_manager.up_down(mouse_layer_id, LayerHeight::Height(1));
     layer_manager.draw();
-}
-
-fn find_pci_devices() -> PciDevices {
-    let pci_devices: PciDevices;
-    match scan_all_bus() {
-        Ok(v) => {
-            pci_devices = v;
-            status_log!(StatusCode::Success, "Scanning Bus")
-        },
-        Err(_code) => {
-            panic!("Scanning Bus");
-        }
-    }
-    for dev in pci_devices.iter() {
-        let vendor_id = read_vendor_id(dev.bus, dev.device, dev.function);
-        let class_code = read_class_code(dev.bus, dev.device, dev.function);
-        trace!(
-            "{}.{}.{}:, vend {:04x}, class {}, head {:02x}",
-            dev.bus,
-            dev.device,
-            dev.function,
-            vendor_id,
-            class_code,
-            dev.header_type
-        );
-    }
-    pci_devices
 }
 
 fn find_xhc(pci_devices: &PciDevices) -> Option<Device> {

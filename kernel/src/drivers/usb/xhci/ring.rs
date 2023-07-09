@@ -11,7 +11,7 @@ use crate::{
     bit_getter,
     bit_setter,
     trace,
-    usb::memory::*,
+    drivers::usb::memory::*,
     volatile::Volatile
 };
 use super::{

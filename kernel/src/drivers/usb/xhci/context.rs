@@ -1,6 +1,6 @@
 use core::mem::size_of;
 use crate::{bit_setter, bit_getter};
-use crate::usb::{
+use crate::drivers::usb::{
     endpoint::{
         EndpointId,
     }

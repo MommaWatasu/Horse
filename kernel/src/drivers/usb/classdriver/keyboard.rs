@@ -1,7 +1,7 @@
 use core::ptr::NonNull;
 use crate::{
     status::Result,
-    usb::{
+    drivers::usb::{
         endpoint::{
             EndpointId,
             EndpointConfig
