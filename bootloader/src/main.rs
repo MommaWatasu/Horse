@@ -32,13 +32,12 @@ use core::{
 };
 use uefi::{
     prelude::*,
+    fs::{
+        FileSystem,
+        Path
+    },
     proto::{
         console::gop::{GraphicsOutput, Mode},
-        media::{
-            file::{
-                Directory, File, RegularFile
-            },
-        }
     },
     table::boot::{
         self,
@@ -72,7 +71,7 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
     let gop = protocol.deref_mut();
 
     unsafe {
-        uefi::alloc::init(bt);
+        uefi::allocator::init(bt);
         bt.create_event(
             EventType::SIGNAL_EXIT_BOOT_SERVICES,
             Tpl::NOTIFY,
@@ -95,15 +94,16 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
     drop(protocol);
 
     // open file protocol
-    let mut root = open_root(bt, handler);
+    let mut fs = open_root(bt, handler);
 
     //write memory map
-    let mut mmap_file = create_file(&mut root, &cstr16!("memmap"));
+    let mut mmap_file = FileBuffer::new();
     dump(&mut mmap_file, bt);
-    mmap_file.close();
+    mmap_file.flush(&mut fs, cstr16!("memmap"));
 
     //load kernel file
-    let entry_point_addr = load_kernel(&mut root, &st);
+    let entry_point_addr = load_kernel(&mut fs, &st);
+    drop(fs);
     let kernel_entry = unsafe {
         transmute::<
             *const (),
@@ -114,34 +114,32 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
     };
 
     //exit bootservices and get MemoryMap
-    let memory_map = exit_boot_services(handler, st);
+    let memory_map = exit_boot_services(st);
 
     kernel_entry(&mut fb_config, &memory_map);
     uefi::Status::SUCCESS
 }
 
-fn dump(file: &mut RegularFile, bt: &BootServices) {
+fn dump(file: &mut FileBuffer, bt: &BootServices) {
     let max_mmap_size = bt.memory_map_size().map_size + BUFFER_MARGIN;
     let mut mmap_buf = vec![0; max_mmap_size];
-    let (_, descriptors) = bt.memory_map(&mut mmap_buf).expect("failed to get memory map");
-    fwriteln!(file, "Index, Type, PhysicalStart, NumberOfPages, Attribute");
-    for (i, d) in descriptors.enumerate() {
-        fwriteln!(
-            file,
+    let memory_map = bt.memory_map(&mut mmap_buf).expect("failed to get memory map");
+    file.writeln("Index, Type, PhysicalStart, NumberOfPages, Attribute");
+    for (i, d) in memory_map.entries().enumerate() {
+        file.writeln(&format!(
             "{}, {:?}, {:08x}, {:x}, {:x}",
             i,
             d.ty,
             d.phys_start,
             d.page_count,
             d.att.bits() & 0xfffff
-        )
+        ))
     }
 }
 
-fn load_kernel(root: &mut Directory, st: &SystemTable<Boot>) -> usize {
+fn load_kernel(fs: &mut FileSystem, st: &SystemTable<Boot>) -> usize {
     //open kernel file
-    let mut kernel_file = open_file(root, &cstr16!("horse-kernel"));
-    let buf = read_file_to_vec(&mut kernel_file);
+    let buf = fs.read(Path::new(&cstr16!("horse-kernel"))).expect("failed to read kernel file");
     let elf = elf::Elf::parse(&buf).expect("failed to parse ELF");
 
     //find kernel_start and kernel_end
@@ -196,18 +194,14 @@ fn set_gop_mode(gop: &mut GraphicsOutput) {
     }
 }
 
-fn exit_boot_services(handler: Handle, st: SystemTable<Boot>) -> MemoryMap {
+fn exit_boot_services(st: SystemTable<Boot>) -> MemoryMap {
     let mmap_size = st.boot_services().memory_map_size();
-    let max_mmap_size = mmap_size.map_size + BUFFER_MARGIN;
-    let mmap_buf = vec![0; max_mmap_size].leak();
     let mut descriptors = Vec::with_capacity(mmap_size.map_size/mmap_size.entry_size);
-    let (_st, raw_descriptors) = st
-        .exit_boot_services(handler, mmap_buf)
-        .expect("failed to exit boot services");
+    let (_st, memory_map) = st.exit_boot_services();
 
     //make MemoryMap to send to kernel
     let memory_map = {
-        for d in raw_descriptors {
+        for d in memory_map.entries() {
             descriptors.push(*d);
         }
         let (ptr, _, _) = descriptors.into_raw_parts();
@@ -217,7 +211,7 @@ fn exit_boot_services(handler: Handle, st: SystemTable<Boot>) -> MemoryMap {
 }
 
 unsafe extern "efiapi" fn exit_signal(_: uefi::Event, _: Option<NonNull<c_void>>) {
-    uefi::alloc::exit_boot_services();
+    uefi::allocator::exit_boot_services();
 }
 
 #[alloc_error_handler]
