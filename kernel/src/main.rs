@@ -47,7 +47,8 @@ use drivers::{
         memory::*,
         classdriver::mouse::MOUSE_CURSOR,
         xhci::Controller
-    }
+    },
+    video::qemu::*
 };
 use queue::ArrayQueue;
 use status::StatusCode;
@@ -160,6 +161,22 @@ fn find_xhc(pci_devices: &PciDevices) -> Option<Device> {
     xhc_dev
 }
 
+fn find_gpu(pci_devices: &PciDevices) {
+    const GPU_CLASS: ClassCode = ClassCode {
+        base: 0x03,
+        sub: 0x20,
+        interface: 0x00
+    };
+    for dev in pci_devices.iter() {
+        if dev.class_code.base == 0x03 {
+            setup_qemu_card(&dev);
+            let gpu_bar = read_bar64(&dev, 2).unwrap();
+            let gpu_mmio_base = (gpu_bar & !0xf) as usize;
+            debug!("bar2-3: {:?}", gpu_bar as *mut u32);
+        }
+    }
+}
+
 fn switch_echi_to_xhci(_xhc_dev: &Device, pci_devices: &PciDevices) {
     let ehciclass = ClassCode {
         base: 0x0c,
@@ -194,8 +211,10 @@ extern "sysv64" fn kernel_main_virt(fb_config: *mut FrameBufferConfig, memory_ma
     initialize(fb_config);
 
     welcome_message();
+    unsafe { debug!("{:?}", (*fb_config).fb) };
 
     let pci_devices = find_pci_devices();
+    find_gpu(&pci_devices);
     let xhc_dev = find_xhc(&pci_devices);
     let xhc_dev = match xhc_dev {
         Some(xhc_dev) => {
@@ -226,7 +245,7 @@ extern "sysv64" fn kernel_main_virt(fb_config: *mut FrameBufferConfig, memory_ma
     ), "Configure msi");
     
     switch_echi_to_xhci(&xhc_dev, &pci_devices);
-    let xhc_bar = read_bar(&xhc_dev, 0).unwrap();
+    let xhc_bar = read_bar64(&xhc_dev, 0).unwrap();
     let xhc_mmio_base = (xhc_bar & !0xf) as usize;
     let mut xhc = unsafe { Controller::new(xhc_mmio_base).unwrap() };//there is a problem here
     debug!("xHC initalized");

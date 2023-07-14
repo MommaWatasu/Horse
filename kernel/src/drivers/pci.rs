@@ -3,7 +3,7 @@ use x86_64::instructions::port::{Port, PortWriteOnly};
 use crate::{
     status::StatusCode,
     bit_getter, bit_setter,
-    status_log, trace
+    status_log, trace, debug
 };
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -155,7 +155,7 @@ pub fn find_pci_devices() -> PciDevices {
     for dev in pci_devices.iter() {
         let vendor_id = read_vendor_id(dev.bus, dev.device, dev.function);
         let class_code = read_class_code(dev.bus, dev.device, dev.function);
-        trace!(
+        debug!(
             "{}.{}.{}:, vend {:04x}, class {}, head {:02x}",
             dev.bus,
             dev.device,
@@ -296,7 +296,7 @@ fn read_capability_header(dev: &Device, addr: u8) -> CapabilityHeader {
     return header;
 }
 
-pub fn read_bar(device: &Device, bar_index: usize) -> Result<u64, StatusCode> {
+pub fn read_bar64(device: &Device, bar_index: usize) -> Result<u64, StatusCode> {
     if bar_index >= 6 {
         return Err(StatusCode::IndexOutOfRange);
     }
@@ -313,6 +313,15 @@ pub fn read_bar(device: &Device, bar_index: usize) -> Result<u64, StatusCode> {
 
     let bar_upper: u32 = PCI_PORT.lock().read(device.bus, device.device, device.function, u8::from(addr+4));
     return Ok(bar as u64 | (bar_upper as u64) << 32);
+}
+
+pub fn read_bar32(device: &Device, bar_index: usize) -> Result<u32, StatusCode> {
+    if bar_index >= 7 {
+        return Err(StatusCode::IndexOutOfRange);
+    }
+    let addr: u8 = calc_bar_address(bar_index);
+    let bar: u32 = read_conf_reg(device, addr);
+    return Ok(bar);
 }
 
 pub fn is_singleton_function_device(header_type: u8) -> bool {
