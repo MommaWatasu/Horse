@@ -2,7 +2,6 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 #![feature(core_intrinsics)]
-#![feature(default_free_fn)]
 
 mod ascii_font;
 mod memory_allocator;

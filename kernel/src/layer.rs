@@ -3,10 +3,7 @@ use alloc::{
     vec::Vec,
     vec
 };
-use core::{
-    cell::RefCell,
-    default::default
-};
+use core::cell::RefCell;
 use crate::{
     error,
     graphics::{
@@ -33,7 +30,8 @@ impl Layer {
     pub fn new(id: u32) -> Self {
         Self {
             id,
-            ..default()
+            pos: Default::default(),
+            window: Default::default()
         }
     }
 
