@@ -9,6 +9,7 @@ edition = "2021"
 x86_64 = "0.14.10"
 spin = { version = "0.9.8", features = ["lock_api", "mutex", "once"] }
 libloader = {path = "../libloader"}
+uefi = { version = "0.24.0" }
 
 [profile.dev]
 panic="abort"

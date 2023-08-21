@@ -4,7 +4,6 @@ use crate::{
     graphics::Coord,
     layer::LAYER_MANAGER,
     WindowWriter,
-    timer::*
 };
 pub const MOUSE_CURSOR_HEIGHT: usize = 24;
 pub const MOUSE_CURSOR_WIDTH: usize = 15;

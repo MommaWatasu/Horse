@@ -39,14 +39,17 @@ use uefi::{
     proto::{
         console::gop::{GraphicsOutput, Mode},
     },
-    table::boot::{
-        self,
-        AllocateType,
-        EventType,
-        MemoryDescriptor,
-        OpenProtocolParams,
-        OpenProtocolAttributes,
-        Tpl
+    table::{
+        Runtime,
+        boot::{
+            self,
+            AllocateType,
+            EventType,
+            MemoryDescriptor,
+            OpenProtocolParams,
+            OpenProtocolAttributes,
+            Tpl,
+        },
     },
 };
 
@@ -108,15 +111,16 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
         transmute::<
             *const (),
             extern "sysv64" fn(
+                st: SystemTable<Runtime>,
                 fb_config: *mut FrameBufferConfig,
                 memmap: *const MemoryMap) -> (),
         >(entry_point_addr as *const ())
     };
 
     //exit bootservices and get MemoryMap
-    let memory_map = exit_boot_services(st);
+    let (st, memory_map) = exit_boot_services(st);
 
-    kernel_entry(&mut fb_config, &memory_map);
+    kernel_entry(st, &mut fb_config, &memory_map);
     uefi::Status::SUCCESS
 }
 
@@ -194,10 +198,10 @@ fn set_gop_mode(gop: &mut GraphicsOutput) {
     }
 }
 
-fn exit_boot_services(st: SystemTable<Boot>) -> MemoryMap {
+fn exit_boot_services(st: SystemTable<Boot>) -> (SystemTable<Runtime>, MemoryMap) {
     let mmap_size = st.boot_services().memory_map_size();
     let mut descriptors = Vec::with_capacity(mmap_size.map_size/mmap_size.entry_size);
-    let (_st, memory_map) = st.exit_boot_services();
+    let (st, memory_map) = st.exit_boot_services();
 
     //make MemoryMap to send to kernel
     let memory_map = {
@@ -207,7 +211,7 @@ fn exit_boot_services(st: SystemTable<Boot>) -> MemoryMap {
         let (ptr, _, _) = descriptors.into_raw_parts();
         MemoryMap::new(ptr, mmap_size)
     };
-    return memory_map;
+    return (st, memory_map);
 }
 
 unsafe extern "efiapi" fn exit_signal(_: uefi::Event, _: Option<NonNull<c_void>>) {

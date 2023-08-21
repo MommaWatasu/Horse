@@ -8,7 +8,8 @@ pub static IDT: Mutex<InterruptDescriptorTable> =
     Mutex::new(InterruptDescriptorTable::new());
 
 pub enum InterruptVector {
-    KXHCI = 0x40
+    Xhci = 0x40,
+    LAPICTimer = 0x41
 }
 
 pub unsafe fn notify_end_of_interrupt() {

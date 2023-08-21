@@ -3,6 +3,7 @@
 #![feature(abi_x86_interrupt)]
 #![feature(core_intrinsics)]
 
+mod acpi;
 mod ascii_font;
 mod memory_allocator;
 mod paging;
@@ -22,10 +23,10 @@ pub mod log;
 pub mod memory_manager;
 pub mod mouse;
 pub mod status;
-pub mod timer;
 pub mod volatile;
 pub mod window;
 
+use acpi::*;
 use console::Console;
 use framebuffer::*;
 use graphics::*;
@@ -42,6 +43,7 @@ use mouse::{
 };
 use drivers::{
     pci::*,
+    timer::*,
     usb::{
         memory::*,
         classdriver::mouse::MOUSE_CURSOR,
@@ -51,7 +53,6 @@ use drivers::{
 };
 use queue::ArrayQueue;
 use status::StatusCode;
-use timer::*;
 use window::*;
 
 extern crate libloader;
@@ -76,6 +77,10 @@ use x86_64::{
     },
     structures::idt::InterruptStackFrame
 };
+use uefi::table::{
+    SystemTable,
+    Runtime
+};
 
 const BG_COLOR: PixelColor = PixelColor(153, 76, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
@@ -83,11 +88,12 @@ const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
 static XHC: Once<usize> = Once::new();
 
 #[derive(Clone, Copy, Debug)]
-enum Message {
+pub enum Message {
     NoInterruption,
-    InterruptXHCI
+    InterruptXHCI,
+    TimerTimeout{ timeout: u64, value: i32 }
 }
-static INTERRUPTION_QUEUE: Mutex<ArrayQueue<Message, 32>> = Mutex::new(ArrayQueue::new());
+pub static INTERRUPTION_QUEUE: Mutex<ArrayQueue<Message, 32>> = Mutex::new(ArrayQueue::new());
 #[global_allocator]
 static ALLOCATOR: KernelMemoryAllocator = KernelMemoryAllocator::new();
 
@@ -176,6 +182,14 @@ fn find_gpu(pci_devices: &PciDevices) {
     }
 }
 
+fn find_fs(pci_devices: &PciDevices) {
+    for dev in pci_devices.iter() {
+        if dev.class_code.base == 0x01 {
+            println!("OK")
+        }
+    }
+}
+
 fn switch_echi_to_xhci(_xhc_dev: &Device, pci_devices: &PciDevices) {
     let ehciclass = ClassCode {
         base: 0x0c,
@@ -197,8 +211,13 @@ extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
     unsafe { notify_end_of_interrupt(); }
 }
 
+extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
+    lapic_timer_on_interrupt();
+    unsafe { notify_end_of_interrupt(); }
+}
+
 #[no_mangle]
-extern "sysv64" fn kernel_main_virt(fb_config: *mut FrameBufferConfig, memory_map: *const MemoryMap) -> ! {
+extern "sysv64" fn kernel_main_virt(st: SystemTable<Runtime>, fb_config: *mut FrameBufferConfig, memory_map: *const MemoryMap) -> ! {
     //setup memory allocator
     segment::initialize();
     unsafe { paging::initialize(); }
@@ -212,7 +231,10 @@ extern "sysv64" fn kernel_main_virt(fb_config: *mut FrameBufferConfig, memory_ma
     welcome_message();
     unsafe { debug!("{:?}", (*fb_config).fb) };
 
+    initialize_acpi(st);
+
     let pci_devices = find_pci_devices();
+    find_fs(&pci_devices);
     find_gpu(&pci_devices);
     let xhc_dev = find_xhc(&pci_devices);
     let xhc_dev = match xhc_dev {
@@ -228,9 +250,12 @@ extern "sysv64" fn kernel_main_virt(fb_config: *mut FrameBufferConfig, memory_ma
             panic!("no xHC device");
         }
     };
-    
+
+    TIMER_MANAGER.lock().get_mut().unwrap().add_timer(100, -1);
+
     //set the IDT entry
-    IDT.lock()[InterruptVector::KXHCI as usize].set_handler_fn(handler_xhci);
+    IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
+    IDT.lock()[InterruptVector::LAPICTimer as usize].set_handler_fn(handler_lapic_timer);
     unsafe { IDT.lock().load_unsafe(); }
     let bsp_local_apic_id: u8 = unsafe { (*(0xFEE00020 as *const u32) >> 24) as u8 };
     debug!("bsp id: {}", bsp_local_apic_id);
@@ -240,7 +265,7 @@ extern "sysv64" fn kernel_main_virt(fb_config: *mut FrameBufferConfig, memory_ma
         bsp_local_apic_id,
         MSITriggerMode::Level,
         MSIDeliveryMode::Fixed,
-        InterruptVector::KXHCI as u8, 0
+        InterruptVector::Xhci as u8, 0
     ), "Configure msi");
     
     switch_echi_to_xhci(&xhc_dev, &pci_devices);
@@ -273,6 +298,10 @@ extern "sysv64" fn kernel_main_virt(fb_config: *mut FrameBufferConfig, memory_ma
                         error!("Error occurs during processing event: {:?}", e);
                     }
                 }
+            },
+            Message::TimerTimeout{ timeout, value } => {
+                println!("Timer timeout: {}", value);
+                TIMER_MANAGER.lock().get_mut().unwrap().add_timer(100, -1);
             }
             Message::NoInterruption => {}
         }
