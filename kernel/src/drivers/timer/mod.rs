@@ -1,6 +1,9 @@
+mod ioapic;
 mod manager;
+pub mod hpet;
 pub mod fftimer;
 
+use hpet::*;
 use manager::*;
 use fftimer::*;
 

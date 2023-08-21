@@ -1,5 +1,9 @@
-use crate::error;
-use super::{PM_TIMER_FREQ, DescriptionHeader};
+use crate::{error, println};
+use super::{
+    PM_TIMER_FREQ,
+    DescriptionHeader,
+    hpet::*
+};
 
 use alloc::string::String;
 use core::{
@@ -7,30 +11,9 @@ use core::{
     ptr::read_unaligned
 };
 
-#[repr(packed, C)]
-struct HpetAddress {
-    address_space_id: u8,
-    register_bit_width: u8,
-    register_bit_offset: u8,
-    reserved: u8,
-    address: u64
-}
-
-#[repr(packed, C)]
-pub struct Hpet {
-    header: DescriptionHeader,
-    hardware_rev_id: u8,
-    divbits: u8,
-    pci_vender_id: u16,
-    address: HpetAddress,
-    hpet_number: u8,
-    minimum_tick: u16,
-    page_protection: u8
-}
-
 //Frequency Fixed Timer
 pub enum FFTimer{ 
-    HPET(Hpet),
+    HPET(HpetController),
     PM(PMTimer)
 }
 
@@ -48,7 +31,7 @@ impl FFTimer {
     pub fn new(ptr: u64) -> Option<Self> {
         let signature: &str = unsafe { &Self::bytes2str(&read_unaligned(ptr as *const DescriptionHeader).signature) };
         match signature {
-            //"HPET" => {return initialize_hpet(ptr)},
+            "HPET" => {return Some(Self::initialize_hpet(ptr))},
             "FACP" => {return Some(Self::initialize_pmtimer(ptr))},
             _ => {
                 error!("FFTimer must be HPET or FACP");
@@ -63,10 +46,13 @@ impl FFTimer {
     fn initialize_pmtimer(ptr: u64) -> Self {
         return unsafe { FFTimer::PM(read_unaligned(ptr as *const PMTimer)) }
     }
-    pub fn initialize_lapic_itmer(&self) {}
+    pub fn initialize_hpet(ptr: u64) -> Self {
+        let hpet = unsafe { read_unaligned(ptr as *const Hpet) };
+        return FFTimer::HPET(hpet.initialize())
+    }
     pub fn wait_milliseconds(&self, msec: u32) {
         match self {
-            Self::HPET(hpet) => {},
+            Self::HPET(hpet) => {hpet.wait_nano_seconds(100000)},
             Self::PM(fadt) => {
                 let pm_tmr_blk: u16 = fadt.pm_tmr_blk.try_into().unwrap();
                 let pm_timer_32 = 1 == (fadt.flags >> 8) & 1;

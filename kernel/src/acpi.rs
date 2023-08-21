@@ -130,25 +130,25 @@ impl Xsdt {
     }
 
     fn get_timer(&self) -> Option<FFTimer> {
-        let mut fdat = None;
-        let mut hpet: Option<u64> = None;
+        let mut fadt = None;
+        let mut hpet = None;
         for i in 0..self.entries.len() {
             if self.entries[i] == 0 { break; } //error handling
             let signature: &str = unsafe { &bytes2str(&read_unaligned(self.entries[i] as *const DescriptionHeader).signature) };
             match signature {
                 "HPET" => {hpet = Some(self.entries[i]);},
-                "FACP" => {fdat = Some(self.entries[i]);},
+                "FACP" => {fadt = Some(self.entries[i]);},
                 _ =>{}
             }
         }
         if hpet == None {
-            if fdat == None {
+            if fadt == None {
                 return None;
             }
             info!("TimerManager -fallback to PM Timer");
-            return FFTimer::new(fdat.unwrap());
+            return FFTimer::new(fadt.unwrap());
         }
-        return FFTimer::new(fdat.unwrap());//hpet
+        return FFTimer::new(hpet.unwrap());//hpet
     }
 }
 
