@@ -251,7 +251,10 @@ extern "sysv64" fn kernel_main_virt(st: SystemTable<Runtime>, fb_config: *mut Fr
         }
     };
 
-    TIMER_MANAGER.lock().get_mut().unwrap().add_timer(100, -1);
+    //TIMER_MANAGER.lock().get_mut().unwrap().add_timer(100, 1);
+    println!("Good night. I'll sleep for 1 second...");
+    sleep(1);
+    println!("Good morning!");
 
     //set the IDT entry
     IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
@@ -300,8 +303,7 @@ extern "sysv64" fn kernel_main_virt(st: SystemTable<Runtime>, fb_config: *mut Fr
                 }
             },
             Message::TimerTimeout{ timeout, value } => {
-                println!("Timer timeout: {}", value);
-                TIMER_MANAGER.lock().get_mut().unwrap().add_timer(100, -1);
+                if value != -1 { println!("Timer timeout: {}", value) };
             }
             Message::NoInterruption => {}
         }

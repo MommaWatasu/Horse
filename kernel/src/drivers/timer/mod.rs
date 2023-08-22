@@ -31,7 +31,7 @@ static LAPIC_FREQUENCY: Once<u32> = Once::new();
 pub static TIMER_MANAGER: Mutex<Once<TimerManager>> = Mutex::new(Once::new());
 
 pub fn initialize_lapic_itmer(fftimer: FFTimer) {
-    TIMER_MANAGER.lock().call_once(|| TimerManager::new());
+    TIMER_MANAGER.lock().call_once(|| TimerManager::new(fftimer));
 
     unsafe {
         write(DIVIDE_CONFIG, 0b1011); //divide 1:1
@@ -65,4 +65,8 @@ pub fn stop_lapic_timer() {
 
 pub fn lapic_timer_on_interrupt() {
     TIMER_MANAGER.lock().get_mut().unwrap().tick();
+}
+
+pub fn sleep(t: u64) {
+    TIMER_MANAGER.lock().get_mut().unwrap().wait_seconds(t);
 }

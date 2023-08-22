@@ -12,12 +12,14 @@ use core::{
 };
 
 //Frequency Fixed Timer
+#[derive(Copy, Clone)]
 pub enum FFTimer{ 
     HPET(HpetController),
     PM(PMTimer)
 }
 
 #[repr(packed, C)]
+#[derive(Copy, Clone)]
 pub struct PMTimer {
     header: DescriptionHeader,
     reserved1: [u8; 76-size_of::<DescriptionHeader>()],
@@ -52,7 +54,7 @@ impl FFTimer {
     }
     pub fn wait_milliseconds(&self, msec: u32) {
         match self {
-            Self::HPET(hpet) => {hpet.wait_nano_seconds(100000)},
+            Self::HPET(hpet) => {hpet.wait_nano_seconds((msec as u64) * 100000)},
             Self::PM(fadt) => {
                 let pm_tmr_blk: u16 = fadt.pm_tmr_blk.try_into().unwrap();
                 let pm_timer_32 = 1 == (fadt.flags >> 8) & 1;

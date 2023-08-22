@@ -3,6 +3,7 @@ use crate::{
     Message,
     println
 };
+use super::FFTimer;
 
 use alloc::collections::BinaryHeap;
 use core::cmp::{Ord, Ordering};
@@ -10,11 +11,12 @@ use core::cmp::{Ord, Ordering};
 pub struct TimerManager {
     tick: u64,
     timers: BinaryHeap<Timer>,
+    fft: FFTimer
 }
 
 impl TimerManager {
-    pub fn new() -> Self {
-        return Self{tick: 0, timers: BinaryHeap::new()}
+    pub fn new(fft: FFTimer) -> Self {
+        return Self{tick: 0, timers: BinaryHeap::new(), fft}
     }
     pub fn add_timer(&mut self, timeout: u64, value: i32) {
         let timer = Timer::new(self.tick, timeout, value);
@@ -32,8 +34,14 @@ impl TimerManager {
             } else { break }
         }
     }
+    pub fn wait_seconds(&self, sec: u64) {
+        for i in 0..sec {
+            self.fft.wait_milliseconds(1000);
+        }
+    }
 }
 
+//Logical Timer
 #[derive(Eq)]
 struct Timer {
     absolute_timeout: u128,

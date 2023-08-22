@@ -1,4 +1,4 @@
-use crate::{bit_getter, bit_setter, error, println};
+use crate::{bit_getter, bit_setter, error, info, println};
 use super::{
     DescriptionHeader,
     ioapic::*
@@ -30,6 +30,7 @@ pub struct Hpet {
     page_protection: u8
 }
 
+#[derive(Copy, Clone)]
 pub struct HpetController {
     addr: u64,
     n_timers: u8,
@@ -44,17 +45,12 @@ impl HpetController {
         tcc.set_type_cnf(0); //non-periodic
         tcc.set_int_enb_cnf(1); //ensure interruption enabled
         tcc.set_int_type_cnf(1);
-        /*
-        if tcc.size_cap() == 1 {
-            unsafe { write((self.addr + 0x108 + 0x20 * timer) as *mut u64, read((self.addr + 0xf0) as *const u64) + time); }
-        } else {
-            error!("HPET driver supports only 64bit comparator");
+        unsafe {
+            write((self.addr + 0x100 + 0x20 * timer) as *mut TCCRegister, tcc);
+            write((self.addr + 0x108 + 0x20 * timer) as *mut u64, read((self.addr + 0xf0) as *const u64) + time);
+            while read((self.addr + 0x20) as *const u32) != 1 {}
+            write((self.addr + 0x20) as *mut u32, 1);
         }
-        */
-        unsafe { write((self.addr + 0x100 + 0x20 * timer) as *mut TCCRegister, tcc); }
-        unsafe { write((self.addr + 0x108 + 0x20 * timer) as *mut u64, read((self.addr + 0xf0) as *const u64) + time); }
-        while unsafe { read((self.addr + 0x20) as *const u32) } != 1 {}
-        unsafe { write((self.addr + 0x20) as *mut u32, 1) }
     }
     // time is time in femtoseconds from now to interrupt
     pub fn periodic(&self, timer: u64, time: u64) {
@@ -76,8 +72,7 @@ impl HpetController {
     }
     //warning: the minimum tick is 10^-8 seconds! So the real time is time * 10 ns.
     pub fn wait_nano_seconds(&self, time: u64) {
-        let fs = 10 * time * 1000000;
-        self.one_shot(0, fs);
+        self.one_shot(0, time);
     }
 }
 
@@ -105,12 +100,14 @@ impl Hpet {
             }
         }
         //ensure HPET is enabled
-        let mut gc = unsafe { read_unaligned((addr + 0x10) as *const GCRegister) };
-        gc.set_enable_cnf(1);
-        unsafe { write_unaligned((addr + 0x10) as *mut GCRegister, gc) }
-        let mut gc = unsafe { read_unaligned((addr + 0x10) as *const GCRegister) };
+        unsafe {
+            let mut gc = read_unaligned((addr + 0x10) as *const GCRegister);
+            gc.set_enable_cnf(1);
+            write_unaligned((addr + 0x10) as *mut GCRegister, gc);
+            let mut gc = read_unaligned((addr + 0x10) as *const GCRegister);
+        }
         let data = gc.data;
-        println!("Initialize HPET has been done");
+        info!("Initialize HPET has been done");
         return HpetController {
             addr,
             n_timers: num_timers,
