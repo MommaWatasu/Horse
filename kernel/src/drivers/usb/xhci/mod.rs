@@ -28,13 +28,41 @@ use trb::{
     PortStatusChangeEvent
 };
 use crate::{
-    status_log, warn, trace, error,
+    status_log, warn, trace, error, info,
+    InterruptVector,
+    XHC,
     status::{
         StatusCode, PortConfigPhase, Result
     },
-    drivers::usb::memory::*,
+    drivers::{
+        pci::*,
+        usb::memory::*
+    },
     volatile::Volatile
 };
+
+pub fn initialize_xhci(dev: &Device) -> Controller {
+    info!(
+        "xHC has been found: {}.{}.{}",
+        dev.bus, dev.device, dev.function
+    );
+    let bsp_local_apic_id: u8 = unsafe { (*(0xFEE00020 as *const u32) >> 24) as u8 };
+    status_log!(configure_msi_fixed_destination(
+        dev,
+        bsp_local_apic_id,
+        MSITriggerMode::Level,
+        MSIDeliveryMode::Fixed,
+        InterruptVector::Xhci as u8, 0
+    ), "Configure msi");
+    let xhc_bar = read_bar64(dev, 0).unwrap();
+    let xhc_mmio_base = (xhc_bar & !0xf) as usize;
+    let mut xhc = unsafe { Controller::new(xhc_mmio_base).unwrap() };//there is a problem here
+    unsafe {
+        status_log!(xhc.run().unwrap(), "xHC started");
+        xhc.configure_ports();
+    }
+    return xhc
+}
 
 pub struct Controller {
     op_regs: *mut OperationalRegisters,

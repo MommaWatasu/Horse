@@ -104,9 +104,7 @@ impl Hpet {
             let mut gc = read_unaligned((addr + 0x10) as *const GCRegister);
             gc.set_enable_cnf(1);
             write_unaligned((addr + 0x10) as *mut GCRegister, gc);
-            let mut gc = read_unaligned((addr + 0x10) as *const GCRegister);
         }
-        let data = gc.data;
         info!("Initialize HPET has been done");
         return HpetController {
             addr,

@@ -18,6 +18,7 @@ pub mod fixed_vec;
 pub mod framebuffer;
 pub mod graphics;
 pub mod interrupt;
+pub mod io;
 pub mod layer;
 pub mod log;
 pub mod memory_manager;
@@ -42,6 +43,7 @@ use mouse::{
     draw_mouse_cursor
 };
 use drivers::{
+    detect_dev::initialize_pci_devices,
     pci::*,
     timer::*,
     usb::{
@@ -85,14 +87,14 @@ use uefi::table::{
 const BG_COLOR: PixelColor = PixelColor(153, 76, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
 
-static XHC: Once<usize> = Once::new();
-
 #[derive(Clone, Copy, Debug)]
 pub enum Message {
     NoInterruption,
     InterruptXHCI,
     TimerTimeout{ timeout: u64, value: i32 }
 }
+
+pub static XHC: Mutex<Once<usize>> = Mutex::new(Once::new());
 pub static INTERRUPTION_QUEUE: Mutex<ArrayQueue<Message, 32>> = Mutex::new(ArrayQueue::new());
 #[global_allocator]
 static ALLOCATOR: KernelMemoryAllocator = KernelMemoryAllocator::new();
@@ -148,64 +150,6 @@ fn initialize(fb_config: *mut FrameBufferConfig) {
     layer_manager.draw();
 }
 
-fn find_xhc(pci_devices: &PciDevices) -> Option<Device> {
-    let mut xhc_dev = None;
-    const XHC_CLASS: ClassCode = ClassCode {
-        base: 0x0c,
-        sub: 0x03,
-        interface: 0x30
-    };
-    for dev in pci_devices.iter() {
-        if dev.class_code == XHC_CLASS {
-            xhc_dev = Some(dev);
-            if dev.get_vendor_id() == 0x8086 {
-                break;
-            }
-        }
-    }
-    xhc_dev
-}
-
-fn find_gpu(pci_devices: &PciDevices) {
-    const GPU_CLASS: ClassCode = ClassCode {
-        base: 0x03,
-        sub: 0x20,
-        interface: 0x00
-    };
-    for dev in pci_devices.iter() {
-        if dev.class_code.base == 0x03 {
-            setup_qemu_card(&dev);
-            let gpu_bar = read_bar64(&dev, 2).unwrap();
-            let gpu_mmio_base = (gpu_bar & !0xf) as usize;
-            debug!("bar2-3: {:?}", gpu_bar as *mut u32);
-        }
-    }
-}
-
-fn find_fs(pci_devices: &PciDevices) {
-    for dev in pci_devices.iter() {
-        if dev.class_code.base == 0x01 {
-            println!("OK")
-        }
-    }
-}
-
-fn switch_echi_to_xhci(_xhc_dev: &Device, pci_devices: &PciDevices) {
-    let ehciclass = ClassCode {
-        base: 0x0c,
-        sub: 0x03,
-        interface: 0x20,
-    };
-    let ehci = pci_devices
-        .iter()
-        .find(|&dev| dev.class_code == ehciclass && dev.get_vendor_id() == 0x8086);
-    if ehci.is_none() {
-        info!("no ehci");
-    } else {
-        panic!("ehci found, but do nothing for the present");
-    }
-}
-
 extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
     INTERRUPTION_QUEUE.lock().push(Message::InterruptXHCI);
     unsafe { notify_end_of_interrupt(); }
@@ -229,60 +173,17 @@ extern "sysv64" fn kernel_main_virt(st: SystemTable<Runtime>, fb_config: *mut Fr
     initialize(fb_config);
 
     welcome_message();
-    unsafe { debug!("{:?}", (*fb_config).fb) };
+    unsafe { debug!("fb: {:?}", (*fb_config).fb) };
 
     initialize_acpi(st);
 
     let pci_devices = find_pci_devices();
-    find_fs(&pci_devices);
-    find_gpu(&pci_devices);
-    let xhc_dev = find_xhc(&pci_devices);
-    let xhc_dev = match xhc_dev {
-        Some(xhc_dev) => {
-            status_log!(
-                StatusCode::Success,
-                "xHC has been found: {}.{}.{}",
-                xhc_dev.bus, xhc_dev.device, xhc_dev.function
-            );
-            xhc_dev
-        }
-        None => {
-            panic!("no xHC device");
-        }
-    };
-
-    //TIMER_MANAGER.lock().get_mut().unwrap().add_timer(100, 1);
-    println!("Good night. I'll sleep for 1 second...");
-    sleep(1);
-    println!("Good morning!");
+    let mut xhc = initialize_pci_devices(&pci_devices).unwrap();
 
     //set the IDT entry
     IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
     IDT.lock()[InterruptVector::LAPICTimer as usize].set_handler_fn(handler_lapic_timer);
     unsafe { IDT.lock().load_unsafe(); }
-    let bsp_local_apic_id: u8 = unsafe { (*(0xFEE00020 as *const u32) >> 24) as u8 };
-    debug!("bsp id: {}", bsp_local_apic_id);
-    
-    status_log!(configure_msi_fixed_destination(
-        &xhc_dev,
-        bsp_local_apic_id,
-        MSITriggerMode::Level,
-        MSIDeliveryMode::Fixed,
-        InterruptVector::Xhci as u8, 0
-    ), "Configure msi");
-    
-    switch_echi_to_xhci(&xhc_dev, &pci_devices);
-    let xhc_bar = read_bar64(&xhc_dev, 0).unwrap();
-    let xhc_mmio_base = (xhc_bar & !0xf) as usize;
-    let mut xhc = unsafe { Controller::new(xhc_mmio_base).unwrap() };//there is a problem here
-    debug!("xHC initalized");
-    unsafe {
-        status_log!(xhc.run().unwrap(), "xHC started");
-        xhc.configure_ports();
-    }
-    info!("ports configured");
-    
-    XHC.call_once(|| &mut xhc as *mut Controller as usize);
     INTERRUPTION_QUEUE.lock().initialize(Message::NoInterruption);
 
     loop {

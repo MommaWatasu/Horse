@@ -3,7 +3,7 @@ use x86_64::instructions::port::{Port, PortWriteOnly};
 use crate::{
     status::StatusCode,
     bit_getter, bit_setter,
-    status_log, trace, debug
+    status_log, trace, debug, info
 };
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -465,4 +465,12 @@ pub fn configure_msi_fixed_destination(
         msg_data |= 0xc000;
     }
     return configure_msi(&dev, msg_addr, msg_data, num_vector_exponent);
+}
+
+pub fn switch_echi2xhci(xhc_dev: &Device) {
+    let super_speed_ports = read_conf_reg(xhc_dev, 0xdc);
+    write_conf_reg(xhc_dev, 0xd8, super_speed_ports);
+    let ehci2xhci_ports = read_conf_reg(xhc_dev, 0xd4);
+    write_conf_reg(xhc_dev, 0xd0, ehci2xhci_ports);
+    info!("ehci has been changed to xhci");
 }
