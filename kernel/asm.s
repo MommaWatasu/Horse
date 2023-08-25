@@ -17,6 +17,45 @@ kernel_main:
   hlt
   jmp .fin
 
+global inb  ; fn inb(addr: u16) -> u8
+inb:
+    mov dx, di    ; dx = addr
+    in al, dx
+    ret
+
+global inw  ; fn inw(addr: u16) -> u16
+inw:
+    mov dx, di    ; dx = addr
+    in ax, dx
+    ret
+
+global inl  ; fn inl(addr: u16) -> u32
+inl:
+    mov dx, di    ; dx = addr
+    in eax, dx
+    ret
+
+global outb  ; fn outb(addr: u16, value: u8)
+outb:
+    mov dx, di  ; dx = addr
+    mov al, sil  ; al = value
+    out dx, al
+    ret
+
+global outw  ; fn outw(addr: u16, value: u16)
+outw:
+    mov dx, di  ; dx = addr
+    mov ax, si  ; ax = value
+    out dx, ax
+    ret
+
+global outl  ; fn outl(addr: u16, value: u32)
+outl:
+    mov dx, di    ; dx = addr
+    mov eax, esi  ; eax = value
+    out dx, eax
+    ret
+
 global IoIn32  ; fn IoIn32(addr: u16) -> u32
 IoIn32:
     mov dx, di    ; dx = addr

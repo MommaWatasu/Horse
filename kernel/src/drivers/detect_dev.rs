@@ -4,7 +4,7 @@ use super::{
         switch_echi2xhci,
         PciDevices
     },
-    storage::ide::initialize_ide,
+    ata::pata::initialize_ide,
     video::qemu::setup_qemu_card,
     usb::xhci::{
         initialize_xhci,
