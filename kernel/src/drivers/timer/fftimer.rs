@@ -1,4 +1,7 @@
-use crate::{error, println};
+use crate::{
+    error, println,
+    lib::bytes::bytes2str
+};
 use super::{
     PM_TIMER_FREQ,
     DescriptionHeader,
@@ -31,7 +34,7 @@ pub struct PMTimer {
 
 impl FFTimer {
     pub fn new(ptr: u64) -> Option<Self> {
-        let signature: &str = unsafe { &Self::bytes2str(&read_unaligned(ptr as *const DescriptionHeader).signature) };
+        let signature: &str = unsafe { &bytes2str(&read_unaligned(ptr as *const DescriptionHeader).signature) };
         match signature {
             "HPET" => {return Some(Self::initialize_hpet(ptr))},
             "FACP" => {return Some(Self::initialize_pmtimer(ptr))},
@@ -40,9 +43,6 @@ impl FFTimer {
                 return None
             }
         }
-    }
-    fn bytes2str(bytes: &[u8]) -> String {
-        return String::from_utf8(bytes.to_vec()).unwrap();
     }
     //fn initialize_hpet(ptr: u64) -> Self {}
     fn initialize_pmtimer(ptr: u64) -> Self {

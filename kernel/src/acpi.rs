@@ -1,9 +1,13 @@
-use crate::{fftimer::FFTimer, initialize_lapic_itmer, error, info, print, println};
+use crate::{
+    initialize_lapic_itmer, error, info, print, println,
+    fftimer::FFTimer,
+    lib::bytes::*
+};
+
 use alloc::{
     string::String,
     vec::Vec
 };
-
 use core::{
     ptr::{
         null,
@@ -19,19 +23,6 @@ use uefi::{
 };
 
 const EfiAcpiTableGuid: Guid = Guid::new([0x71, 0xe8, 0x68, 0x88], [0xf1, 0xe4], [0xd3, 0x11], 0xbc, 0x22, [0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81]);
-
-fn bytes2str(bytes: &[u8]) -> String {
-    return String::from_utf8(bytes.to_vec()).unwrap();
-}
-
-fn sum_bytes<T>(data: &T, bytes: usize) -> u8 {
-    let data = unsafe { data as *const T as *const u8 };
-    let mut sum: u8 = 0;
-    for i in 0..bytes {
-        sum.wrapping_add(unsafe { *data.wrapping_add(i) });
-    }
-    return sum;
-}
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]

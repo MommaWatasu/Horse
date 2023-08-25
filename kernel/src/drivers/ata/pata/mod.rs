@@ -3,7 +3,13 @@ use definition::*;
 
 use crate::{
     drivers::pci::*,
-    io::*,
+    lib::{
+        bytes::{
+            bytes2str,
+            negative
+        },
+        io::*,
+    },
     print,
     println,
     sleep
@@ -163,18 +169,6 @@ fn ide_print_error(drive: usize, mut err: u8) -> u8 {
         bytes2str(&ide_device.model)
     );
     return err;
-}
-
-fn negative(x: u32) -> u32 {
-    if x != 0 {
-        return 0;
-    } else {
-        return 1;
-    }
-}
-
-fn bytes2str(bytes: &[u8]) -> String {
-    return String::from_utf8(bytes.to_vec()).unwrap();
 }
 
 pub fn initialize_ide(dev: &Device) {

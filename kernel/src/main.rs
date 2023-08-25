@@ -10,16 +10,14 @@ mod paging;
 mod queue;
 mod segment;
 
-pub mod bit_macros;
 pub mod console;
-pub mod container_of;
 pub mod drivers;
 pub mod fixed_vec;
 pub mod framebuffer;
 pub mod graphics;
 pub mod interrupt;
-pub mod io;
 pub mod layer;
+pub mod lib;
 pub mod log;
 pub mod memory_manager;
 pub mod mouse;
