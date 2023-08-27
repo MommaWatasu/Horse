@@ -21,13 +21,19 @@ pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
                 match dev.class_code.sub {
                     0x01 => {
                         let mut controller = initialize_ide(&dev);
-                        let mut edi = [0u8; 8];
-                        controller.read_pata(0, 1, 0, edi.as_mut_ptr() as u32);
-                        print!("image: ");
-                        for i in 0..8 {
-                            print!("{:x} ", edi[i]);
+                        let mut buf = [0u32; 128];
+                        controller.read_pata(0, 1, 0, &mut buf);
+                        println!("image: ");
+                        for i in 0..16 {
+                            for j in 0..2 {
+                                print!("{:08x} ", buf[i*4 + j]);
+                            }
+                            print!(" ");
+                            for j in 2..4 {
+                                print!("{:08x} ", buf[i*4 + j]);
+                            }
+                            print!("\n");
                         }
-                        println!("");
                     },
                     _ => {info!("pci device isn't supported. Class Code: {:?}", dev.class_code);}
                 }

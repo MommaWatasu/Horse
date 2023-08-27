@@ -99,6 +99,25 @@ impl IdeController {
             self.ide_write(channel, Register::AtaRegControlAltstatus as u16, self.channels[channel].no_int);
         }
     }
+    fn ide_write_buffer(&self, channel: usize, reg: u16, buffer: &[u32], quads: u32) {
+        if reg > 0x07 && reg < 0x0C {
+            self.ide_write(channel, Register::AtaRegControlAltstatus as u16, 0x80 | self.channels[channel].no_int);
+        }
+        unsafe {
+            if reg < 0x08 {
+                outsl(self.channels[channel].base + reg - 0x00, buffer, quads);
+            } else if reg < 0x0C {
+                outsl(self.channels[channel].base + reg - 0x06, buffer, quads);
+            } else if reg < 0x0E {
+                outsl(self.channels[channel].ctrl + reg - 0x0a, buffer, quads);
+            } else if reg < 0x16 {
+                outsl(self.channels[channel].bmide + reg - 0x0e, buffer, quads);
+            }
+        }
+        if reg > 0x07 && reg < 0x0C {
+            self.ide_write(channel, Register::AtaRegControlAltstatus as u16, self.channels[channel].no_int);
+        }
+    }
     fn ide_polling(&self, channel: usize, advanced_check: u32) -> u8 {
         for i in 0..4 {
             self.ide_read(channel, Register::AtaRegControlAltstatus as u16);
@@ -173,7 +192,7 @@ impl IdeController {
         );
         return err;
     }
-    fn ide_access(&mut self, direction: u8, drive: usize, lba: u32, numsects: u8, selector: u16, mut edi: u32) -> u8 {
+    fn ide_access(&mut self, direction: u8, drive: usize, lba: u32, numsects: u8, buf: &mut [u32]) -> u8 {
         let lba_mode: u8;
         let dma: u8;
         let mut lba_io = [0u8; 6];
@@ -275,53 +294,15 @@ impl IdeController {
         } else {
             if direction == 0 {
                 // PIO Read
-                for i in 0..numsects {
-                    let err = self.ide_polling(channel, 1);
-                    if err != 0 {
-                        return err
-                    }
-                    unsafe {
-                        // Recieve data
-                        asm!(
-                            "push bx",
-                            "mov es, bx",
-                            "push bx",
-                            "mov ax, es",
-                            "rep insw",
-                            "pop bx",
-                            "mov bx, es",
-                            "pop bx",
-                            in("ax") selector,
-                            in("ecx") words,
-                            in("edx") bus,
-                            in("edi") edi
-                        );
-                    }
-                    edi += words*2;
+                let err = self.ide_polling(channel, 1);
+                if err != 0 {
+                    return err
                 }
+                self.ide_read_buffer(channel, Register::AtaRegData as u16, buf, (128 * numsects) as u32);
             } else {
                 // PIO Write
-                for i in 0..numsects {
-                    self.ide_polling(channel, 0); // Polling.
-                    unsafe {
-                        // Send data
-                        asm!(
-                            "push bx",
-                            "mov ds, bx",
-                            "push bx",
-                            "mov ax, ds",
-                            "rep outsw",
-                            "pop bx",
-                            "mov bx, ds",
-                            "pop bx",
-                            in("ax") selector,
-                            in("ecx") words,
-                            in("edx") bus,
-                            in("esi") edi
-                        );
-                    }
-                    edi += words*2;
-                }
+                let err = self.ide_polling(channel, 0);
+                self.ide_write_buffer(channel, Register::AtaRegData as u16, buf, (128 * numsects) as u32);
                 if lba_mode == 2{
                     self.ide_write(channel, Register::AtaRegCommandStatus as u16, Command::AtaCmdCacheFluxhExt as u8);
                 } else {
@@ -332,21 +313,20 @@ impl IdeController {
         }
         return 0
     }
-    pub fn read_pata(&mut self, drive: usize, numsects: u8, lba: u32, edi: u32) -> u8 {
-        let es = 0;
+    pub fn read_pata(&mut self, drive: usize, numsects: u8, lba: u32, buf: &mut [u32]) -> u8 {
         if drive > 3 || self.ide_devices[drive].reserved == 0 {
             return 1
         }
         let device = self.ide_devices[drive];
-        if lba + numsects as u32 > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
+        if lba + 512 * numsects as u32 > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
             return 2
         }
         let mut err = 0;
         if device.ata_type == InterfaceType::IdeAta as u16 {
-            err = self.ide_access(Directions::Read as u8, drive, lba, numsects, es, edi);
+            err = self.ide_access(Directions::Read as u8, drive, lba, numsects, buf);
         } else {
             for i in 0..numsects {
-                err = self.ide_access(Directions::Read as u8, drive, lba, 1, es, edi + i as u32 * 2048)
+                err = self.ide_access(Directions::Read as u8, drive, lba + 512 * i as u32, 1, buf);
             }
         }
         return self.ide_print_error(drive, err)
