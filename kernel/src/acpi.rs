@@ -9,6 +9,7 @@ use alloc::{
     vec::Vec
 };
 use core::{
+    mem::size_of,
     ptr::{
         null,
         read_unaligned
@@ -109,7 +110,7 @@ impl Xsdt {
             return None;
         }
         let table_addr = addr.offset(1) as *const u64;
-        let length = header.length as usize;
+        let length = ((header.length as usize - size_of::<DescriptionHeader>()) / 8 );
         let mut entries = Vec::with_capacity(length);
         for i in 0..length {
             entries.push(read_unaligned(table_addr.wrapping_add(i)));
@@ -124,7 +125,6 @@ impl Xsdt {
         let mut fadt = None;
         let mut hpet = None;
         for i in 0..self.entries.len() {
-            if self.entries[i] == 0 { break; } //error handling
             let signature: &str = unsafe { &bytes2str(&read_unaligned(self.entries[i] as *const DescriptionHeader).signature) };
             match signature {
                 "HPET" => {hpet = Some(self.entries[i]);},
