@@ -1,10 +1,13 @@
-use crate::info;
+use crate::{info, print, println};
 use super::{
     pci::{
         switch_echi2xhci,
         PciDevices
     },
-    ata::pata::initialize_ide,
+    ata::pata::{
+        initialize_ide,
+        read_pata
+    },
     video::qemu::setup_qemu_card,
     usb::xhci::{
         initialize_xhci,
@@ -21,6 +24,13 @@ pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
                 match dev.class_code.sub {
                     0x01 => {
                         initialize_ide(&dev);
+                        let mut edi = [0u8; 8];
+                        read_pata(0, 1, 0, 0, edi.as_mut_ptr() as u32);
+                        print!("image: ");
+                        for i in 0..8 {
+                            print!("{:x} ", edi[i]);
+                        }
+                        println!("");
                     },
                     _ => {info!("pci device isn't supported. Class Code: {:?}", dev.class_code);}
                 }

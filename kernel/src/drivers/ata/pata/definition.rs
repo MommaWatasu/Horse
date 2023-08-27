@@ -70,9 +70,9 @@ pub enum Register {
     AtaRegHddevsel      = 0x06,
     AtaRegCommandStatus = 0x07,
     AtaRegSeccount1     = 0x08,
-    AtaRegLab3          = 0x09,
-    AtaRegLab4          = 0x0a,
-    AtaRegLab5          = 0x0b,
+    AtaRegLba3          = 0x09,
+    AtaRegLba4          = 0x0a,
+    AtaRegLba5          = 0x0b,
     AtaRegControlAltstatus     = 0x0c,
     AtaRegDevaddress    = 0x0d
 }
