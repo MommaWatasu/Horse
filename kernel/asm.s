@@ -56,12 +56,6 @@ outl:
     out dx, eax
     ret
 
-global IoIn32  ; fn IoIn32(addr: u16) -> u32
-IoIn32:
-    mov dx, di    ; dx = addr
-    in eax, dx
-    ret
-
 global load_gdt ; fn load_gdt(limit: u16, offset: usize)
 load_gdt:
   push rbp
