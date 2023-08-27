@@ -4,10 +4,7 @@ use super::{
         switch_echi2xhci,
         PciDevices
     },
-    ata::pata::{
-        initialize_ide,
-        read_pata
-    },
+    ata::pata::initialize_ide,
     video::qemu::setup_qemu_card,
     usb::xhci::{
         initialize_xhci,
@@ -23,9 +20,9 @@ pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
             0x01 => {
                 match dev.class_code.sub {
                     0x01 => {
-                        initialize_ide(&dev);
+                        let mut controller = initialize_ide(&dev);
                         let mut edi = [0u8; 8];
-                        read_pata(0, 1, 0, 0, edi.as_mut_ptr() as u32);
+                        controller.read_pata(0, 1, 0, edi.as_mut_ptr() as u32);
                         print!("image: ");
                         for i in 0..8 {
                             print!("{:x} ", edi[i]);
