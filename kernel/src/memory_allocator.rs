@@ -1,21 +1,14 @@
-use crate::{
-    memory_manager::*,
-    StatusCode,
-    status_log
-};
+use crate::{memory_manager::*, status_log, StatusCode};
 
 use core::{
-    alloc::{
-        GlobalAlloc,
-        Layout
-    },
-    ptr
+    alloc::{GlobalAlloc, Layout},
+    ptr,
 };
 use spin::mutex::Mutex;
 
 enum AllocateMode {
     Block(usize),
-    Frame(usize)
+    Frame(usize),
 }
 
 impl From<Layout> for AllocateMode {
@@ -23,7 +16,7 @@ impl From<Layout> for AllocateMode {
         let size = l.size().max(l.align());
         match BLOCK_SIZES.iter().position(|s| *s >= size) {
             Some(index) => Self::Block(index),
-            None => Self::Frame((size + BYTES_PER_FRAME-1) / BYTES_PER_FRAME)
+            None => Self::Frame((size + BYTES_PER_FRAME - 1) / BYTES_PER_FRAME),
         }
     }
 }
@@ -31,12 +24,14 @@ impl From<Layout> for AllocateMode {
 const BLOCK_SIZES: &[usize] = &[8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 
 pub struct KernelMemoryAllocator {
-    available_blocks: Mutex<[*mut u8; BLOCK_SIZES.len()]>
+    available_blocks: Mutex<[*mut u8; BLOCK_SIZES.len()]>,
 }
 
 impl KernelMemoryAllocator {
     pub const fn new() -> Self {
-        Self{ available_blocks: Mutex::new([ptr::null_mut(); BLOCK_SIZES.len()]) }
+        Self {
+            available_blocks: Mutex::new([ptr::null_mut(); BLOCK_SIZES.len()]),
+        }
     }
 
     fn allocate_frame_for_block(index: usize) -> *mut u8 {
@@ -51,7 +46,7 @@ impl KernelMemoryAllocator {
         };
         for i in 0..n_blocks_per_frame {
             let current = unsafe { ptr.add(i * block_size) };
-            let next = if i == n_blocks_per_frame-1 {
+            let next = if i == n_blocks_per_frame - 1 {
                 ptr::null_mut()
             } else {
                 unsafe { current.add(block_size) }
@@ -77,14 +72,14 @@ unsafe impl GlobalAlloc for KernelMemoryAllocator {
                     available_blocks[index] = (ptr as *mut u64).read() as *mut u8;
                 }
                 return ptr;
-            },
+            }
             AllocateMode::Frame(n_frames) => match frame_manager_instance().allocate(n_frames) {
-                Ok(frame) => { frame.phys_addr() },
+                Ok(frame) => frame.phys_addr(),
                 Err(status) => {
                     status_log!(status, "KernelAllocator failed to allocate frame");
                     ptr::null_mut()
                 }
-            }
+            },
         }
     }
 
@@ -95,7 +90,7 @@ unsafe impl GlobalAlloc for KernelMemoryAllocator {
                 let next = available_blocks[index];
                 (ptr as *mut u64).write(next as u64);
                 available_blocks[index] = ptr;
-            },
+            }
             AllocateMode::Frame(n_frames) => {
                 frame_manager_instance().free(FrameID::from_phys_addr(ptr), n_frames);
             }

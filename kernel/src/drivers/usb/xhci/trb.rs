@@ -1,28 +1,25 @@
-use core::mem::transmute;
-use crate::{bit_getter, bit_setter};
-use crate::drivers::usb::{
-    endpoint::EndpointId,
-    setupdata::SetupData
-};
 use super::context::*;
+use crate::drivers::usb::{endpoint::EndpointId, setupdata::SetupData};
+use crate::{bit_getter, bit_setter};
+use core::mem::transmute;
 
 #[repr(u8)]
 pub enum TypeId {
     Normal = 1,
-    
+
     SetupStage = 2,
     DataStage = 3,
     StatusStage = 4,
     Link = 6,
-    
+
     EnableSlotCommand = 9,
     AddressDeviceCommand = 11,
     ConfigureEndpointCommand = 12,
     EvaluteContextCommand = 13,
-    
+
     TransferEvent = 32,
     CommandCompletionEvent = 33,
-    PortStatusChangeEvent = 34
+    PortStatusChangeEvent = 34,
 }
 
 pub trait Trb: Sized {
@@ -36,25 +33,25 @@ pub trait Trb: Sized {
 #[repr(C, align(16))]
 #[derive(Clone)]
 pub struct GenericTrb {
-    pub data: [u32; 4]
+    pub data: [u32; 4],
 }
 
 impl GenericTrb {
     bit_getter!(data[2]: u32; 0xFFFFFFFF; u32, status);
     bit_setter!(data[2]: u32; 0xFFFFFFFF; u32, set_status);
-    
+
     bit_getter!(data[3]: u32; 0x00000001;  u8, pub cycle_bit);
     bit_setter!(data[3]: u32; 0x00000001;  u8, pub set_cycle_bit);
-    
+
     bit_getter!(data[3]: u32; 0x00000002;  u8, evalute_next_trb);
     bit_setter!(data[3]: u32; 0x00000002;  u8, set_evalute_next_trb);
-    
+
     bit_getter!(data[3]: u32; 0x0000FC00;  u8, pub trb_type);
     bit_setter!(data[3]: u32; 0x0000FC00;  u8, set_trb_type);
-    
+
     bit_getter!(data[3]: u32; 0xFFFF0000;  u8, control);
     bit_setter!(data[3]: u32; 0xFFFF0000;  u8, set_control);
-    
+
     pub fn downcast_ref<T: Trb>(&self) -> Option<&T> {
         if self.trb_type() == T::TYPE {
             Some(unsafe { transmute::<&Self, &T>(self) })
@@ -77,7 +74,7 @@ impl core::fmt::Debug for GenericTrb {
 
 #[repr(C, align(16))]
 pub struct Normal {
-    data: [u32; 4]
+    data: [u32; 4],
 }
 
 impl Normal {
@@ -99,10 +96,9 @@ impl Normal {
     bit_setter!(data[3]: u32; 0x00000020;  u8, pub set_interrupt_on_completion);
 
     bit_setter!(data[3]: u32; 0x0000FC00;  u8, pub set_trb_type);
-    
+
     pub fn data_buffer(&self) -> *mut u8 {
-        (((self.data_buffer_hi() as usize) << 32) | (self.data_buffer_lo() as usize))
-            as *mut u8
+        (((self.data_buffer_hi() as usize) << 32) | (self.data_buffer_lo() as usize)) as *mut u8
     }
     pub fn set_data_buffer(&mut self, ptr: *mut u8) {
         let ptr = ptr as usize;
@@ -211,8 +207,7 @@ impl DataStage {
     bit_setter!(data[3]: u32; 0x00010000;  u8, pub set_direction);
 
     pub fn data_buffer(&self) -> *mut u8 {
-        (((self.data_buffer_hi() as usize) << 32) | (self.data_buffer_lo() as usize))
-            as *mut u8
+        (((self.data_buffer_hi() as usize) << 32) | (self.data_buffer_lo() as usize)) as *mut u8
     }
     pub fn set_data_buffer(&mut self, ptr: *mut u8) {
         let ptr = ptr as usize;
@@ -409,7 +404,7 @@ impl Trb for ConfigureEndpointCommand {
 
 #[repr(C, align(16))]
 pub struct EvaluateContextCommand {
-            data: [u32; 4]
+    data: [u32; 4],
 }
 impl EvaluateContextCommand {
     bit_getter!(data[0]: u32; 0xFFFFFFF0; u32, pub input_ctx_ptr_lo);

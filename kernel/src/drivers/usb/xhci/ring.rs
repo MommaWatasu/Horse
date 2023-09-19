@@ -1,70 +1,60 @@
-use core::{
-    mem::zeroed,
-    ptr::{
-        null_mut,
-        addr_of,
-        addr_of_mut
-    }
+use super::{
+    trb::{GenericTrb, Link, Trb},
+    InterrupterRegisterSet,
 };
 use crate::{
-    status::StatusCode,
-    bit_getter,
-    bit_setter,
-    trace,
-    drivers::usb::memory::*,
-    volatile::Volatile
+    bit_getter, bit_setter, drivers::usb::memory::*, status::StatusCode, trace, volatile::Volatile,
 };
-use super::{
-    trb::{
-        GenericTrb,
-        Link,
-        Trb
-    },
-    InterrupterRegisterSet
+use core::{
+    mem::zeroed,
+    ptr::{addr_of, addr_of_mut, null_mut},
 };
 
 pub struct Ring {
     buf: &'static mut [GenericTrb],
     pub cycle_bit: bool,
-    write_idx: usize
+    write_idx: usize,
 }
 
 impl Ring {
     pub fn with_capacity(buf_size: usize) -> Result<Self, StatusCode> {
         let buf: &mut [GenericTrb] = unsafe {
-            usballoc().alloc_slice_ext::<GenericTrb>(buf_size, 64, Some(64*1024)).unwrap().as_mut()
+            usballoc()
+                .alloc_slice_ext::<GenericTrb>(buf_size, 64, Some(64 * 1024))
+                .unwrap()
+                .as_mut()
         };
         for p in buf.iter_mut() {
             *p = unsafe { zeroed() };
         }
-        Ok(Self{
+        Ok(Self {
             buf,
             cycle_bit: true,
-            write_idx: 0
+            write_idx: 0,
         })
     }
-    
+
     pub fn buffer_ptr(&self) -> *const GenericTrb {
         self.buf.as_ptr()
     }
-    
+
     pub fn copy_to_last(&mut self, mut trb: GenericTrb) {
         trb.set_cycle_bit(self.cycle_bit as u8);
-        
+
         let p = &mut self.buf[self.write_idx] as *mut GenericTrb as *mut u32;
-        
+
         for i in 0..3 {
             unsafe { p.add(i).write_volatile(trb.data[i]) };
         }
-        
+
         unsafe { p.add(3).write_volatile(trb.data[3]) };
     }
-    
+
     pub fn push(&mut self, trb: &GenericTrb) -> &GenericTrb {
         self.copy_to_last(trb.clone());
         let written_idx = self.write_idx;
         self.write_idx += 1;
-        
+
         if self.write_idx + 1 == self.buf.len() {
             let mut link = Link::new(self.buffer_ptr() as usize);
             link.set_toggle_cycle(1);
@@ -86,20 +76,26 @@ pub struct EventRing {
     buf: *const [GenericTrb],
     erst: *const [EventRingSegmentTableEntry],
     cycle_bit: bool,
-    interrupter: *mut InterrupterRegisterSet
+    interrupter: *mut InterrupterRegisterSet,
 }
 
 impl EventRing {
     pub fn with_capacity(buf_size: usize) -> Result<Self, StatusCode> {
         let buf: &mut [GenericTrb] = unsafe {
-            usballoc().alloc_slice_ext::<GenericTrb>(buf_size, 64, Some(64 * 1024)).unwrap().as_mut()
+            usballoc()
+                .alloc_slice_ext::<GenericTrb>(buf_size, 64, Some(64 * 1024))
+                .unwrap()
+                .as_mut()
         };
         for p in buf.iter_mut() {
             *p = unsafe { zeroed() };
         }
         let buf = buf as *const [GenericTrb];
         let table: &mut [EventRingSegmentTableEntry] = unsafe {
-            usballoc().alloc_slice_ext::<EventRingSegmentTableEntry>(1, 64, Some(64 * 1024)).unwrap().as_mut()
+            usballoc()
+                .alloc_slice_ext::<EventRingSegmentTableEntry>(1, 64, Some(64 * 1024))
+                .unwrap()
+                .as_mut()
         };
         for p in table.iter_mut() {
             *p = unsafe { zeroed() };
@@ -109,15 +105,15 @@ impl EventRing {
             table[0].set_ring_segment_size((*buf).len() as u16);
         }
         let table = table as *const [EventRingSegmentTableEntry];
-        
+
         Ok(Self {
             buf,
             erst: table,
             cycle_bit: true,
-            interrupter: null_mut()
+            interrupter: null_mut(),
         })
     }
-    
+
     pub fn initialize(&mut self, interrupter: *mut InterrupterRegisterSet) {
         self.interrupter = interrupter;
 
@@ -137,7 +133,7 @@ impl EventRing {
             })
         };
     }
-    
+
     pub fn front(&self) -> Option<&GenericTrb> {
         if self.has_front() {
             Some(unsafe { &*self.read_dequeue_pointer() })
@@ -145,24 +141,24 @@ impl EventRing {
             None
         }
     }
-    
+
     pub fn pop(&mut self) {
         let mut new_front = unsafe { self.read_dequeue_pointer().add(1) };
-        
+
         {
             let begin = unsafe { (*self.erst)[0].pointer() as *const GenericTrb };
             let size = unsafe { (*self.erst)[0].ring_segment_size() };
             let end = unsafe { begin.add(size as usize) };
-            
+
             if new_front == end {
                 new_front = begin;
                 self.cycle_bit = !self.cycle_bit;
             }
         }
-        
+
         self.write_dequeue_pointer(new_front);
     }
-    
+
     fn write_dequeue_pointer(&mut self, ptr: *const GenericTrb) {
         unsafe {
             Volatile::unaligned_modify(addr_of_mut!((*self.interrupter).erdp), |erdp| {
@@ -170,13 +166,14 @@ impl EventRing {
             })
         };
     }
-    
+
     fn read_dequeue_pointer(&self) -> *const GenericTrb {
         unsafe {
-            Volatile::unaligned_read(addr_of!((*self.interrupter).erdp)).pointer() as *const GenericTrb
+            Volatile::unaligned_read(addr_of!((*self.interrupter).erdp)).pointer()
+                as *const GenericTrb
         }
     }
-    
+
     pub fn has_front(&self) -> bool {
         unsafe { (*self.read_dequeue_pointer()).cycle_bit() == self.cycle_bit as u8 }
     }

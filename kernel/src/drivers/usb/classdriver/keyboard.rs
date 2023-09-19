@@ -1,20 +1,14 @@
-use core::ptr::NonNull;
+use super::{Driver, HidDriver, TransferRequest};
 use crate::{
-    status::Result,
     drivers::usb::{
-        endpoint::{
-            EndpointId,
-            EndpointConfig
-        },
-        setupdata::SetupData
+        endpoint::{EndpointConfig, EndpointId},
+        setupdata::SetupData,
     },
-    trace, println
+    println,
+    status::Result,
+    trace,
 };
-use super::{
-    Driver,
-    HidDriver,
-    TransferRequest
-};
+use core::ptr::NonNull;
 
 pub struct HidKeyboardDriver {
     hid_driver: HidDriver,

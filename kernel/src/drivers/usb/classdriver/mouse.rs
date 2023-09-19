@@ -1,39 +1,30 @@
-use core::ptr::NonNull;
+use super::{Driver, HidDriver, TransferRequest};
 use crate::{
-    status::Result,
-    mouse::*,
-    Graphics,
-    PixelColor,
-    graphics::Coord,
     drivers::usb::{
-        endpoint::{
-            EndpointId,
-            EndpointConfig
-        },
-        setupdata::SetupData
+        endpoint::{EndpointConfig, EndpointId},
+        setupdata::SetupData,
     },
-    trace
+    graphics::Coord,
+    mouse::*,
+    status::Result,
+    trace, Graphics, PixelColor,
 };
-use super::{
-    Driver,
-    HidDriver,
-    TransferRequest
-};
+use core::ptr::NonNull;
 use spin::Mutex;
 
-pub static MOUSE_CURSOR: Mutex<MouseCursor>
-    = Mutex::new(MouseCursor::new(PixelColor(0, 0, 0), Coord::new(100, 100)));
+pub static MOUSE_CURSOR: Mutex<MouseCursor> =
+    Mutex::new(MouseCursor::new(PixelColor(0, 0, 0), Coord::new(100, 100)));
 
 pub struct HidMouseDriver {
     hid_driver: HidDriver,
-    screen_size: Coord
+    screen_size: Coord,
 }
 impl HidMouseDriver {
     pub fn new(interface_idx: u8) -> Result<Self> {
         let graphics = Graphics::instance();
         Ok(Self {
             hid_driver: HidDriver::new(interface_idx, 8)?,
-            screen_size: Coord::from_tuple(graphics.resolution())
+            screen_size: Coord::from_tuple(graphics.resolution()),
         })
     }
 

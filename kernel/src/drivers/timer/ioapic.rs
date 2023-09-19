@@ -8,7 +8,7 @@ const DATA_REGISTER: *mut u32 = 0xfec00010 as *mut u32;
 const LAPIC_ID_REGISTER: *mut u8 = 0xfee00020 as *mut u8;
 
 struct RedirectionTable {
-    pub data: u64
+    pub data: u64,
 }
 
 impl RedirectionTable {
@@ -24,7 +24,9 @@ pub fn configure_redirection_table(idx: u8) {
         let lower_bit = read(DATA_REGISTER);
         write(INDEX_REGISTER, 2 * idx + 11);
         let upper_bit = read(DATA_REGISTER);
-        rt = RedirectionTable{ data: (upper_bit as u64) << 32 | lower_bit as u64 };
+        rt = RedirectionTable {
+            data: (upper_bit as u64) << 32 | lower_bit as u64,
+        };
     }
     rt.set_destination_mode(1);
     let apic_id = unsafe { read(LAPIC_ID_REGISTER) };
@@ -32,7 +34,7 @@ pub fn configure_redirection_table(idx: u8) {
     //rt.set_vector(InterruptVector::Hpet as u8);
     unsafe {
         write(INDEX_REGISTER, 2 * idx + 10);
-        let lower_bit= u32::try_from((rt.data << 32) >> 32).unwrap();
+        let lower_bit = u32::try_from((rt.data << 32) >> 32).unwrap();
         write(DATA_REGISTER, lower_bit);
 
         write(INDEX_REGISTER, 2 * idx + 11);

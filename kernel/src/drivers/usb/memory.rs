@@ -1,13 +1,10 @@
-use alloc::{
-    vec::Vec,
-    vec
-};
+use crate::trace;
+use alloc::{vec, vec::Vec};
 use core::{
     mem::{align_of, size_of},
-    ptr::{NonNull, slice_from_raw_parts_mut},
+    ptr::{slice_from_raw_parts_mut, NonNull},
 };
 use spin::Once;
-use crate::trace;
 
 const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
 pub static mut USB_ALLOC: Once<USBAlloc<MEM_POOL_SIZE>> = Once::new();
@@ -23,7 +20,7 @@ pub struct USBAlloc<const BUF_SIZE: usize> {
     buf: Vec<u8>,
     ptr: usize,
     end: usize,
-    boundary: usize
+    boundary: usize,
 }
 
 impl<const BUF_SIZE: usize> USBAlloc<BUF_SIZE> {
@@ -36,7 +33,7 @@ impl<const BUF_SIZE: usize> USBAlloc<BUF_SIZE> {
             buf,
             ptr,
             end,
-            boundary: 4096
+            boundary: 4096,
         }
     }
 
@@ -49,7 +46,7 @@ impl<const BUF_SIZE: usize> USBAlloc<BUF_SIZE> {
         &mut self,
         size: usize,
         align: usize,
-        boundary: Option<usize>
+        boundary: Option<usize>,
     ) -> Option<NonNull<[u8]>> {
         let mut ptr = Self::ceil(self.ptr, align);
         let next_boundary = Self::ceil(self.ptr, boundary.unwrap_or(self.boundary));
@@ -71,15 +68,15 @@ impl<const BUF_SIZE: usize> USBAlloc<BUF_SIZE> {
     }
 
     pub fn alloc_slice<T: 'static>(&mut self, len: usize) -> Option<NonNull<[T]>> {
-        unsafe {  self.alloc_slice_ext::<T>(len, align_of::<T>(), None) }
+        unsafe { self.alloc_slice_ext::<T>(len, align_of::<T>(), None) }
     }
 
     pub unsafe fn alloc_slice_ext<T: 'static>(
         &mut self,
         len: usize,
         align: usize,
-        boundary: Option<usize>
-    )  -> Option<NonNull<[T]>> {
+        boundary: Option<usize>,
+    ) -> Option<NonNull<[T]>> {
         let buf: &mut [u8] = self.alloc(size_of::<T>() * len, align, boundary)?.as_mut();
         let ptr = buf.as_mut_ptr() as *mut T;
         Some(NonNull::new_unchecked(slice_from_raw_parts_mut(ptr, len)))
@@ -92,7 +89,7 @@ impl<const BUF_SIZE: usize> USBAlloc<BUF_SIZE> {
     pub unsafe fn alloc_obj_ext<T: 'static>(
         &mut self,
         align: usize,
-        boundary: Option<usize>
+        boundary: Option<usize>,
     ) -> Option<NonNull<T>> {
         debug_assert!(align % align_of::<T>() == 0);
         let buf: &mut [u8] = self.alloc(size_of::<T>(), align, boundary)?.as_mut();

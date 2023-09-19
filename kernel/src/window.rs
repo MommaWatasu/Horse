@@ -1,20 +1,10 @@
-use alloc::{
-    vec::Vec,
-    vec
-};
+use alloc::{vec, vec::Vec};
 use core::ptr::null_mut;
 
 use crate::{
     container_of,
-    framebuffer::{
-        FrameBuffer,
-        FrameBufferConfig
-    },
-    graphics::{
-        Coord,
-        PixelColor,
-        PixelWriter
-    }
+    framebuffer::{FrameBuffer, FrameBufferConfig},
+    graphics::{Coord, PixelColor, PixelWriter},
 };
 use libloader::PixelFormat;
 
@@ -30,7 +20,9 @@ impl WindowWriter {
 
     pub fn move_buffer(&self, dst: Coord, src: Coord, size: Coord) {
         let window = container_of!(self, mutable Window, writer);
-        unsafe { window.shadow_buffer.move_buffer(dst, src, size); }
+        unsafe {
+            window.shadow_buffer.move_buffer(dst, src, size);
+        }
     }
 
     pub fn size(&self) -> (usize, usize) {
@@ -45,7 +37,7 @@ pub struct Window {
     height: usize,
     data: Vec<Vec<PixelColor>>,
     pub shadow_buffer: FrameBuffer,
-    transparent_color: Option<PixelColor>
+    transparent_color: Option<PixelColor>,
 }
 
 impl Window {
@@ -54,7 +46,7 @@ impl Window {
             fb: null_mut(),
             stride: 0,
             resolution: (width, height),
-            format
+            format,
         };
         let mut shadow_buffer = FrameBuffer::new(config);
         Self {
@@ -63,11 +55,13 @@ impl Window {
             height,
             data: vec![vec![PixelColor::default(); height]; width],
             shadow_buffer,
-            transparent_color:  None
+            transparent_color: None,
         }
     }
 
-    pub fn writer(&mut self) -> &mut WindowWriter {&mut self.writer}
+    pub fn writer(&mut self) -> &mut WindowWriter {
+        &mut self.writer
+    }
 
     pub fn set_transparent_color(&mut self, c: Option<PixelColor>) {
         self.transparent_color = c;
@@ -79,7 +73,9 @@ impl Window {
 
     pub fn draw_to(&self, fb: &mut FrameBuffer, position: Coord) {
         if self.transparent_color.is_none() {
-            unsafe { fb.copy(position, &self.shadow_buffer); }
+            unsafe {
+                fb.copy(position, &self.shadow_buffer);
+            }
         } else {
             let mut writer = fb.writer;
             let tc = &self.transparent_color.unwrap();

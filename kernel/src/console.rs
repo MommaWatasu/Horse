@@ -1,20 +1,11 @@
-use alloc::{
-    vec::Vec,
-    vec
-};
+use alloc::{vec, vec::Vec};
 use core::fmt::Write;
-use spin::{
-    Mutex,
-    MutexGuard,
-};
+use spin::{Mutex, MutexGuard};
 
 use crate::{
     ascii_font::FONTS,
-    graphics::{
-        Coord,
-        PixelColor
-    },
-    window::WindowWriter
+    graphics::{Coord, PixelColor},
+    window::WindowWriter,
 };
 
 static RAW_CONSOLE: Mutex<Option<Console>> = Mutex::new(None);
@@ -35,7 +26,12 @@ pub struct Console {
 }
 
 impl Console {
-    pub fn new(pixel_writer: &WindowWriter, resolution: (usize, usize), fg_color: &PixelColor, bg_color: &PixelColor) -> Self {
+    pub fn new(
+        pixel_writer: &WindowWriter,
+        resolution: (usize, usize),
+        fg_color: &PixelColor,
+        bg_color: &PixelColor,
+    ) -> Self {
         clear(pixel_writer, bg_color);
         let size = (resolution.0 / MARGIN, resolution.1 / LINE_HEIGHT);
         Console {
@@ -50,7 +46,12 @@ impl Console {
         }
     }
 
-    pub fn initialize(pixel_writer: &WindowWriter, resolution: (usize, usize), fg_color: &PixelColor, bg_color: &PixelColor) {
+    pub fn initialize(
+        pixel_writer: &WindowWriter,
+        resolution: (usize, usize),
+        fg_color: &PixelColor,
+        bg_color: &PixelColor,
+    ) {
         *RAW_CONSOLE.lock() = Some(Console::new(pixel_writer, resolution, fg_color, bg_color));
     }
 
@@ -62,8 +63,12 @@ impl Console {
         unsafe { &*(self.pixel_writer as *const WindowWriter) }
     }
 
-    pub fn columns(&self) -> usize { self.size.0 }
-    pub fn rows(&self) -> usize { self.size.1 }
+    pub fn columns(&self) -> usize {
+        self.size.0
+    }
+    pub fn rows(&self) -> usize {
+        self.size.1
+    }
 
     pub fn actual_row(&self, row: usize) -> usize {
         (row + self.buffer_row_offset) % self.rows()
@@ -78,8 +83,17 @@ impl Console {
         if self.cursor_row < self.rows() - 1 {
             self.cursor_row += 1;
         } else {
-            self.pixel_writer().move_buffer(Coord::new(0, 0), Coord::new(0, LINE_HEIGHT), Coord::new(8 * self.columns(), LINE_HEIGHT * (self.rows()-1)));
-            fill_rectangle(self.pixel_writer(), Coord::new(0, LINE_HEIGHT * (self.rows()-1)), Coord::new(8 * self.columns(), LINE_HEIGHT), &self.bg_color);
+            self.pixel_writer().move_buffer(
+                Coord::new(0, 0),
+                Coord::new(0, LINE_HEIGHT),
+                Coord::new(8 * self.columns(), LINE_HEIGHT * (self.rows() - 1)),
+            );
+            fill_rectangle(
+                self.pixel_writer(),
+                Coord::new(0, LINE_HEIGHT * (self.rows() - 1)),
+                Coord::new(8 * self.columns(), LINE_HEIGHT),
+                &self.bg_color,
+            );
         }
     }
     pub fn put_string(&mut self, s: &str) {
@@ -96,7 +110,7 @@ impl Console {
                     &self.fg_color,
                 );
                 self.cursor_column += 1;
-                if self.cursor_column == self.columns()-1 {
+                if self.cursor_column == self.columns() - 1 {
                     self.newline();
                 }
             }

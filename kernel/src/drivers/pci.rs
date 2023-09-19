@@ -1,16 +1,12 @@
+use crate::{bit_getter, bit_setter, debug, info, status::StatusCode, status_log, trace};
 use core::fmt::Display;
 use x86_64::instructions::port::{Port, PortWriteOnly};
-use crate::{
-    status::StatusCode,
-    bit_getter, bit_setter,
-    status_log, trace, debug, info
-};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ClassCode {
     pub base: u8,
     pub sub: u8,
-    pub interface: u8
+    pub interface: u8,
 }
 
 impl Display for ClassCode {
@@ -29,7 +25,7 @@ pub struct Device {
     pub device: u8,
     pub function: u8,
     pub header_type: u8,
-    pub class_code: ClassCode
+    pub class_code: ClassCode,
 }
 
 impl Device {
@@ -38,23 +34,23 @@ impl Device {
     }
 }
 
-const EMPTY_DEVICE: Device = Device{
+const EMPTY_DEVICE: Device = Device {
     bus: 0xde,
     device: 0xad,
     function: 0xbe,
     header_type: 0xef,
-    class_code: ClassCode{
+    class_code: ClassCode {
         base: 0,
         sub: 0,
-        interface: 0
-    }
+        interface: 0,
+    },
 };
 
 static PCI_PORT: spin::Mutex<PciIOPort> = spin::Mutex::new(PciIOPort::new());
 
 pub struct PciDevices {
     devices: [Device; 32],
-    count: usize
+    count: usize,
 }
 
 pub struct PciDevicesIter<'a> {
@@ -66,7 +62,7 @@ impl PciDevices {
     const fn new() -> Self {
         Self {
             devices: [EMPTY_DEVICE; 32],
-            count: 0
+            count: 0,
         }
     }
 
@@ -80,15 +76,20 @@ impl PciDevices {
         }
     }
 
-    fn scan_function(&mut self, bus: u8, device: u8, function: u8) -> Result<StatusCode, StatusCode> {
+    fn scan_function(
+        &mut self,
+        bus: u8,
+        device: u8,
+        function: u8,
+    ) -> Result<StatusCode, StatusCode> {
         let header_type = read_header_type(bus, device, function);
         let class_code = read_class_code(bus, device, function);
-        self.add_device(Device{
+        self.add_device(Device {
             bus,
             device,
             function,
             header_type,
-            class_code
+            class_code,
         })?;
         if class_code.base == 0x06 && class_code.sub == 0x04 {
             let bus_numbers = read_bus_numbers(bus, device, function);
@@ -147,7 +148,7 @@ pub fn find_pci_devices() -> PciDevices {
         Ok(v) => {
             pci_devices = v;
             status_log!(StatusCode::Success, "Scanning Bus")
-        },
+        }
         Err(_code) => {
             panic!("Scanning Bus");
         }
@@ -157,12 +158,7 @@ pub fn find_pci_devices() -> PciDevices {
         let class_code = read_class_code(dev.bus, dev.device, dev.function);
         debug!(
             "{}.{}.{}:, vend {:04x}, class {}, head {:02x}",
-            dev.bus,
-            dev.device,
-            dev.function,
-            vendor_id,
-            class_code,
-            dev.header_type
+            dev.bus, dev.device, dev.function, vendor_id, class_code, dev.header_type
         );
     }
     pci_devices
@@ -170,18 +166,18 @@ pub fn find_pci_devices() -> PciDevices {
 
 fn read_msi_capability(dev: &Device, cap_addr: u8) -> MSICapability {
     let mut msi_cap = MSICapability::default();
-    
+
     msi_cap.data = read_conf_reg(dev, cap_addr);
-    msi_cap.msg_addr = read_conf_reg(dev, cap_addr+4);
-    
-    let mut msg_data_addr = cap_addr+8;
+    msi_cap.msg_addr = read_conf_reg(dev, cap_addr + 4);
+
+    let mut msg_data_addr = cap_addr + 8;
     if msi_cap.addr_64_capable() != 0 {
-        msi_cap.msg_upper_addr = read_conf_reg(dev, cap_addr+8);
+        msi_cap.msg_upper_addr = read_conf_reg(dev, cap_addr + 8);
         msg_data_addr = cap_addr + 12;
     }
-    
+
     msi_cap.msg_data = read_conf_reg(dev, msg_data_addr);
-    
+
     if msi_cap.per_vector_mask_capable() != 0 {
         msi_cap.mask_bits = read_conf_reg(dev, msg_data_addr + 4);
         msi_cap.pending_bits = read_conf_reg(dev, msg_data_addr + 8)
@@ -189,22 +185,18 @@ fn read_msi_capability(dev: &Device, cap_addr: u8) -> MSICapability {
     return msi_cap;
 }
 
-fn write_msi_capability(
-    dev: &Device,
-    cap_addr: u8,
-    msi_cap: &MSICapability
-) {
+fn write_msi_capability(dev: &Device, cap_addr: u8, msi_cap: &MSICapability) {
     write_conf_reg(dev, cap_addr, msi_cap.data);
-    write_conf_reg(dev, cap_addr+4, msi_cap.msg_addr);
-    
+    write_conf_reg(dev, cap_addr + 4, msi_cap.msg_addr);
+
     let mut msg_data_addr = cap_addr + 8;
     if msi_cap.addr_64_capable() != 0 {
-        write_conf_reg(dev, cap_addr+8, msi_cap.msg_upper_addr);
+        write_conf_reg(dev, cap_addr + 8, msi_cap.msg_upper_addr);
         msg_data_addr = cap_addr + 12;
     }
-    
+
     write_conf_reg(dev, msg_data_addr, msi_cap.msg_data);
-    
+
     if msi_cap.per_vector_mask_capable() != 0 {
         write_conf_reg(dev, msg_data_addr + 4, msi_cap.mask_bits);
         write_conf_reg(dev, msg_data_addr + 8, msi_cap.pending_bits);
@@ -213,23 +205,23 @@ fn write_msi_capability(
 
 struct PciIOPort {
     address_port: PortWriteOnly<u32>,
-    data_port: Port<u32>
+    data_port: Port<u32>,
 }
 
 impl PciIOPort {
     const fn new() -> Self {
         Self {
-            address_port: PortWriteOnly::new(0x0cf8u16),//IO Port Address of the CONFIG_ADDRESS Register
-            data_port: Port::new(0x0cfcu16),            //IO Port Address of the CONFIG_DATA Register
+            address_port: PortWriteOnly::new(0x0cf8u16), //IO Port Address of the CONFIG_ADDRESS Register
+            data_port: Port::new(0x0cfcu16), //IO Port Address of the CONFIG_DATA Register
         }
     }
 
     fn makeaddress(bus: u8, device: u8, function: u8, reg_addr: u8) -> u32 {
         return 1u32 << 31
-            | u32::from(bus)<<16
-            | u32::from(device)<<11
-            | u32::from(function)<<8
-            | u32::from(reg_addr & 0xfcu8)
+            | u32::from(bus) << 16
+            | u32::from(device) << 11
+            | u32::from(function) << 8
+            | u32::from(reg_addr & 0xfcu8);
     }
 
     pub fn read(&mut self, bus: u8, device: u8, function: u8, reg_addr: u8) -> u32 {
@@ -239,7 +231,7 @@ impl PciIOPort {
             self.data_port.read()
         }
     }
-    
+
     pub fn write(&mut self, bus: u8, device: u8, function: u8, reg_addr: u8, value: u32) {
         let addr = PciIOPort::makeaddress(bus, device, function, reg_addr);
         unsafe {
@@ -251,7 +243,7 @@ impl PciIOPort {
     pub fn read_dev(&mut self, dev: &Device, reg_addr: u8) -> u32 {
         self.read(dev.bus, dev.device, dev.function, reg_addr)
     }
-    
+
     pub fn write_dev(&mut self, dev: &Device, reg_addr: u8, value: u32) {
         self.write(dev.bus, dev.device, dev.function, reg_addr, value);
     }
@@ -311,7 +303,12 @@ pub fn read_bar64(device: &Device, bar_index: usize) -> Result<u64, StatusCode> 
         return Err(StatusCode::IndexOutOfRange);
     }
 
-    let bar_upper: u32 = PCI_PORT.lock().read(device.bus, device.device, device.function, u8::from(addr+4));
+    let bar_upper: u32 = PCI_PORT.lock().read(
+        device.bus,
+        device.device,
+        device.function,
+        u8::from(addr + 4),
+    );
     return Ok(bar as u64 | (bar_upper as u64) << 32);
 }
 
@@ -349,22 +346,22 @@ fn configure_msi_register(
     cap_addr: u8,
     msg_addr: u32,
     msg_data: u32,
-    num_vector_exponent: u8
+    num_vector_exponent: u8,
 ) -> StatusCode {
     let mut msi_cap = read_msi_capability(dev, cap_addr);
-    
+
     if msi_cap.multi_msg_capable() <= num_vector_exponent {
         msi_cap.set_multi_msg_enable(msi_cap.multi_msg_capable());
     } else {
         msi_cap.set_multi_msg_enable(num_vector_exponent);
     }
-    
+
     msi_cap.set_msi_enable(1);
     msi_cap.msg_addr = msg_addr;
     msi_cap.msg_data = msg_data;
-    
+
     write_msi_capability(dev, cap_addr, &msi_cap);
-    return StatusCode::Success
+    return StatusCode::Success;
 }
 
 fn configure_msix_register(
@@ -372,7 +369,7 @@ fn configure_msix_register(
     _cap_addr: u8,
     _msg_addr: u32,
     _msg_data: u32,
-    _num_vector_exponent: u8
+    _num_vector_exponent: u8,
 ) -> StatusCode {
     return StatusCode::NotImplemented;
 }
@@ -399,7 +396,7 @@ struct MSICapability {
     msg_upper_addr: u32,
     msg_data: u32,
     mask_bits: u32,
-    pending_bits: u32
+    pending_bits: u32,
 }
 
 impl MSICapability {
@@ -413,26 +410,27 @@ impl MSICapability {
 #[derive(PartialEq)]
 pub enum MSITriggerMode {
     Edge = 0,
-    Level = 1
+    Level = 1,
 }
 
 pub enum MSIDeliveryMode {
-    Fixed          = 0b000,
+    Fixed = 0b000,
     LowestPriority = 0b001,
-    SMI            = 0b010,
-    NMI            = 0b100,
-    INIT           = 0b101,
-    ExtINT         = 0b111,
+    SMI = 0b010,
+    NMI = 0b100,
+    INIT = 0b101,
+    ExtINT = 0b111,
 }
 
 fn configure_msi(
     dev: &Device,
     msg_addr: u32,
     msg_data: u32,
-    num_vector_exponent: u8
+    num_vector_exponent: u8,
 ) -> StatusCode {
     let mut cap_addr: u8 = (read_conf_reg(dev, 0x34) & 0xff) as u8;
-    let mut msi_cap_addr: u8 = 0; let mut msix_cap_addr: u8 = 0;
+    let mut msi_cap_addr: u8 = 0;
+    let mut msix_cap_addr: u8 = 0;
     while cap_addr != 0 {
         let header = read_capability_header(dev, cap_addr);
         if header.cap_id() == CAPABILITY_MSI {
@@ -442,11 +440,17 @@ fn configure_msi(
         }
         cap_addr = header.next_ptr();
     }
-    
+
     if msi_cap_addr != 0 {
         return configure_msi_register(dev, msi_cap_addr, msg_addr, msg_data, num_vector_exponent);
     } else if msix_cap_addr != 0 {
-        return configure_msix_register(dev, msix_cap_addr, msg_addr, msg_data, num_vector_exponent);
+        return configure_msix_register(
+            dev,
+            msix_cap_addr,
+            msg_addr,
+            msg_data,
+            num_vector_exponent,
+        );
     }
     return StatusCode::NoPCIMSI;
 }
@@ -457,7 +461,7 @@ pub fn configure_msi_fixed_destination(
     trigger_mode: MSITriggerMode,
     delivery_mode: MSIDeliveryMode,
     vector: u8,
-    num_vector_exponent: u8
+    num_vector_exponent: u8,
 ) -> StatusCode {
     let msg_addr: u32 = 0xFEE00000 as u32 | (apic_id as u32) << 12;
     let mut msg_data: u32 = (delivery_mode as u32) << 8 | vector as u32;

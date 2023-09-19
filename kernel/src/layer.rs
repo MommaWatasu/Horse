@@ -1,20 +1,11 @@
-use alloc::{
-    sync::Arc,
-    vec::Vec,
-    vec
-};
-use core::cell::RefCell;
 use crate::{
     error,
-    graphics::{
-        Coord,
-        FrameBufferWriter,
-        PixelWriter
-    },
-    FrameBuffer,
-    FrameBufferConfig,
-    window::Window
+    graphics::{Coord, FrameBufferWriter, PixelWriter},
+    window::Window,
+    FrameBuffer, FrameBufferConfig,
 };
+use alloc::{sync::Arc, vec, vec::Vec};
+use core::cell::RefCell;
 use spin::Once;
 
 pub static mut LAYER_MANAGER: Once<LayerManager> = Once::new();
@@ -23,7 +14,7 @@ pub static mut LAYER_MANAGER: Once<LayerManager> = Once::new();
 pub struct Layer {
     id: u32,
     pos: Coord,
-    pub window: Arc<Window>
+    pub window: Arc<Window>,
 }
 
 impl Layer {
@@ -31,27 +22,31 @@ impl Layer {
         Self {
             id,
             pos: Default::default(),
-            window: Default::default()
+            window: Default::default(),
         }
     }
 
-    pub fn id(&self) -> u32 { self.id }
+    pub fn id(&self) -> u32 {
+        self.id
+    }
 
     pub fn set_window(&mut self, window: Arc<Window>) -> &mut Self {
         self.window = window;
-        return self
+        return self;
     }
 
-    pub fn get_window(&self) -> Arc<Window> { self.window.clone() }
+    pub fn get_window(&self) -> Arc<Window> {
+        self.window.clone()
+    }
 
     pub fn move_absolute(&mut self, pos: Coord) -> &mut Self {
         self.pos = pos;
-        return self
+        return self;
     }
 
     pub fn move_relative(&mut self, pos_diff: Coord) -> &mut Self {
         self.pos += pos_diff;
-        return self
+        return self;
     }
 
     pub fn draw_to(&self, fb: &mut FrameBuffer) {
@@ -62,15 +57,17 @@ impl Layer {
 #[derive(PartialEq)]
 pub enum LayerHeight {
     Hide,
-    Height(usize)
+    Height(usize),
 }
 
 impl LayerHeight {
-    pub fn is_hide(&self) -> bool { self == &Self::Hide }
+    pub fn is_hide(&self) -> bool {
+        self == &Self::Hide
+    }
     pub fn height(&self) -> Option<usize> {
         match self {
             Self::Height(height) => Some(*height),
-            Self::Hide => None
+            Self::Hide => None,
         }
     }
 }
@@ -79,7 +76,7 @@ pub struct LayerManager {
     fb: FrameBuffer,
     layers: Vec<Arc<RefCell<Layer>>>,
     layer_stack: Vec<Arc<RefCell<Layer>>>,
-    layer_id: u32
+    layer_id: u32,
 }
 
 impl LayerManager {
@@ -88,15 +85,15 @@ impl LayerManager {
             fb: FrameBuffer::new(fb_config),
             layers: vec![],
             layer_stack: vec![],
-            layer_id: 0
-        }
+            layer_id: 0,
+        };
     }
 
     pub fn new_layer(&mut self) -> Arc<RefCell<Layer>> {
         self.layer_id += 1;
         let layer = Arc::new(RefCell::new(Layer::new(self.layer_id)));
         self.layers.push(layer.clone());
-        return layer.clone()
+        return layer.clone();
     }
 
     pub fn draw(&mut self) {
@@ -106,7 +103,9 @@ impl LayerManager {
     }
 
     pub fn move_absolute(&mut self, id: u32, new_position: Coord) -> Result<(), ()> {
-        self.find_layer(id)?.borrow_mut().move_absolute(new_position);
+        self.find_layer(id)?
+            .borrow_mut()
+            .move_absolute(new_position);
         Ok(())
     }
 
@@ -118,16 +117,16 @@ impl LayerManager {
     pub fn up_down(&mut self, id: u32, height: LayerHeight) -> Result<(), ()> {
         if height.is_hide() {
             self.hide(id)?;
-            return Ok(())
+            return Ok(());
         }
         let mut new_height = height.height().unwrap();
 
         let layer = self.find_layer(id)?;
         let old_pos = self.find_ord(id);
-        
+
         if old_pos == None {
             self.layer_stack.insert(new_height, layer);
-            return Ok(())
+            return Ok(());
         }
         if new_height >= self.layer_stack.len() {
             new_height = self.layer_stack.len() - 1;
@@ -141,7 +140,7 @@ impl LayerManager {
         if let Some(pos) = self.find_ord(id) {
             self.layer_stack.remove(pos);
         } else {
-            return Err(())
+            return Err(());
         }
         Ok(())
     }

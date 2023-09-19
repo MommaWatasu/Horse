@@ -1,2 +1,2 @@
-pub mod qemu;
 pub mod edid;
+pub mod qemu;

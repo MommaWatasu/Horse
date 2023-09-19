@@ -22,7 +22,7 @@ pub fn from_bytes<D: Descriptor>(bytes: &[u8]) -> Option<&D> {
     }
 }
 
- #[repr(C, packed)]
+#[repr(C, packed)]
 pub struct DeviceDescriptor {
     pub length: u8,
     pub descriptor_type: u8,

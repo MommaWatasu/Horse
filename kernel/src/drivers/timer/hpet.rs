@@ -1,10 +1,7 @@
+use super::{ioapic::*, DescriptionHeader};
 use crate::{bit_getter, bit_setter, error, info, println};
-use super::{
-    DescriptionHeader,
-    ioapic::*
-};
 
-use core::ptr::{read_unaligned, write_unaligned, read, write};
+use core::ptr::{read, read_unaligned, write, write_unaligned};
 use spin::Mutex;
 
 static HPET_INTERRUPTION: Mutex<bool> = Mutex::new(false);
@@ -15,7 +12,7 @@ pub struct HpetAddress {
     register_bit_width: u8,
     register_bit_offset: u8,
     reserved: u8,
-    pub address: u64
+    pub address: u64,
 }
 
 #[repr(packed, C)]
@@ -27,7 +24,7 @@ pub struct Hpet {
     address: HpetAddress,
     hpet_number: u8,
     minimum_tick: u16,
-    page_protection: u8
+    page_protection: u8,
 }
 
 #[derive(Copy, Clone)]
@@ -35,7 +32,7 @@ pub struct HpetController {
     addr: u64,
     n_timers: u8,
     minimal_tick: u16,
-    frequency: u32
+    frequency: u32,
 }
 
 impl HpetController {
@@ -47,7 +44,10 @@ impl HpetController {
         tcc.set_int_type_cnf(1);
         unsafe {
             write((self.addr + 0x100 + 0x20 * timer) as *mut TCCRegister, tcc);
-            write((self.addr + 0x108 + 0x20 * timer) as *mut u64, read((self.addr + 0xf0) as *const u64) + time);
+            write(
+                (self.addr + 0x108 + 0x20 * timer) as *mut u64,
+                read((self.addr + 0xf0) as *const u64) + time,
+            );
             while read((self.addr + 0x20) as *const u32) != 1 {}
             write((self.addr + 0x20) as *mut u32, 1);
         }
@@ -59,11 +59,16 @@ impl HpetController {
         tcc.set_int_enb_cnf(1); //ensure interruption enabled
         tcc.set_int_type_cnf(1);
         tcc.set_val_set_cnf(1);
-        unsafe { write((self.addr + 0x100 + 0x20 * timer) as *mut TCCRegister, tcc); }
+        unsafe {
+            write((self.addr + 0x100 + 0x20 * timer) as *mut TCCRegister, tcc);
+        }
         if tcc.size_cap() == 1 {
             unsafe {
                 let main_counter = read((self.addr + 0xf0) as *const u64);
-                write((self.addr + 0x108 + 0x20 * timer) as *mut u64, main_counter + time);
+                write(
+                    (self.addr + 0x108 + 0x20 * timer) as *mut u64,
+                    main_counter + time,
+                );
                 write((self.addr + 0x108 + 0x20 * timer) as *mut u64, time);
             }
         } else {
@@ -85,10 +90,11 @@ impl Hpet {
         //save minimal tick
         let minimal_tick = self.minimum_tick;
         //initialize comparator
-        let num_timers = gcid.num_tim_cap()+1;
+        let num_timers = gcid.num_tim_cap() + 1;
         let mut routes: u32 = 0;
         for i in 0..num_timers {
-            let mut tcc = unsafe { read_unaligned((addr + 0x100 + 0x20 * (i as u64)) as *const TCCRegister) };
+            let mut tcc =
+                unsafe { read_unaligned((addr + 0x100 + 0x20 * (i as u64)) as *const TCCRegister) };
             tcc.set_fsb_en_cnf(0);
             tcc.set_32mode_cnf(0);
             routes |= tcc.int_route_cap();
@@ -110,15 +116,15 @@ impl Hpet {
             addr,
             n_timers: num_timers,
             minimal_tick,
-            frequency
-        }
+            frequency,
+        };
     }
 }
 
 //General Capability and ID Register
 #[repr(packed, C)]
 struct GCIDRegister {
-    data: u64
+    data: u64,
 }
 
 impl GCIDRegister {
@@ -130,7 +136,7 @@ impl GCIDRegister {
 //General Configuration Register
 #[repr(packed, C)]
 struct GCRegister {
-    pub data: u64
+    pub data: u64,
 }
 
 impl GCRegister {
@@ -140,7 +146,7 @@ impl GCRegister {
 //Timer Comparator and Capability Register
 #[derive(Copy, Clone)]
 struct TCCRegister {
-    data: u64
+    data: u64,
 }
 
 impl TCCRegister {

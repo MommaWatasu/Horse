@@ -1,33 +1,32 @@
-use crate::{
-    bit_setter,
-    trace
-};
+use crate::{bit_setter, trace};
 
 use core::mem::size_of;
 
 static mut GDT: [SegmentDescriptor; 3] = [SegmentDescriptor::new(); 3];
 
 enum DescriptorType {
-    Upper8Bytes   = 0,
-    TSSAvailable  = 9,
-    TSSBusy       = 11,
-    CallGate      = 12,
+    Upper8Bytes = 0,
+    TSSAvailable = 9,
+    TSSBusy = 11,
+    CallGate = 12,
     InterruptGate = 14,
-    TrapGate      = 15,
+    TrapGate = 15,
 
     //code & segment types
-    ReadWrite     = 2,
-    ExecuteRead   = 10
+    ReadWrite = 2,
+    ExecuteRead = 10,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct SegmentDescriptor {
-    data: u64
+    data: u64,
 }
 
 impl SegmentDescriptor {
-    const fn new() -> Self { Self{ data: 0 } }
+    const fn new() -> Self {
+        Self { data: 0 }
+    }
     bit_setter!(data: u64; 0x000000000000FFFF; u16, limit_low);
     bit_setter!(data: u64; 0x00000000FFFF0000; u16, base_low);
     bit_setter!(data: u64; 0x000000FF00000000; u8, base_middle);
@@ -48,7 +47,7 @@ fn setup_code_segment(
     ty: DescriptorType,
     descriptor_privilege_level: u8,
     base: u32,
-    limit: u32
+    limit: u32,
 ) {
     descriptor.data = 0;
 
@@ -74,7 +73,7 @@ fn setup_data_segment(
     ty: DescriptorType,
     descriptor_privilege_level: u8,
     base: u32,
-    limit: u32
+    limit: u32,
 ) {
     setup_code_segment(descriptor, ty, descriptor_privilege_level, base, limit);
     descriptor.long_mode(0);
@@ -86,7 +85,10 @@ unsafe fn setup_segments() {
     trace!("INITIALIZING segmentation");
     setup_code_segment(&mut GDT[1], DescriptorType::ExecuteRead, 0, 0, 0xfffff);
     setup_data_segment(&mut GDT[2], DescriptorType::ReadWrite, 0, 0, 0xfffff);
-    load_gdt((size_of::<[SegmentDescriptor; 3]>()) as u16 - 1, &GDT[0] as *const SegmentDescriptor as usize);
+    load_gdt(
+        (size_of::<[SegmentDescriptor; 3]>()) as u16 - 1,
+        &GDT[0] as *const SegmentDescriptor as usize,
+    );
 }
 
 pub fn initialize() {

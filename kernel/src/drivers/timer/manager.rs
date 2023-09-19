@@ -1,9 +1,5 @@
-use crate::{
-    INTERRUPTION_QUEUE,
-    Message,
-    println
-};
 use super::FFTimer;
+use crate::{println, Message, INTERRUPTION_QUEUE};
 
 use alloc::collections::BinaryHeap;
 use core::cmp::{Ord, Ordering};
@@ -11,12 +7,16 @@ use core::cmp::{Ord, Ordering};
 pub struct TimerManager {
     tick: u64,
     timers: BinaryHeap<Timer>,
-    fft: FFTimer
+    fft: FFTimer,
 }
 
 impl TimerManager {
     pub fn new(fft: FFTimer) -> Self {
-        return Self{tick: 0, timers: BinaryHeap::new(), fft}
+        return Self {
+            tick: 0,
+            timers: BinaryHeap::new(),
+            fft,
+        };
     }
     pub fn add_timer(&mut self, timeout: u64, value: i32) {
         let timer = Timer::new(self.tick, timeout, value);
@@ -29,9 +29,14 @@ impl TimerManager {
                 if t.absolute_timeout > (self.tick as u128) {
                     break;
                 }
-                INTERRUPTION_QUEUE.lock().push(Message::TimerTimeout{ timeout: t.timeout, value: t.value });
+                INTERRUPTION_QUEUE.lock().push(Message::TimerTimeout {
+                    timeout: t.timeout,
+                    value: t.value,
+                });
                 self.timers.pop();
-            } else { break }
+            } else {
+                break;
+            }
         }
     }
     pub fn wait_seconds(&self, sec: u64) {
@@ -46,7 +51,7 @@ impl TimerManager {
 struct Timer {
     absolute_timeout: u128,
     pub timeout: u64,
-    pub value: i32
+    pub value: i32,
 }
 
 impl Timer {
@@ -54,31 +59,31 @@ impl Timer {
         return Self {
             absolute_timeout: (tick as u128) + (timeout as u128),
             timeout: tick.wrapping_add(timeout),
-            value
-        }
+            value,
+        };
     }
 }
 
 impl PartialOrd for Timer {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        return Some(self.cmp(other))
+        return Some(self.cmp(other));
     }
 }
 
 impl Ord for Timer {
     fn cmp(&self, other: &Self) -> Ordering {
         if self.absolute_timeout > other.absolute_timeout {
-            return Ordering::Less
+            return Ordering::Less;
         } else if self.timeout == other.timeout {
-            return Ordering::Equal
+            return Ordering::Equal;
         } else {
-            return Ordering::Greater
+            return Ordering::Greater;
         }
     }
 }
 
 impl PartialEq for Timer {
     fn eq(&self, other: &Self) -> bool {
-        return self.timeout == other.timeout
+        return self.timeout == other.timeout;
     }
 }

@@ -1,10 +1,5 @@
-use core::{
-    marker::Copy,
-    mem::MaybeUninit
-};
-use crate::{
-    StatusCode
-};
+use crate::StatusCode;
+use core::{marker::Copy, mem::MaybeUninit};
 
 #[derive(Debug)]
 pub struct ArrayQueue<T, const N: usize> {
@@ -12,18 +7,18 @@ pub struct ArrayQueue<T, const N: usize> {
     read_pos: usize,
     write_pos: usize,
     pub count: usize,
-    pub capacity: usize
+    pub capacity: usize,
 }
 
 impl<T: Copy, const N: usize> ArrayQueue<T, N> {
     pub const fn new() -> Self {
-        return Self{
+        return Self {
             data: MaybeUninit::uninit(),
             read_pos: 0,
             write_pos: 0,
             count: 0,
-            capacity: N
-        }
+            capacity: N,
+        };
     }
 
     pub fn initialize(&mut self, value: T) {
@@ -46,14 +41,14 @@ impl<T: Copy, const N: usize> ArrayQueue<T, N> {
 
     pub fn pop(&mut self) -> Result<T, &'static str> {
         if self.count == 0 {
-            return Err("The queue is empty")
+            return Err("The queue is empty");
         }
         let value: T = unsafe { self.data.assume_init()[self.read_pos] };
-        self.count-=1;
-        self.read_pos+=1;
+        self.count -= 1;
+        self.read_pos += 1;
         if self.read_pos == self.capacity {
             self.read_pos = 0;
         }
-        return Ok(value)
+        return Ok(value);
     }
 }

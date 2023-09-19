@@ -27,11 +27,11 @@ pub enum StatusCode {
     UnknownPixelFormat,
     NoPCIMSI,
     NoWaiter,
-    LastOfCode
+    LastOfCode,
 }
 
 impl StatusCode {
-    pub fn to_string(&self) -> &str{
+    pub fn to_string(&self) -> &str {
         match self {
             StatusCode::Success => "Success",
             StatusCode::Failure => "Failure",
@@ -47,20 +47,20 @@ impl StatusCode {
             StatusCode::DeviceAlreadyAllocated => "DeviceAlreadyAllocated",
             StatusCode::NotImplemented => "NotImplemented",
             StatusCode::InvalidDescriptor => "InvalidDescriptor",
-            StatusCode::InvalidEndpointType{ ty: _ } => "InvalidEndpointType",
+            StatusCode::InvalidEndpointType { ty: _ } => "InvalidEndpointType",
             StatusCode::BufferTooSmall => "BufferTooSmall",
             StatusCode::UnknownDevice => "UnknownDevice",
             StatusCode::UnsupportedInterface => "UnsupportedInterface",
             StatusCode::NoCorrespondingSetupStage => "NoCorrespondingSetupStage",
-            StatusCode::TransferFailed{ slot_id: _ } => "TransferFailed",
-            StatusCode::CommandCompletionFailed{ slot_id: _ } => "CommandCompletionFailed",
+            StatusCode::TransferFailed { slot_id: _ } => "TransferFailed",
+            StatusCode::CommandCompletionFailed { slot_id: _ } => "CommandCompletionFailed",
             StatusCode::TooManyWaiters => "TooManyWaiters",
             StatusCode::InvalidPhase => "InvalidPhase",
             StatusCode::UnknownXHCISpeedID => "UnknownXHCISpeedID",
             StatusCode::UnknownPixelFormat => "UnknownPixelFormat",
             StatusCode::NoPCIMSI => "NoPCIMSI",
             StatusCode::NoWaiter => "NoWaiter",
-            StatusCode::LastOfCode => "LastOfCode"
+            StatusCode::LastOfCode => "LastOfCode",
         }
     }
 }
@@ -69,10 +69,7 @@ pub type Result<T> = core::result::Result<T, StatusCode>;
 
 impl core::fmt::Display for StatusCode {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "{}", self.to_string()
-        )
+        write!(f, "{}", self.to_string())
     }
 }
 

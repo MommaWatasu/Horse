@@ -1,58 +1,32 @@
-use core::{
-    mem::size_of,
-    ptr::{
-        null,
-        null_mut,
-        NonNull,
-        addr_of_mut
-    }
+use super::{
+    context::*,
+    speed::PortSpeed,
+    trb,
+    trb::{DataStage, EvaluateContextCommand, GenericTrb, Normal, SetupStage, StatusStage, Trb},
+    DoorbellRegister, Port, TransferRing,
 };
 use crate::{
-    fixed_vec::FixedVec,
-    status::{
-        StatusCode,
-        Result
-    },
-    trace, warn, info,
     drivers::usb::{
-        array_map::{
-                ArrayMap,
-                ArrayMapError
-        },
-        buffer:: Buffer,
-        classdriver,
-        descriptor,
+        array_map::{ArrayMap, ArrayMapError},
+        buffer::Buffer,
+        classdriver, descriptor,
         descriptor::{
-            ConfigurationDescriptor,
-            Descriptor,
-            DeviceDescriptor,
-            EndpointDescriptor,
-            HidDescriptor,
-            InterfaceDescriptor,
-            DescIter
+            ConfigurationDescriptor, DescIter, Descriptor, DeviceDescriptor, EndpointDescriptor,
+            HidDescriptor, InterfaceDescriptor,
         },
+        endpoint::*,
         memory::*,
-        setupdata::*,
         setupdata::request_type,
-        endpoint::*
+        setupdata::*,
     },
+    fixed_vec::FixedVec,
+    info,
+    status::{Result, StatusCode},
+    trace, warn,
 };
-use super::{
-    DoorbellRegister,
-    context::*,
-    Port,
-    speed::PortSpeed,
-    TransferRing,
-    trb,
-    trb::{
-        GenericTrb,
-        EvaluateContextCommand,
-        Trb,
-        Normal,
-        SetupStage,
-        DataStage,
-        StatusStage
-    }
+use core::{
+    mem::size_of,
+    ptr::{addr_of_mut, null, null_mut, NonNull},
 };
 
 pub struct Device {
@@ -147,7 +121,7 @@ impl Device {
             ArrayMap::initialize_ptr(setup_data_map_ptr);
         }
         let device = &mut *ptr;
-        
+
         let slot_ctx = device.input_ctx.enable_slot_context();
         slot_ctx.set_route_string(0);
         slot_ctx.set_root_hub_port_number(port.number());
@@ -326,8 +300,10 @@ impl Device {
                 info!("keyboard found");
                 use classdriver::HidKeyboardDriver;
                 let keyboard_driver = unsafe {
-                    let keyboard_driver: *mut HidKeyboardDriver
-                        = usballoc().alloc_obj::<HidKeyboardDriver>().unwrap().as_ptr();
+                    let keyboard_driver: *mut HidKeyboardDriver = usballoc()
+                        .alloc_obj::<HidKeyboardDriver>()
+                        .unwrap()
+                        .as_ptr();
                     keyboard_driver.write(HidKeyboardDriver::new(if_desc.interface_number)?);
                     keyboard_driver.as_mut().unwrap()
                 };
@@ -337,8 +313,8 @@ impl Device {
                 info!("mouse found");
                 use classdriver::HidMouseDriver;
                 let mouse_driver = unsafe {
-                    let mouse_driver: *mut HidMouseDriver
-                        = usballoc().alloc_obj::<HidMouseDriver>().unwrap().as_ptr();
+                    let mouse_driver: *mut HidMouseDriver =
+                        usballoc().alloc_obj::<HidMouseDriver>().unwrap().as_ptr();
                     mouse_driver.write(HidMouseDriver::new(if_desc.interface_number)?);
                     mouse_driver.as_mut().unwrap()
                 };
@@ -347,7 +323,7 @@ impl Device {
             (c, s, p) => {
                 crate::debug!("identifer: ({}, {}, {})", c, s, p);
                 Err(StatusCode::UnsupportedInterface)
-            },
+            }
         }
     }
 
@@ -808,15 +784,21 @@ impl DeviceManager {
         scratchpad_buf_arr: *const *const u8,
     ) -> Result<Self> {
         let devices: &mut [Option<&'static mut Device>] = unsafe {
-            usballoc().alloc_slice::<Option<&'static mut Device>>(max_slots+1).unwrap().as_mut()
+            usballoc()
+                .alloc_slice::<Option<&'static mut Device>>(max_slots + 1)
+                .unwrap()
+                .as_mut()
         };
         for p in devices.iter_mut() {
             *p = None;
         }
 
         // NOTE: DCBAA: alignment = 64-bytes, boundary = PAGESIZE
-        let dcbaap: &mut [*const DeviceContext] = unsafe{
-            usballoc().alloc_slice_ext::<*const DeviceContext>(max_slots+1, 64, None).unwrap().as_mut()
+        let dcbaap: &mut [*const DeviceContext] = unsafe {
+            usballoc()
+                .alloc_slice_ext::<*const DeviceContext>(max_slots + 1, 64, None)
+                .unwrap()
+                .as_mut()
         };
         for p in dcbaap.iter_mut() {
             *p = null();
@@ -845,9 +827,8 @@ impl DeviceManager {
             return Err(StatusCode::DeviceAlreadyAllocated);
         }
 
-        let device_ctx: &mut DeviceContext = unsafe{
-            usballoc().alloc_obj::<DeviceContext>().unwrap().as_mut()
-        };
+        let device_ctx: &mut DeviceContext =
+            unsafe { usballoc().alloc_obj::<DeviceContext>().unwrap().as_mut() };
         unsafe { DeviceContext::initialize_ptr(device_ctx as *mut DeviceContext) };
 
         let device: *mut Device = usballoc().alloc_obj::<Device>().unwrap().as_ptr();

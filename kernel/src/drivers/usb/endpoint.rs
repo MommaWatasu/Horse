@@ -1,5 +1,5 @@
-use crate::status::StatusCode;
 use super::descriptor;
+use crate::status::StatusCode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

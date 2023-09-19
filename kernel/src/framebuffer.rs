@@ -1,19 +1,9 @@
-use crate::{
-    Coord,
-    FrameBufferWriter,
-    StatusCode
-};
+use crate::{Coord, FrameBufferWriter, StatusCode};
 
-use alloc::{
-    vec::Vec,
-    vec
-};
+use alloc::{vec, vec::Vec};
 use core::{
     default::Default,
-    ptr::{
-        copy_nonoverlapping,
-        null_mut
-    }
+    ptr::{copy_nonoverlapping, null_mut},
 };
 use libloader::PixelFormat;
 
@@ -28,7 +18,7 @@ pub struct FrameBufferConfig {
     pub fb: *mut u8,
     pub stride: usize,
     pub resolution: (usize, usize),
-    pub format: PixelFormat
+    pub format: PixelFormat,
 }
 
 impl Default for FrameBufferConfig {
@@ -37,8 +27,8 @@ impl Default for FrameBufferConfig {
             fb: null_mut(),
             stride: 0,
             resolution: (0, 0),
-            format: PixelFormat::Rgb
-        }
+            format: PixelFormat::Rgb,
+        };
     }
 }
 
@@ -47,7 +37,7 @@ pub struct FrameBuffer {
     pub config: FrameBufferConfig,
     pub buffer: Vec<u8>,
     //writer has the problem
-    pub writer: FrameBufferWriter
+    pub writer: FrameBufferWriter,
 }
 
 impl FrameBuffer {
@@ -78,8 +68,8 @@ impl FrameBuffer {
         return Self {
             config,
             buffer,
-            writer
-        }
+            writer,
+        };
     }
 
     pub unsafe fn copy(&self, pos: Coord, src: &FrameBuffer) {
@@ -100,7 +90,10 @@ impl FrameBuffer {
         let copy_end_dst_y = dst_height.min(pos.y + src_height);
 
         let stride = bpp * (copy_end_dst_x - copy_start_dst_x);
-        let mut dst_buf: *mut u8 = self.config.fb.add(bpp * (self.config.stride * copy_start_dst_y + copy_start_dst_x));
+        let mut dst_buf: *mut u8 = self
+            .config
+            .fb
+            .add(bpp * (self.config.stride * copy_start_dst_y + copy_start_dst_x));
         let mut src_buf: *const u8 = src.config.fb;
 
         for dy in 0..(copy_end_dst_y - copy_start_dst_y) {
@@ -124,8 +117,10 @@ impl FrameBuffer {
                 src_buf = src_buf.add(bpsl);
             }
         } else {
-            let mut dst_buf: *mut u8 = Self::frame_addr_at(dst_pos + Coord::new(0, size.y - 1), &self.config);
-            let mut src_buf: *const u8 = Self::frame_addr_at(src_pos + Coord::new(0, size.y - 1), &self.config);
+            let mut dst_buf: *mut u8 =
+                Self::frame_addr_at(dst_pos + Coord::new(0, size.y - 1), &self.config);
+            let mut src_buf: *const u8 =
+                Self::frame_addr_at(src_pos + Coord::new(0, size.y - 1), &self.config);
 
             for y in 0..size.y {
                 copy_nonoverlapping(src_buf, dst_buf, bpp * size.x);
@@ -139,8 +134,8 @@ impl FrameBuffer {
         return match format {
             PixelFormat::Rgb => 4,
             PixelFormat::Bgr => 4,
-            _ => unreachable!()
-        }
+            _ => unreachable!(),
+        };
     }
 
     fn bytes_per_scan_line(config: &FrameBufferConfig) -> usize {
@@ -148,6 +143,8 @@ impl FrameBuffer {
     }
 
     unsafe fn frame_addr_at(pos: Coord, config: &FrameBufferConfig) -> *mut u8 {
-        config.fb.add(Self::bytes_per_pixel(config.format) * (config.stride * pos.y + pos.x))
+        config
+            .fb
+            .add(Self::bytes_per_pixel(config.format) * (config.stride * pos.y + pos.x))
     }
 }

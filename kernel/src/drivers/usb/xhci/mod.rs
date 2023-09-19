@@ -6,39 +6,22 @@ mod ring;
 mod speed;
 mod trb;
 
-use core::{
-    ptr::{
-        addr_of_mut,
-        null_mut,
-        null,
-    }
-};
-use devmgr::DeviceManager;
-use ring::*;
-use registers::*;
-use port::*;
-use trb::{
-    EvaluateContextCommand,
-    EnableSlotCommand,
-    AddressDeviceCommand,
-    TransferEvent,
-    Trb,
-    ConfigureEndpointCommand,
-    CommandCompletionEvent,
-    PortStatusChangeEvent
-};
 use crate::{
-    status_log, warn, trace, error, info,
-    InterruptVector,
-    XHC,
-    status::{
-        StatusCode, PortConfigPhase, Result
-    },
-    drivers::{
-        pci::*,
-        usb::memory::*
-    },
-    volatile::Volatile
+    drivers::{pci::*, usb::memory::*},
+    error, info,
+    status::{PortConfigPhase, Result, StatusCode},
+    status_log, trace,
+    volatile::Volatile,
+    warn, InterruptVector, XHC,
+};
+use core::ptr::{addr_of_mut, null, null_mut};
+use devmgr::DeviceManager;
+use port::*;
+use registers::*;
+use ring::*;
+use trb::{
+    AddressDeviceCommand, CommandCompletionEvent, ConfigureEndpointCommand, EnableSlotCommand,
+    EvaluateContextCommand, PortStatusChangeEvent, TransferEvent, Trb,
 };
 
 pub fn initialize_xhci(dev: &Device) -> Controller {
@@ -47,21 +30,25 @@ pub fn initialize_xhci(dev: &Device) -> Controller {
         dev.bus, dev.device, dev.function
     );
     let bsp_local_apic_id: u8 = unsafe { (*(0xFEE00020 as *const u32) >> 24) as u8 };
-    status_log!(configure_msi_fixed_destination(
-        dev,
-        bsp_local_apic_id,
-        MSITriggerMode::Level,
-        MSIDeliveryMode::Fixed,
-        InterruptVector::Xhci as u8, 0
-    ), "Configure msi");
+    status_log!(
+        configure_msi_fixed_destination(
+            dev,
+            bsp_local_apic_id,
+            MSITriggerMode::Level,
+            MSIDeliveryMode::Fixed,
+            InterruptVector::Xhci as u8,
+            0
+        ),
+        "Configure msi"
+    );
     let xhc_bar = read_bar64(dev, 0).unwrap();
     let xhc_mmio_base = (xhc_bar & !0xf) as usize;
-    let mut xhc = unsafe { Controller::new(xhc_mmio_base).unwrap() };//there is a problem here
+    let mut xhc = unsafe { Controller::new(xhc_mmio_base).unwrap() }; //there is a problem here
     unsafe {
         status_log!(xhc.run().unwrap(), "xHC started");
         xhc.configure_ports();
     }
-    return xhc
+    return xhc;
 }
 
 pub struct Controller {
@@ -72,7 +59,7 @@ pub struct Controller {
     ports: &'static mut [Port],
     max_ports: u8,
     addressing_port: Option<u8>,
-    doorbell_first: *mut DoorbellRegister
+    doorbell_first: *mut DoorbellRegister,
 }
 
 impl Controller {
@@ -82,13 +69,13 @@ impl Controller {
     pub unsafe fn new(mmio_base: usize) -> Result<Self> {
         let cap_regs = mmio_base as *mut CapabilityRegisters;
         let max_ports = (*cap_regs).hcs_params1.read().max_ports();
-        
+
         let dboff = (*cap_regs).db_off.read().offset();
         let doorbell_first = (mmio_base + dboff) as *mut DoorbellRegister;
-        
+
         let rtsoff = (*cap_regs).rts_off.read().offset();
         let primary_interrupter = (mmio_base + rtsoff + 0x20) as *mut InterrupterRegisterSet;
-        
+
         let caplength = (*cap_regs).cap_length.read();
         let op_regs = (mmio_base + caplength as usize) as *mut OperationalRegisters;
 
@@ -101,11 +88,11 @@ impl Controller {
         // Host controller must be halted
         while (*op_regs).usbsts.read().host_controller_halted() == 0 {}
         trace!("host controller halted");
-        
+
         let page_size = (*op_regs).pagesize.read().page_size();
-        
+
         Self::request_hc_ownership(mmio_base, cap_regs);
-        
+
         //Reset the controller
         {
             (*op_regs).usbcmd.modify(|usbcmd| {
@@ -116,14 +103,14 @@ impl Controller {
             while (*op_regs).usbsts.read().controller_not_ready() != 0 {}
             status_log!(StatusCode::Success, "controller is ready");
         }
-        
+
         let max_slots = (*cap_regs).hcs_params1.read().max_device_slots();
         let slots = core::cmp::min(max_slots, Self::DEVICES_SIZE as u8);
         trace!("up to {} slots", slots);
         (*op_regs)
             .config
             .modify(|config| config.set_max_device_slots_enabled(slots));
-        
+
         let max_scratched_buffer_pages = (*cap_regs).hcs_params2.read().max_scratchpad_buf();
         let scratchpad_buffer_array_ptr = if max_scratched_buffer_pages > 0 {
             trace!(
@@ -131,35 +118,35 @@ impl Controller {
                 max_scratched_buffer_pages
             );
             let buf_arr: &mut [*const u8] = {
-                usballoc().alloc_slice_ext::<*const u8>(
-                    max_scratched_buffer_pages,
-                    64,
-                    Some(page_size)
-                )
-                .unwrap()
-                .as_mut()
+                usballoc()
+                    .alloc_slice_ext::<*const u8>(max_scratched_buffer_pages, 64, Some(page_size))
+                    .unwrap()
+                    .as_mut()
             };
 
             for ptr in buf_arr.iter_mut() {
-                let buf: &mut [u8] = usballoc().alloc(page_size, page_size, Some(page_size)).unwrap().as_mut();
+                let buf: &mut [u8] = usballoc()
+                    .alloc(page_size, page_size, Some(page_size))
+                    .unwrap()
+                    .as_mut();
                 *ptr = buf.as_ptr();
             }
             buf_arr.as_ptr()
         } else {
             null()
         };
-        
+
         let devmgr = DeviceManager::new(
             slots as usize,
             doorbell_first.add(1),
-            scratchpad_buffer_array_ptr
+            scratchpad_buffer_array_ptr,
         )?;
-        
+
         let mut dcbaap = Dcbaap::default();
         let device_contexts = devmgr.dcbaap();
         dcbaap.set_pointer(device_contexts as usize);
         Volatile::unaligned_write(addr_of_mut!((*op_regs).dcbaap), dcbaap);
-        
+
         let cr = CommandRing::with_capacity(32)?;
         //register the address of the Command Ring buffer
         Volatile::unaligned_modify(addr_of_mut!((*op_regs).crcr), |value| {
@@ -168,25 +155,28 @@ impl Controller {
             value.set_command_abort(0);
             value.set_pointer(cr.buffer_ptr() as usize);
         });
-        
+
         let mut er = EventRing::with_capacity(32)?;
         er.initialize(primary_interrupter);
-        
+
         (*primary_interrupter).iman.modify(|iman| {
             iman.set_interrupt_pending(1);
             iman.set_interrupter_enable(1);
         });
-        
+
         (*op_regs).usbcmd.modify(|usbcmd| {
             usbcmd.set_interrupter_enable(1);
         });
         let ports = {
             let port_regs_base = ((op_regs as usize) + 0x400) as *mut PortRegisterSet;
-            let ports: &mut [Port] = usballoc().alloc_slice::<Port>(max_ports as usize+1).unwrap().as_mut();
+            let ports: &mut [Port] = usballoc()
+                .alloc_slice::<Port>(max_ports as usize + 1)
+                .unwrap()
+                .as_mut();
 
             ports[0] = Port::new(0, null_mut());
             for port_num in 1..=max_ports {
-                let port_regs = port_regs_base.add((port_num-1) as usize);
+                let port_regs = port_regs_base.add((port_num - 1) as usize);
                 ports[port_num as usize] = Port::new(port_num, port_regs);
             }
             ports
@@ -200,38 +190,37 @@ impl Controller {
             ports,
             max_ports,
             addressing_port: None,
-            doorbell_first
+            doorbell_first,
         })
     }
-    
-    pub fn get_er(&self) -> EventRing { self.er }
+
+    pub fn get_er(&self) -> EventRing {
+        self.er
+    }
 
     pub unsafe fn run(&mut self) -> Result<StatusCode> {
         (*self.op_regs).usbcmd.modify(|usbcmd| {
             usbcmd.set_run_stop(1);
         });
 
-        while (*self.op_regs).usbsts.read().host_controller_halted() == 1 {};
+        while (*self.op_regs).usbsts.read().host_controller_halted() == 1 {}
 
         Ok(StatusCode::Success)
     }
-    
+
     fn request_hc_ownership(mmio_base: usize, cap_regs: *mut CapabilityRegisters) {
         type MmExtendedReg = Volatile<ExtendedRegister>;
-        
-        fn next(current: *mut MmExtendedReg, step: usize) -> *mut MmExtendedReg {               
+
+        fn next(current: *mut MmExtendedReg, step: usize) -> *mut MmExtendedReg {
             if step == 0 {
                 null_mut()
             } else {
                 current.wrapping_add(step as usize)
             }
         }
-        
+
         let hccp = unsafe { (*cap_regs).hcc_params1.read() };
-        let mut ptr = next(
-            mmio_base as *mut _,
-            hccp.xecp() as usize
-        );
+        let mut ptr = next(mmio_base as *mut _, hccp.xecp() as usize);
         let usb_leg_sup = loop {
             if unsafe { (*ptr).read().capability_id() } == Usblegsup::id() {
                 break Some(ptr);
@@ -242,15 +231,15 @@ impl Controller {
                 break None;
             }
         };
-        
+
         let reg = match usb_leg_sup {
             None => {
                 trace!("No USB legacy support");
                 return;
-            },
-            Some(reg) => reg as *mut Volatile<Usblegsup>
+            }
+            Some(reg) => reg as *mut Volatile<Usblegsup>,
         };
-        
+
         let mut r = unsafe { (*reg).read() };
         if r.hc_os_owned_semaphore() == 1 {
             trace!("already os owned");
@@ -258,10 +247,10 @@ impl Controller {
         }
         r.set_hc_os_owned_semaphore(1);
         unsafe { (*reg).write(r) };
-        
+
         trace!("waiting untile OS owns xHC...");
         loop {
-            let r = unsafe {(*reg).read()};
+            let r = unsafe { (*reg).read() };
             if r.hc_bios_owned_semaphore() == 0 && r.hc_os_owned_semaphore() == 1 {
                 break;
             }
@@ -275,8 +264,7 @@ impl Controller {
         }
         match self.addressing_port {
             Some(_) => {
-                self.ports[port_num as usize]
-                    .set_config_phase(PortConfigPhase::WaitingAddressed);
+                self.ports[port_num as usize].set_config_phase(PortConfigPhase::WaitingAddressed);
             }
             None => {
                 self.addressing_port = Some(port_num);
@@ -316,7 +304,7 @@ impl Controller {
             }
         }
     }
-    
+
     fn ring_doorbell(doorbell: *mut DoorbellRegister) {
         trace!("ring the doorbell zero (Command Ring)");
         unsafe { (*doorbell).ring(0) };

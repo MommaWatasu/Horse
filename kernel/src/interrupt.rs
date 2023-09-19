@@ -1,15 +1,12 @@
 use core::ptr::write_volatile;
 use spin::Mutex;
-pub use x86_64::structures::idt::{
-    InterruptDescriptorTable
-};
+pub use x86_64::structures::idt::InterruptDescriptorTable;
 
-pub static IDT: Mutex<InterruptDescriptorTable> =
-    Mutex::new(InterruptDescriptorTable::new());
+pub static IDT: Mutex<InterruptDescriptorTable> = Mutex::new(InterruptDescriptorTable::new());
 
 pub enum InterruptVector {
     Xhci = 0x40,
-    LAPICTimer = 0x41
+    LAPICTimer = 0x41,
 }
 
 pub unsafe fn notify_end_of_interrupt() {

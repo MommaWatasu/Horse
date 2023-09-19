@@ -1,25 +1,15 @@
-use core::ptr::NonNull;
+use super::{Driver, TransferRequest};
 use crate::{
-    status::Result,
     drivers::usb::{
         buffer::Buffer,
-        endpoint::{
-            EndpointId,
-            EndpointConfig,
-            EndpointType
-        },
-        setupdata::{
-            SetupData,
-            HidRequest
-        },
+        endpoint::{EndpointConfig, EndpointId, EndpointType},
         setupdata::request_type,
+        setupdata::{HidRequest, SetupData},
     },
-    warn, trace
+    status::Result,
+    trace, warn,
 };
-use super::{
-    Driver,
-    TransferRequest
-};
+use core::ptr::NonNull;
 
 pub struct HidDriver {
     interface_idx: u8,

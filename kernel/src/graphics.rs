@@ -1,23 +1,13 @@
 use crate::{
     ascii_font::FONTS,
-    framebuffer:: {
-        FrameBuffer,
-        FrameBufferConfig
-    },
-    println
+    framebuffer::{FrameBuffer, FrameBufferConfig},
+    println,
 };
 use core::{
     mem::MaybeUninit,
-    ops::{
-        Add,
-        AddAssign,
-        Sub
-    }
+    ops::{Add, AddAssign, Sub},
 };
-use libloader::{
-    TSFrameBuffer,
-    PixelFormat
-};
+use libloader::{PixelFormat, TSFrameBuffer};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct PixelColor(pub u8, pub u8, pub u8); // RGB
@@ -25,28 +15,27 @@ pub struct PixelColor(pub u8, pub u8, pub u8); // RGB
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct Coord {
     pub x: usize,
-    pub y: usize
+    pub y: usize,
 }
 
 impl Coord {
-    pub const fn new(x: usize, y: usize) -> Self { Self{x, y} }
+    pub const fn new(x: usize, y: usize) -> Self {
+        Self { x, y }
+    }
     pub fn from_tuple(pos: (usize, usize)) -> Self {
-        Self{
-            x: pos.0,
-            y: pos.1
-        }
+        Self { x: pos.0, y: pos.1 }
     }
     pub fn elem_min(self, other: Self) -> Self {
         return Self {
             x: self.x.min(other.x),
-            y: self.y.min(other.y)
-        }
+            y: self.y.min(other.y),
+        };
     }
     pub fn elem_max(self, other: Self) -> Self {
         return Self {
             x: self.x.max(other.x),
-            y: self.y.max(other.y)
-        }
+            y: self.y.max(other.y),
+        };
     }
 }
 
@@ -56,8 +45,8 @@ impl Add for Coord {
     fn add(self, other: Self) -> Self {
         return Self {
             x: self.x + other.x,
-            y: self.y + other.y
-        }
+            y: self.y + other.y,
+        };
     }
 }
 
@@ -74,8 +63,8 @@ impl Sub for Coord {
     fn sub(self, other: Self) -> Self {
         return Self {
             x: self.x - other.x,
-            y: self.y - other.y
-        }
+            y: self.y - other.y,
+        };
     }
 }
 
@@ -87,7 +76,7 @@ pub trait PixelWriter {
 pub struct FrameBufferWriter {
     format: PixelFormat,
     stride: usize,
-    fb: TSFrameBuffer
+    fb: TSFrameBuffer,
 }
 
 impl FrameBufferWriter {
@@ -95,7 +84,7 @@ impl FrameBufferWriter {
         Self {
             format,
             stride,
-            fb: unsafe { TSFrameBuffer::new(fb) }
+            fb: unsafe { TSFrameBuffer::new(fb) },
         }
     }
 }
@@ -105,17 +94,13 @@ impl PixelWriter for FrameBufferWriter {
         let pixel_index = y * self.stride + x;
         let base = 4 * pixel_index;
         match &self.format {
-            PixelFormat::Rgb => {
-                unsafe {
-                    self.fb.write_value(base, [c.0, c.1, c.2]);
-                }
+            PixelFormat::Rgb => unsafe {
+                self.fb.write_value(base, [c.0, c.1, c.2]);
             },
-            PixelFormat::Bgr => {
-                unsafe {
-                    self.fb.write_value(base, [c.2, c.1, c.0]);
-                }
-            }
-            _ => panic!("not supported")
+            PixelFormat::Bgr => unsafe {
+                self.fb.write_value(base, [c.2, c.1, c.0]);
+            },
+            _ => panic!("not supported"),
         }
     }
 }
@@ -185,7 +170,7 @@ impl Graphics {
             self.pixel_writer().write(x, y, color);
         }
     }
-    
+
     pub fn write_ascii(&mut self, x: usize, y: usize, c: char, color: &PixelColor) {
         if (c as u32) > 0x7f {
             return;

@@ -4,20 +4,17 @@ pub mod keyboard;
 pub mod mouse;
 
 pub use hid::*;
-pub use mouse::*;
 pub use keyboard::*;
+pub use mouse::*;
 
-use core::ptr::NonNull;
 use crate::{
-    status::Result,
     drivers::usb::{
-        endpoint::{
-            EndpointId,
-            EndpointConfig
-        },
-        setupdata::SetupData
-    }
+        endpoint::{EndpointConfig, EndpointId},
+        setupdata::SetupData,
+    },
+    status::Result,
 };
+use core::ptr::NonNull;
 
 pub enum TransferRequest {
     NoOp,

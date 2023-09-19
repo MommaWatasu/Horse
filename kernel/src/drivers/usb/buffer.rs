@@ -1,17 +1,19 @@
+use super::memory::*;
 use core::ptr::NonNull;
 use core::slice::{from_raw_parts, from_raw_parts_mut, SliceIndex};
-use super::memory::*;
 
 pub struct Buffer {
     ptr: Option<NonNull<u8>>,
     size: usize,
 }
 impl Buffer {
-    pub fn new(
-        size: usize,
-        align: usize,
-    ) -> Self {
-        let buf = unsafe { usballoc().alloc(size, align, None).expect("no enough memory").as_mut() };
+    pub fn new(size: usize, align: usize) -> Self {
+        let buf = unsafe {
+            usballoc()
+                .alloc(size, align, None)
+                .expect("no enough memory")
+                .as_mut()
+        };
         Self {
             ptr: Some(unsafe { NonNull::new_unchecked(buf.as_mut_ptr()) }),
             size,

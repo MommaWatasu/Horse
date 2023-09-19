@@ -1,29 +1,23 @@
-use crate::{
-    initialize_lapic_itmer, error, info, print, println,
-    fftimer::FFTimer,
-    lib::bytes::*
-};
+use crate::{error, fftimer::FFTimer, info, initialize_lapic_itmer, lib::bytes::*, print, println};
 
-use alloc::{
-    string::String,
-    vec::Vec
-};
+use alloc::{string::String, vec::Vec};
 use core::{
     mem::size_of,
-    ptr::{
-        null,
-        read_unaligned
-    }
+    ptr::{null, read_unaligned},
 };
 use uefi::{
+    table::{Runtime, SystemTable},
     Guid,
-    table::{
-        SystemTable,
-        Runtime
-    }
 };
 
-const EfiAcpiTableGuid: Guid = Guid::new([0x71, 0xe8, 0x68, 0x88], [0xf1, 0xe4], [0xd3, 0x11], 0xbc, 0x22, [0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81]);
+const EfiAcpiTableGuid: Guid = Guid::new(
+    [0x71, 0xe8, 0x68, 0x88],
+    [0xf1, 0xe4],
+    [0xd3, 0x11],
+    0xbc,
+    0x22,
+    [0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81],
+);
 
 #[derive(Copy, Clone, Debug)]
 #[repr(packed, C)]
@@ -36,7 +30,7 @@ pub struct RSDP {
     length: u32,
     xsdt_address: u64,
     extended_checksum: u8,
-    reserved: [u8; 3]
+    reserved: [u8; 3],
 }
 
 impl RSDP {
@@ -78,7 +72,7 @@ pub struct DescriptionHeader {
     oem_table_id: [u8; 8],
     oem_revision: u32,
     creator_id: u32,
-    creator_revision: u32
+    creator_revision: u32,
 }
 
 impl DescriptionHeader {
@@ -99,37 +93,40 @@ impl DescriptionHeader {
 
 struct Xsdt {
     header: DescriptionHeader,
-    entries: Vec<u64>
+    entries: Vec<u64>,
 }
 
 impl Xsdt {
     unsafe fn new(base: u64) -> Option<Self> {
-        let addr = {base as *const DescriptionHeader};
+        let addr = { base as *const DescriptionHeader };
         let header = read_unaligned(addr);
         if !header.validate("XSDT") {
             return None;
         }
         let table_addr = addr.offset(1) as *const u64;
-        let length = ((header.length as usize - size_of::<DescriptionHeader>()) / 8 );
+        let length = ((header.length as usize - size_of::<DescriptionHeader>()) / 8);
         let mut entries = Vec::with_capacity(length);
         for i in 0..length {
             entries.push(read_unaligned(table_addr.wrapping_add(i)));
         }
-        return Some(Self {
-            header,
-            entries
-        })
+        return Some(Self { header, entries });
     }
 
     fn get_timer(&self) -> Option<FFTimer> {
         let mut fadt = None;
         let mut hpet = None;
         for i in 0..self.entries.len() {
-            let signature: &str = unsafe { &bytes2str(&read_unaligned(self.entries[i] as *const DescriptionHeader).signature) };
+            let signature: &str = unsafe {
+                &bytes2str(&read_unaligned(self.entries[i] as *const DescriptionHeader).signature)
+            };
             match signature {
-                "HPET" => {hpet = Some(self.entries[i]);},
-                "FACP" => {fadt = Some(self.entries[i]);},
-                _ =>{}
+                "HPET" => {
+                    hpet = Some(self.entries[i]);
+                }
+                "FACP" => {
+                    fadt = Some(self.entries[i]);
+                }
+                _ => {}
             }
         }
         if hpet == None {
@@ -139,7 +136,7 @@ impl Xsdt {
             info!("TimerManager -fallback to PM Timer");
             return FFTimer::new(fadt.unwrap());
         }
-        return FFTimer::new(hpet.unwrap());//hpet
+        return FFTimer::new(hpet.unwrap()); //hpet
     }
 }
 
@@ -153,7 +150,7 @@ fn get_rsdp(st: SystemTable<Runtime>) -> Option<RSDP> {
         }
     }
     if acpi_table.is_null() {
-        return None
+        return None;
     }
     let rsdp = RSDP::new(acpi_table);
     if rsdp.validate() {
