@@ -2,46 +2,63 @@ mod definition;
 use definition::*;
 
 use crate::{
-    error,
-    print,
-    println,
-    sleep,
     drivers::pci::*,
+    error,
     lib::{
-        bytes::{
-            bytes2str,
-            negative
-        },
+        bytes::{bytes2str, negative},
         io::*,
+        storage::*,
     },
+    print, println, sleep,
 };
 
 use alloc::string::String;
 use core::{
     arch::asm,
+    mem::size_of,
     ptr::{read, write},
+    slice::from_raw_parts_mut,
 };
 use spin::Mutex;
 
-const DEFAULT_IDE_DEVICE: IdeDevice = IdeDevice { reserved: 0, channel: 0, drive: 0, ata_type: 0, signature: 0, capabilities: 0, commandsets: 0, size: 0, model: [0; 41] };
-const DEFAULT_CHANNEL_REGISTER: IdeChannelRegister = IdeChannelRegister { base: 0, ctrl: 0, bmide: 0, no_int: 0 };
+const DEFAULT_IDE_DEVICE: IdeDevice = IdeDevice {
+    reserved: 0,
+    channel: 0,
+    drive: 0,
+    ata_type: 0,
+    signature: 0,
+    capabilities: 0,
+    commandsets: 0,
+    size: 0,
+    model: [0; 41],
+};
+const DEFAULT_CHANNEL_REGISTER: IdeChannelRegister = IdeChannelRegister {
+    base: 0,
+    ctrl: 0,
+    bmide: 0,
+    no_int: 0,
+};
 
 pub struct IdeController {
     pub ide_devices: [IdeDevice; 4],
-    pub channels: [IdeChannelRegister; 2]
+    pub channels: [IdeChannelRegister; 2],
 }
 
 impl IdeController {
     pub fn new() -> Self {
         return Self {
             ide_devices: [DEFAULT_IDE_DEVICE; 4],
-            channels: [DEFAULT_CHANNEL_REGISTER; 2]
-        }
+            channels: [DEFAULT_CHANNEL_REGISTER; 2],
+        };
     }
     fn ide_read(&self, channel: usize, reg: u16) -> u8 {
         let result: u8;
         if 0x07 < reg && reg < 0x0c {
-            self.ide_write(channel, Register::AtaRegControlAltstatus as u16, 0x80 | self.channels[channel].no_int);
+            self.ide_write(
+                channel,
+                Register::AtaRegControlAltstatus as u16,
+                0x80 | self.channels[channel].no_int,
+            );
         }
         unsafe {
             if reg < 0x08 {
@@ -57,13 +74,21 @@ impl IdeController {
             }
         }
         if 0x07 < reg && reg < 0x0c {
-            self.ide_write(channel, Register::AtaRegControlAltstatus as u16, self.channels[channel].no_int);
+            self.ide_write(
+                channel,
+                Register::AtaRegControlAltstatus as u16,
+                self.channels[channel].no_int,
+            );
         }
-        return result
+        return result;
     }
     fn ide_write(&self, channel: usize, reg: u16, data: u8) {
         if 0x07 < reg && reg < 0x0c {
-            self.ide_write(channel, Register::AtaRegControlAltstatus as u16, 0x80 | self.channels[channel].no_int);
+            self.ide_write(
+                channel,
+                Register::AtaRegControlAltstatus as u16,
+                0x80 | self.channels[channel].no_int,
+            );
         }
         unsafe {
             if reg < 0x08 {
@@ -77,12 +102,20 @@ impl IdeController {
             }
         }
         if 0x07 < reg && reg < 0x0c {
-            self.ide_write(channel, Register::AtaRegControlAltstatus as u16, self.channels[channel].no_int);
+            self.ide_write(
+                channel,
+                Register::AtaRegControlAltstatus as u16,
+                self.channels[channel].no_int,
+            );
         }
     }
     fn ide_read_buffer(&self, channel: usize, reg: u16, buffer: &mut [u32], quads: u32) {
         if reg > 0x07 && reg < 0x0C {
-            self.ide_write(channel, Register::AtaRegControlAltstatus as u16, 0x80 | self.channels[channel].no_int);
+            self.ide_write(
+                channel,
+                Register::AtaRegControlAltstatus as u16,
+                0x80 | self.channels[channel].no_int,
+            );
         }
         unsafe {
             if reg < 0x08 {
@@ -96,12 +129,20 @@ impl IdeController {
             }
         }
         if reg > 0x07 && reg < 0x0C {
-            self.ide_write(channel, Register::AtaRegControlAltstatus as u16, self.channels[channel].no_int);
+            self.ide_write(
+                channel,
+                Register::AtaRegControlAltstatus as u16,
+                self.channels[channel].no_int,
+            );
         }
     }
     fn ide_write_buffer(&self, channel: usize, reg: u16, buffer: &[u32], quads: u32) {
         if reg > 0x07 && reg < 0x0C {
-            self.ide_write(channel, Register::AtaRegControlAltstatus as u16, 0x80 | self.channels[channel].no_int);
+            self.ide_write(
+                channel,
+                Register::AtaRegControlAltstatus as u16,
+                0x80 | self.channels[channel].no_int,
+            );
         }
         unsafe {
             if reg < 0x08 {
@@ -115,42 +156,54 @@ impl IdeController {
             }
         }
         if reg > 0x07 && reg < 0x0C {
-            self.ide_write(channel, Register::AtaRegControlAltstatus as u16, self.channels[channel].no_int);
+            self.ide_write(
+                channel,
+                Register::AtaRegControlAltstatus as u16,
+                self.channels[channel].no_int,
+            );
         }
     }
     fn ide_polling(&self, channel: usize, advanced_check: u32) -> u8 {
         for i in 0..4 {
             self.ide_read(channel, Register::AtaRegControlAltstatus as u16);
         }
-    
-        while (self.ide_read(channel, Register::AtaRegCommandStatus as u16) & Status::AtaSrBsy as u8) != 0 {}
-    
+
+        while (self.ide_read(channel, Register::AtaRegCommandStatus as u16)
+            & Status::AtaSrBsy as u8)
+            != 0
+        {}
+
         if advanced_check != 0 {
             let state: u8 = self.ide_read(channel, Register::AtaRegCommandStatus as u16);
-    
+
             // Check for Errors
             if (state & Status::AtaSrErr as u8) != 0 {
-                return 2 //Error
+                return 2; //Error
             }
             // Check if device fault
             if (state & Status::AtaSrDf as u8) != 0 {
-                return 1 // Device fault
+                return 1; // Device fault
             }
             // Check DRQ
             if (state & Status::AtaSrDrq as u8) == 0 {
-                return 3 // DRQ should be set
+                return 3; // DRQ should be set
             }
         }
         return 0;
     }
     fn ide_print_error(&self, drive: usize, mut err: u8) -> u8 {
-        if err == 0 { return 0 }
+        if err == 0 {
+            return 0;
+        }
         print!("IDE: ");
         if err == 1 {
             println!("Device Fault");
             err = 19
         } else if err == 2 {
-            let st = self.ide_read(self.ide_devices[drive].channel, Register::AtaRegErrorFeatures as u16);
+            let st = self.ide_read(
+                self.ide_devices[drive].channel,
+                Register::AtaRegErrorFeatures as u16,
+            );
             if st & Error::AtaErAmnf as u8 == 1 {
                 println!("No Address Mark Found");
                 err = 7;
@@ -192,7 +245,14 @@ impl IdeController {
         );
         return err;
     }
-    fn ide_access(&mut self, direction: u8, drive: usize, lba: u32, numsects: u8, buf: &mut [u32]) -> u8 {
+    fn ide_access(
+        &mut self,
+        direction: u8,
+        drive: usize,
+        lba: u32,
+        numsects: u8,
+        buf: &mut [u32],
+    ) -> u8 {
         let lba_mode: u8;
         let dma: u8;
         let mut lba_io = [0u8; 6];
@@ -203,15 +263,19 @@ impl IdeController {
         let err: u8;
         let (cyl, i): (u16, u16);
         let (head, sect): (u32, u32);
-    
+
         let ide_irq_invoked = 0x0;
         self.channels[channel].no_int = ide_irq_invoked + 0x02;
-        self.ide_write(channel, Register::AtaRegControlAltstatus as u16, ide_irq_invoked + 0x02);
-    
+        self.ide_write(
+            channel,
+            Register::AtaRegControlAltstatus as u16,
+            ide_irq_invoked + 0x02,
+        );
+
         // Select one from LBA28, LBA48 or CHS
         if lba >= 0x10000000 {
             // LBA48
-            lba_mode  = 2;
+            lba_mode = 2;
             lba_io[0] = ((lba & 0x000000ff) >> 0).try_into().unwrap();
             lba_io[1] = ((lba & 0x0000ff00) >> 8).try_into().unwrap();
             lba_io[2] = ((lba & 0x00ff0000) >> 16).try_into().unwrap();
@@ -220,36 +284,46 @@ impl IdeController {
             head = 0;
         } else if self.ide_devices[drive].capabilities & 0x200 != 0 {
             // LBA28
-            lba_mode  = 1;
+            lba_mode = 1;
             lba_io[0] = ((lba & 0x000000ff) >> 0).try_into().unwrap();
             lba_io[1] = ((lba & 0x0000ff00) >> 8).try_into().unwrap();
             lba_io[2] = ((lba & 0x00ff0000) >> 16).try_into().unwrap();
             // These Register are not here.
-            head      = (lba & 0xf0000000) >> 24;
+            head = (lba & 0xf0000000) >> 24;
         } else {
             // CHS
-            lba_mode  = 0;
-            sect      = (lba % 63) + 1;
-            cyl       = ((lba + 1 - sect) / (16 * 63)).try_into().unwrap();
+            lba_mode = 0;
+            sect = (lba % 63) + 1;
+            cyl = ((lba + 1 - sect) / (16 * 63)).try_into().unwrap();
             lba_io[0] = (sect & 0xff).try_into().unwrap();
             lba_io[1] = ((cyl >> 0) & 0xff).try_into().unwrap();
             lba_io[2] = ((cyl >> 8) & 0xff).try_into().unwrap();
-            head      = (lba + 1 - sect) % (16 * 63) / 63;// Head number is written to HDDEVSEL lower 4-bits.
+            head = (lba + 1 - sect) % (16 * 63) / 63; // Head number is written to HDDEVSEL lower 4-bits.
         }
-    
+
         // See if the drive supports DMA or not
         dma = 0; // currently, we don't support DMA
-    
+
         // Wait if the drive is busy
-        while self.ide_read(channel, Register::AtaRegCommandStatus as u16) & Status::AtaSrBsy as u8 != 0 {}
-    
+        while self.ide_read(channel, Register::AtaRegCommandStatus as u16) & Status::AtaSrBsy as u8
+            != 0
+        {}
+
         // Select the drive from controller
         if lba_mode == 0 {
-            self.ide_write(channel, Register::AtaRegHddevsel as u16, ((0xa0 | (slavebit << 4) | head) & 0xff).try_into().unwrap()); // Drive and CHS
+            self.ide_write(
+                channel,
+                Register::AtaRegHddevsel as u16,
+                ((0xa0 | (slavebit << 4) | head) & 0xff).try_into().unwrap(),
+            ); // Drive and CHS
         } else {
-            self.ide_write(channel, Register::AtaRegHddevsel as u16, ((0xe0 | (slavebit << 4) | head) & 0xff).try_into().unwrap()); // Drive and LBA
+            self.ide_write(
+                channel,
+                Register::AtaRegHddevsel as u16,
+                ((0xe0 | (slavebit << 4) | head) & 0xff).try_into().unwrap(),
+            ); // Drive and LBA
         }
-    
+
         // Write parameters
         if lba_mode == 2 {
             self.ide_write(channel, Register::AtaRegSeccount1 as u16, 0);
@@ -261,29 +335,29 @@ impl IdeController {
         self.ide_write(channel, Register::AtaRegLba0 as u16, lba_io[0]);
         self.ide_write(channel, Register::AtaRegLba1 as u16, lba_io[1]);
         self.ide_write(channel, Register::AtaRegLba2 as u16, lba_io[2]);
-    
+
         // Set command
         let cmd: u8;
         match (lba_mode, dma, direction) {
-            (0, 0, 0) => { cmd = Command::AtaCmdReadPio as u8 },
-            (1, 0, 0) => { cmd = Command::AtaCmdReadPio as u8 },
-            (2, 0, 0) => { cmd = Command::AtaCmdReadPioExt as u8 },
-            (0, 1, 0) => { cmd = Command::AtaCmdReadDma as u8 },
-            (1, 1, 0) => { cmd = Command::AtaCmdReadDma as u8 },
-            (2, 1, 0) => { cmd = Command::AtaCmdReadDmaExt as u8 },
-            (0, 0, 1) => { cmd = Command::AtaCmdWritePio as u8 },
-            (1, 0, 1) => { cmd = Command::AtaCmdWritePio as u8 },
-            (2, 0, 1) => { cmd = Command::AtaCmdWritePioExt as u8 },
-            (0, 1, 1) => { cmd = Command::AtaCmdWriteDma as u8 },
-            (1, 1, 1) => { cmd = Command::AtaCmdWriteDma as u8 },
-            (2, 1, 1) => { cmd = Command::AtaCmdWriteDmaExt as u8 },
+            (0, 0, 0) => cmd = Command::AtaCmdReadPio as u8,
+            (1, 0, 0) => cmd = Command::AtaCmdReadPio as u8,
+            (2, 0, 0) => cmd = Command::AtaCmdReadPioExt as u8,
+            (0, 1, 0) => cmd = Command::AtaCmdReadDma as u8,
+            (1, 1, 0) => cmd = Command::AtaCmdReadDma as u8,
+            (2, 1, 0) => cmd = Command::AtaCmdReadDmaExt as u8,
+            (0, 0, 1) => cmd = Command::AtaCmdWritePio as u8,
+            (1, 0, 1) => cmd = Command::AtaCmdWritePio as u8,
+            (2, 0, 1) => cmd = Command::AtaCmdWritePioExt as u8,
+            (0, 1, 1) => cmd = Command::AtaCmdWriteDma as u8,
+            (1, 1, 1) => cmd = Command::AtaCmdWriteDma as u8,
+            (2, 1, 1) => cmd = Command::AtaCmdWriteDmaExt as u8,
             (_, _, _) => {
                 error!("invalid mode");
-                return 20 
+                return 20;
             }
         }
         self.ide_write(channel, Register::AtaRegCommandStatus as u16, cmd as u8);
-    
+
         if dma != 0 {
             // TODO: Implement DMA R/W
             if direction == 0 {
@@ -296,30 +370,50 @@ impl IdeController {
                 // PIO Read
                 let err = self.ide_polling(channel, 1);
                 if err != 0 {
-                    return err
+                    return err;
                 }
-                self.ide_read_buffer(channel, Register::AtaRegData as u16, buf, (128 * numsects) as u32);
+                self.ide_read_buffer(
+                    channel,
+                    Register::AtaRegData as u16,
+                    buf,
+                    (128 * numsects) as u32,
+                );
             } else {
                 // PIO Write
                 let err = self.ide_polling(channel, 0);
-                self.ide_write_buffer(channel, Register::AtaRegData as u16, buf, (128 * numsects) as u32);
-                if lba_mode == 2{
-                    self.ide_write(channel, Register::AtaRegCommandStatus as u16, Command::AtaCmdCacheFluxhExt as u8);
+                self.ide_write_buffer(
+                    channel,
+                    Register::AtaRegData as u16,
+                    buf,
+                    (128 * numsects) as u32,
+                );
+                if lba_mode == 2 {
+                    self.ide_write(
+                        channel,
+                        Register::AtaRegCommandStatus as u16,
+                        Command::AtaCmdCacheFluxhExt as u8,
+                    );
                 } else {
-                    self.ide_write(channel, Register::AtaRegCommandStatus as u16, Command::AtaCmdCacheFluxh as u8);
+                    self.ide_write(
+                        channel,
+                        Register::AtaRegCommandStatus as u16,
+                        Command::AtaCmdCacheFluxh as u8,
+                    );
                 }
                 self.ide_polling(channel, 0);
             }
         }
-        return 0
+        return 0;
     }
     pub fn read_pata(&mut self, drive: usize, numsects: u8, lba: u32, buf: &mut [u32]) -> u8 {
         if drive > 3 || self.ide_devices[drive].reserved == 0 {
-            return 1
+            return 1;
         }
         let device = self.ide_devices[drive];
-        if lba + 512 * numsects as u32 > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
-            return 2
+        if lba + 512 * numsects as u32 > device.size
+            && device.ata_type == InterfaceType::IdeAta as u16
+        {
+            return 2;
         }
         let mut err = 0;
         if device.ata_type == InterfaceType::IdeAta as u16 {
@@ -329,7 +423,49 @@ impl IdeController {
                 err = self.ide_access(Directions::Read as u8, drive, lba + 512 * i as u32, 1, buf);
             }
         }
-        return self.ide_print_error(drive, err)
+        return self.ide_print_error(drive, err);
+    }
+}
+
+impl Storage for IdeController {
+    fn read(&mut self, bytes: u32, lba: u32, buf: &mut [u8]) -> u8 {
+        let device = self.ide_devices[0];
+        let converted_buf: &mut [u32] = unsafe { from_raw_parts_mut(buf.as_mut_ptr() as *mut u32, buf.len() / size_of::<u32>()) };
+        if device.reserved == 0 {
+            return 1;
+        }
+        if lba + bytes as u32 > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
+            return 2;
+        }
+        let mut err = 0;
+        let numsects: u8 = ((bytes + 512) / 512).try_into().unwrap();
+        if device.ata_type == InterfaceType::IdeAta as u16 {
+            err = self.ide_access(Directions::Read as u8, 0, lba, numsects, converted_buf);
+        } else {
+            for i in 0..numsects {
+                err = self.ide_access(Directions::Read as u8, 0, lba + 512 * i as u32, 1, converted_buf);
+            }
+        }
+        return self.ide_print_error(0, err);
+    }
+    fn write(&mut self, bytes: u32, lba: u32, buf: &[u8]) -> u8 {
+        let device = self.ide_devices[0];
+        let converted_buf: &mut [u32] =
+            unsafe { from_raw_parts_mut(buf.as_ptr() as *mut u32, buf.len() / size_of::<u32>()) };
+        if device.reserved == 0 {
+            return 1;
+        }
+        if lba + bytes > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
+            return 2;
+        }
+        let mut err = 0;
+        let numsects: u8 = ((bytes + 512) / 512).try_into().unwrap();
+        if device.ata_type == InterfaceType::IdeAta as u16 {
+            err = self.ide_access(Directions::Write as u8, 0, lba, numsects, converted_buf);
+        } else {
+            return 4; // Write Protected
+        }
+        return self.ide_print_error(0, err);
     }
 }
 
@@ -342,16 +478,32 @@ pub fn initialize_ide(dev: &Device) -> IdeController {
     let mut count: usize = 0;
 
     // Detect I/O Port which interface IDE Controller
-    controller.channels[0].base  = ((bars[0] & 0x0000fffc) + 0x1f0 * (negative(bars[0]))).try_into().unwrap();
-    controller.channels[0].ctrl  = ((bars[1] & 0x0000fffc) + 0x3f6 * (negative(bars[1]))).try_into().unwrap();
-    controller.channels[1].base  = ((bars[2] & 0x0000fffc) + 0x170 * (negative(bars[2]))).try_into().unwrap();
-    controller.channels[1].ctrl  = ((bars[3] & 0x0000fffc) + 0x376 * (negative(bars[3]))).try_into().unwrap();
+    controller.channels[0].base = ((bars[0] & 0x0000fffc) + 0x1f0 * (negative(bars[0])))
+        .try_into()
+        .unwrap();
+    controller.channels[0].ctrl = ((bars[1] & 0x0000fffc) + 0x3f6 * (negative(bars[1])))
+        .try_into()
+        .unwrap();
+    controller.channels[1].base = ((bars[2] & 0x0000fffc) + 0x170 * (negative(bars[2])))
+        .try_into()
+        .unwrap();
+    controller.channels[1].ctrl = ((bars[3] & 0x0000fffc) + 0x376 * (negative(bars[3])))
+        .try_into()
+        .unwrap();
     controller.channels[0].bmide = ((bars[4] & 0x0000fffc) + 0).try_into().unwrap(); // Bus Master IDE
     controller.channels[1].bmide = ((bars[4] & 0x0000fffc) + 8).try_into().unwrap(); // Bus Master IDE
 
     // Disable IRQs
-    controller.ide_write(Channel::Primary as usize, Register::AtaRegControlAltstatus as u16, 2);
-    controller.ide_write(Channel::Secondary as usize, Register::AtaRegControlAltstatus as u16, 2);
+    controller.ide_write(
+        Channel::Primary as usize,
+        Register::AtaRegControlAltstatus as u16,
+        2,
+    );
+    controller.ide_write(
+        Channel::Secondary as usize,
+        Register::AtaRegControlAltstatus as u16,
+        2,
+    );
 
     // Detect ATA-ATAPI device
     for i in 0..2 {
@@ -369,17 +521,29 @@ pub fn initialize_ide(dev: &Device) -> IdeController {
             status = controller.ide_read(i, Register::AtaRegCommandStatus as u16);
 
             // Send Identification Command
-            controller.ide_write(i, Register::AtaRegCommandStatus as u16, Command::AtaCmdIdentify as u8);
+            controller.ide_write(
+                i,
+                Register::AtaRegCommandStatus as u16,
+                Command::AtaCmdIdentify as u8,
+            );
             sleep(1);
 
             status = controller.ide_read(i, Register::AtaRegCommandStatus as u16);
 
             // Polling
-            if controller.ide_read(i, Register::AtaRegCommandStatus as u16) == 0 { continue }
+            if controller.ide_read(i, Register::AtaRegCommandStatus as u16) == 0 {
+                continue;
+            }
             loop {
                 status = controller.ide_read(i, Register::AtaRegCommandStatus as u16);
-                if status & (Status::AtaSrErr as u8) != 0 { err = 1; break }
-                if status & (Status::AtaSrBsy as u8) == 0 && status & (Status::AtaSrDrq as u8) != 0 { break }
+                if status & (Status::AtaSrErr as u8) != 0 {
+                    err = 1;
+                    break;
+                }
+                if status & (Status::AtaSrBsy as u8) == 0 && status & (Status::AtaSrDrq as u8) != 0
+                {
+                    break;
+                }
                 sleep(1);
             }
 
@@ -395,7 +559,11 @@ pub fn initialize_ide(dev: &Device) -> IdeController {
                     continue;
                 }
 
-                controller.ide_write(i, Register::AtaRegCommandStatus as u16, Command::AtaCmdIdentifyPacket as u8);
+                controller.ide_write(
+                    i,
+                    Register::AtaRegCommandStatus as u16,
+                    Command::AtaCmdIdentifyPacket as u8,
+                );
                 sleep(1);
             }
 
@@ -405,29 +573,45 @@ pub fn initialize_ide(dev: &Device) -> IdeController {
             // Read device parameters
             let reserved = 1;
             let ata_type = interface_type as u16;
-            let channel  = i;
-            let drive    = j;
+            let channel = i;
+            let drive = j;
             let (signature, capabilities): (u16, u16);
             let (commandsets, size): (u32, u32);
             //println!("capabilities: {}", unsafe { *((ide_buf.as_ptr() as usize + Identification::AtaIdentCapabilities as usize) as *const u16) });
             unsafe {
-                signature    = *((ide_buf.as_ptr() as usize + Identification::AtaIdentDevicetype as usize) as *const u16);
-                capabilities = *((ide_buf.as_ptr() as usize + Identification::AtaIdentCapabilities as usize) as *const u16);
-                commandsets  = *((ide_buf.as_ptr() as usize + Identification::AtaIdentCommandsets as usize) as *const u32);
+                signature = *((ide_buf.as_ptr() as usize
+                    + Identification::AtaIdentDevicetype as usize)
+                    as *const u16);
+                capabilities = *((ide_buf.as_ptr() as usize
+                    + Identification::AtaIdentCapabilities as usize)
+                    as *const u16);
+                commandsets = *((ide_buf.as_ptr() as usize
+                    + Identification::AtaIdentCommandsets as usize)
+                    as *const u32);
 
                 // Get size
                 if commandsets & (1 << 26) != 0 {
-                    size = *((ide_buf.as_ptr() as usize + Identification::AtaIdentMaxLbaExt as usize) as *const u32);
+                    size = *((ide_buf.as_ptr() as usize
+                        + Identification::AtaIdentMaxLbaExt as usize)
+                        as *const u32);
                 } else {
-                    size = *((ide_buf.as_ptr() as usize + Identification::AtaIdentMaxLba as usize) as *const u32);
+                    size = *((ide_buf.as_ptr() as usize + Identification::AtaIdentMaxLba as usize)
+                        as *const u32);
                 }
             }
 
             let mut model = [0u8; 41];
-            unsafe { for k in (0..40).step_by(2) {
-                model[k] = *((ide_buf.as_ptr() as usize + Identification::AtaIdentModel as usize + k + 1) as *const u8);
-                model[k+1] = *((ide_buf.as_ptr() as usize + Identification::AtaIdentModel as usize + k) as *const u8);
-            }}
+            unsafe {
+                for k in (0..40).step_by(2) {
+                    model[k] = *((ide_buf.as_ptr() as usize
+                        + Identification::AtaIdentModel as usize
+                        + k
+                        + 1) as *const u8);
+                    model[k + 1] = *((ide_buf.as_ptr() as usize
+                        + Identification::AtaIdentModel as usize
+                        + k) as *const u8);
+                }
+            }
 
             controller.ide_devices[count] = IdeDevice {
                 reserved,
@@ -438,7 +622,7 @@ pub fn initialize_ide(dev: &Device) -> IdeController {
                 capabilities,
                 commandsets,
                 size,
-                model
+                model,
             };
 
             count += 1;
@@ -466,5 +650,5 @@ pub fn initialize_ide(dev: &Device) -> IdeController {
             }
         }
     }
-    return controller
+    return controller;
 }
