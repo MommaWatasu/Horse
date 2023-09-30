@@ -69,7 +69,7 @@ script = ['''
 DISK_IMG=Horse.iso
 
 qemu-system-x86_64 \
-    -m 1G \
+    -m 2G \
     -drive if=pflash,format=raw,readonly=on,file=./dev-tools/OVMF/OVMF_CODE.fd \
     -drive if=pflash,format=raw,file=./dev-tools/OVMF/OVMF_VARS.fd \
     -drive if=ide,index=0,media=disk,format=raw,file=$DISK_IMG \

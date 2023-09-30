@@ -2,7 +2,10 @@ mod definition;
 use definition::*;
 
 use crate::{
-    drivers::pci::*,
+    drivers::{
+        fs::core::StorageController,
+        pci::*,
+    },
     error,
     lib::{
         bytes::{bytes2str, negative},
@@ -45,7 +48,7 @@ pub struct IdeController {
 }
 
 impl IdeController {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         return Self {
             ide_devices: [DEFAULT_IDE_DEVICE; 4],
             channels: [DEFAULT_CHANNEL_REGISTER; 2],
@@ -427,39 +430,40 @@ impl IdeController {
     }
 }
 
+// TODO/ I have to adjust the size of buf because when it's not multiple of 512. this function may cause the Segment fault.
 impl Storage for IdeController {
-    fn read(&mut self, bytes: u32, lba: u32, buf: &mut [u8]) -> u8 {
+    fn read(&mut self, buf: &mut [u8], lba: u32, nbytes: usize) -> u8 {
         let device = self.ide_devices[0];
-        let converted_buf: &mut [u32] = unsafe { from_raw_parts_mut(buf.as_mut_ptr() as *mut u32, buf.len() / size_of::<u32>()) };
+        let converted_buf: &mut [u32] = unsafe { from_raw_parts_mut(buf.as_mut_ptr() as *mut u32, nbytes / size_of::<u32>()) };
         if device.reserved == 0 {
             return 1;
         }
-        if lba + bytes as u32 > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
+        if lba * 512 + nbytes as u32 > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
             return 2;
         }
         let mut err = 0;
-        let numsects: u8 = ((bytes + 512) / 512).try_into().unwrap();
+        let numsects: u8 = ((nbytes + 512) / 512 - 1).try_into().unwrap();
         if device.ata_type == InterfaceType::IdeAta as u16 {
             err = self.ide_access(Directions::Read as u8, 0, lba, numsects, converted_buf);
         } else {
             for i in 0..numsects {
-                err = self.ide_access(Directions::Read as u8, 0, lba + 512 * i as u32, 1, converted_buf);
+                err = self.ide_access(Directions::Read as u8, 0, lba + i as u32, 1, converted_buf);
             }
         }
         return self.ide_print_error(0, err);
     }
-    fn write(&mut self, bytes: u32, lba: u32, buf: &[u8]) -> u8 {
+    fn write(&mut self, buf: &[u8], lba: u32, nbytes: usize) -> u8 {
         let device = self.ide_devices[0];
         let converted_buf: &mut [u32] =
-            unsafe { from_raw_parts_mut(buf.as_ptr() as *mut u32, buf.len() / size_of::<u32>()) };
+            unsafe { from_raw_parts_mut(buf.as_ptr() as *mut u32, nbytes / size_of::<u32>()) };
         if device.reserved == 0 {
             return 1;
         }
-        if lba + bytes > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
+        if lba * 512 + nbytes as u32 > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
             return 2;
         }
         let mut err = 0;
-        let numsects: u8 = ((bytes + 512) / 512).try_into().unwrap();
+        let numsects: u8 = ((nbytes + 512) / 512 - 1).try_into().unwrap();
         if device.ata_type == InterfaceType::IdeAta as u16 {
             err = self.ide_access(Directions::Write as u8, 0, lba, numsects, converted_buf);
         } else {
@@ -468,6 +472,8 @@ impl Storage for IdeController {
         return self.ide_print_error(0, err);
     }
 }
+
+impl StorageController for IdeController {}
 
 pub fn initialize_ide(dev: &Device) -> IdeController {
     let mut controller = IdeController::new();

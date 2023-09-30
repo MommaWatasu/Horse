@@ -2,16 +2,16 @@ use super::edid::*;
 use crate::{drivers::pci::*, println};
 
 enum BGARegisters {
-    VBE_DISPI_INDEX_ID = 0,
-    VBE_DISPI_INDEX_XRES = 1,
-    VBE_DISPI_INDEX_YRES = 2,
-    VBE_DISPI_INDEX_BPP = 3,
-    VBE_DISPI_INDEX_ENABLE = 4,
-    VBE_DISPI_INDEX_BANK = 5,
-    VBE_DISPI_INDEX_VIRT_WIDTH = 6,
-    VBE_DISPI_INDEX_VIRT_HEIGHT = 7,
-    VBE_DISPI_INDEX_INDEX_X_OFFSET = 8,
-    VBE_DISPI_INDEX_INDEX_Y_OFFSET = 9,
+    VbeDisplIndexId = 0,
+    VbeDisplIndexXres = 1,
+    VbeDisplIndexYres = 2,
+    VbeDisplIndexBpp = 3,
+    VbeDisplIndexEnable = 4,
+    VbeDisplIndexBank = 5,
+    VbeDisplIndexVirtWidth = 6,
+    VbeDisplIndexVirtHeight = 7,
+    VbeDisplIndexIndexXOffset = 8,
+    VbeDisplIndexIndexYOffset = 9,
 }
 
 unsafe fn bga_write_register(mmio_base: u32, index: u32, value: u16) {
@@ -35,18 +35,18 @@ pub fn setup_qemu_card(dev: &Device) {
             }
         }
         // disable VBE extensions
-        bga_write_register(mmio_base, BGARegisters::VBE_DISPI_INDEX_ENABLE as u32, 0x00);
+        bga_write_register(mmio_base, BGARegisters::VbeDisplIndexEnable as u32, 0x00);
         bga_write_register(
             mmio_base,
-            BGARegisters::VBE_DISPI_INDEX_XRES as u32,
+            BGARegisters::VbeDisplIndexXres as u32,
             max_res.0,
         );
         bga_write_register(
             mmio_base,
-            BGARegisters::VBE_DISPI_INDEX_YRES as u32,
+            BGARegisters::VbeDisplIndexYres as u32,
             max_res.1,
         );
         // enable VBE extensions
-        bga_write_register(mmio_base, BGARegisters::VBE_DISPI_INDEX_ENABLE as u32, 0x01);
+        bga_write_register(mmio_base, BGARegisters::VbeDisplIndexEnable as u32, 0x01);
     }
 }

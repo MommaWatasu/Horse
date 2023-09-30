@@ -1,10 +1,18 @@
+use alloc::boxed::Box;
+
 use super::{
-    ata::pata::initialize_ide,
+    ata::{
+        pata::initialize_ide,
+        vata::VataController
+    },
+    fs::core::{
+        STORAGE_CONTROLLERS,
+    },
     pci::{switch_echi2xhci, PciDevices},
     usb::xhci::{initialize_xhci, Controller},
     video::qemu::setup_qemu_card,
 };
-use crate::{info, print, println};
+use crate::{info, warn};
 
 pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
     let mut xhc = None;
@@ -13,20 +21,7 @@ pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
             // Mass Storage Controller
             0x01 => match dev.class_code.sub {
                 0x01 => {
-                    let mut controller = initialize_ide(&dev);
-                    let mut buf = [0u32; 128];
-                    controller.read_pata(0, 1, 0, &mut buf);
-                    println!("image: ");
-                    for i in 0..16 {
-                        for j in 0..2 {
-                            print!("{:08x} ", buf[i * 4 + j]);
-                        }
-                        print!(" ");
-                        for j in 2..4 {
-                            print!("{:08x} ", buf[i * 4 + j]);
-                        }
-                        print!("\n");
-                    }
+                    STORAGE_CONTROLLERS.lock().push(Box::new(initialize_ide(&dev)));
                 }
                 _ => {
                     info!(
@@ -34,6 +29,7 @@ pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
                         dev.class_code
                     );
                 }
+
             },
             // Network Controller
             0x02 => {
@@ -86,6 +82,11 @@ pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
                 );
             }
         }
+    }
+    let mut disk_controllers = STORAGE_CONTROLLERS.lock();
+    if disk_controllers.len() == 0 {
+        warn!("fallback: virtual hard disk will be used...");
+        disk_controllers.push(Box::new(VataController::new()));
     }
     return xhc;
 }
