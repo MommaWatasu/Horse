@@ -1,3 +1,4 @@
 *.swp
 mnt
 .ipynb_checkpoints
+.vscode
