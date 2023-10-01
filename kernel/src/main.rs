@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 #![feature(core_intrinsics)]
+#![feature(type_name_of_val)]
 
 mod acpi;
 mod ascii_font;
@@ -32,7 +33,7 @@ use drivers::{
     pci::*,
     timer::*,
     usb::{classdriver::mouse::MOUSE_CURSOR, memory::*, xhci::Controller},
-    video::qemu::*,
+    video::qemu::*, fs::init::{initialize_filesystem, FILESYSTEM_TABLE},
 };
 use framebuffer::*;
 use graphics::*;
@@ -61,6 +62,8 @@ use x86_64::{
     },
     structures::idt::InterruptStackFrame,
 };
+
+use crate::{lib::bytes::bytes2str, drivers::fs::core::FILE_DESCRIPTOR_TABLE};
 
 const BG_COLOR: PixelColor = PixelColor(153, 76, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
@@ -182,7 +185,16 @@ extern "sysv64" fn kernel_main_virt(
 
     let pci_devices = find_pci_devices();
     let mut xhc = initialize_pci_devices(&pci_devices).unwrap();
+    initialize_filesystem();
 
+    FILE_DESCRIPTOR_TABLE.lock().initialize();
+    let mut buf = [0; 1024];
+    unsafe { 
+        let fd = drivers::fs::init::FILESYSTEM_TABLE.lock()[0].open("memmap", 0);
+        drivers::fs::init::FILESYSTEM_TABLE.lock()[0].read(fd, &mut buf, 1024);
+        drivers::fs::init::FILESYSTEM_TABLE.lock()[0].close(fd);
+    }
+    println!("{}", bytes2str(&buf));
     //set the IDT entry
     IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
     IDT.lock()[InterruptVector::LAPICTimer as usize].set_handler_fn(handler_lapic_timer);

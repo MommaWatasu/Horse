@@ -52,6 +52,14 @@ impl FDTable {
         fd_array: Vec::new(),
         empty_idx: 0
     };
+    pub fn initialize(&mut self) {
+        self.max_fds = 1024;
+        self.empty_idx = 3;
+        self.fd_array = vec![None; 1024];
+        self.fd_array[0] = Some(File::new(OpenFlags::RDOnly as u32, "/dev/stdin"));
+        self.fd_array[1] = Some(File::new(OpenFlags::WROnly as u32, "/dev/stdout"));
+        self.fd_array[2] = Some(File::new(OpenFlags::WROnly as u32, "/dev/stderr"));
+    }
     pub fn new() -> Self {
         let mut fd_array = vec![None; 1024];
         fd_array[0] = Some(File::new(OpenFlags::RDOnly as u32, "/dev/stdin"));

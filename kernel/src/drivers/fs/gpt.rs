@@ -7,6 +7,9 @@ use crate::lib::{
     storage::Storage,
     bytes::*
 };
+use crate::debug;
+
+use super::core::STORAGE_CONTROLLERS;
 
 #[derive(Clone, Copy)]
 struct PartitionTableHeader {
@@ -49,16 +52,16 @@ pub struct GPT {
 
 impl GPT {
     // TODO: I have to implement process fpr the recovery field
-    pub fn new<T: Storage>(storage: &mut T) -> Option<Self> {
-        let mut header_buf = [0; 92];
-        storage.read(&mut header_buf, 1, 512);
+    pub fn new(id: usize) -> Option<Self> {
+        let mut header_buf = [0; 512];
+        STORAGE_CONTROLLERS.lock()[id].read(&mut header_buf, 1, 512);
         let header = unsafe { *(header_buf.as_mut_ptr() as *mut PartitionTableHeader) };
         if !header.validate() {
             return None
         }
 
         let mut array_buf = [0; 128*128];
-        storage.read(&mut array_buf, 2, header.num_entries as usize * 128);
+        STORAGE_CONTROLLERS.lock()[id].read(&mut array_buf, 2, header.num_entries as usize * 128);
         let mut entries = vec![];
         for i in 0..header.num_entries {
             entries.push(unsafe { *(array_buf[128*i as usize..128*(i as usize +1)].as_mut_ptr() as *mut PartitionEntry) })

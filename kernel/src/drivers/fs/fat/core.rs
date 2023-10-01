@@ -19,7 +19,8 @@ use crate::{
 
 const END_OF_CLUSTER_CHAIN: u32 = 0x0fffffff;
 
-#[derive(Clone, Copy)]
+#[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 pub struct BPB {
     jmp_boot: [u8; 3],
     oem_name: [u8; 8],
@@ -50,8 +51,9 @@ pub struct BPB {
     pub fil_sys_type: [u8; 8]
 }
 
-#[derive(Clone, Copy)]
-struct DirectoryEntry {
+#[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
+pub struct DirectoryEntry {
     name: [u8; 11],
     attr: u8,
     nt_reserve: u8,
@@ -73,6 +75,7 @@ impl DirectoryEntry {
     pub fn file_size(&self) -> u32 { self.file_size }
 }
 
+#[repr(C, packed)]
 #[derive(Clone, Copy)]
 struct LFNEntry {
     ord: u8,
@@ -131,27 +134,42 @@ impl FAT {
         let sector_num = self.bpb.rsvd_sec_cnt as u32  + self.bpb.num_fats as u32 * self.bpb.fatsz32 + (cluster - 2) * self.bpb.sec_per_clus as u32;
         return sector_num * self.bpb.bytes_per_sec as u32
     }
-    pub fn get_sector_by_cluster<T>(&self, cluster: u32) -> *mut T {
-        let data_size = size_of::<T>();
+    pub fn get_cluster(&self, cluster: u32, buf: &mut [u8]) {
         let offset = self.get_cluster_offset(cluster);
         let lba = offset / 512;
-        let padding = offset as usize % 512;
-        let mut buf = vec![0; (padding + data_size + 512) / 512 * 512];
-        STORAGE_CONTROLLERS.lock()[self.storage_id].read(&mut buf, lba, (padding + data_size + 512) / 512 * 512);
-        return buf[padding..padding+data_size].as_mut_ptr() as *mut T
+        let nbytes = self.bpc;
+        STORAGE_CONTROLLERS.lock()[self.storage_id].read(buf, lba, nbytes);
     }
-    fn next_cluster(&self, cluster: u32) -> u32 {
-        let offset = self.bpb.rsvd_sec_cnt as u32 * self.bpc as u32 + 4 * cluster;
+    /*fn next_cluster(&self, cluster: u32) -> u32 {
+        let offset = self.bpb.rsvd_sec_cnt as u32 * self.bpb.bytes_per_sec as u32 + 4 * cluster;
         let lba = offset / 512;
         let padding = offset as usize % 512;
-        let mut buf = vec![0; 512];
+        crate::debug!("next_cluster- lba: {}, padding: {}", lba, padding);
+        let mut buf = [0; 512];
         STORAGE_CONTROLLERS.lock()[self.storage_id].read(&mut buf, lba, 512);
+        //crate::debug!("next: {:?}", buf);
         let next = u32::from_be_bytes(buf[padding..padding+4].try_into().unwrap());
         if next >= 0x0ffffff8 {
             return END_OF_CLUSTER_CHAIN
         }
         return next
+    }*/
+    fn next_cluster(&self, cluster: u32) -> u32 {
+        let offset = self.bpb.rsvd_sec_cnt as u32 * self.bpb.bytes_per_sec as u32 + 4 * cluster;
+        let lba = offset / 512;
+        let padding = offset as usize % 512;
+        let mut buf = vec![0; 512];
+        // This is very strange! IF I read from disk only once, it returns zero-array.
+        STORAGE_CONTROLLERS.lock()[self.storage_id].read(&mut buf, lba, 512);
+        STORAGE_CONTROLLERS.lock()[self.storage_id].read(&mut buf, lba, 512);
+        crate::sleep(2);
+        let next = u32::from_le_bytes(buf[padding..padding+4].try_into().unwrap());
+        if next >= 0x0ffffff8 {
+            return END_OF_CLUSTER_CHAIN
+        }
+        return next
     }
+    
     fn sfn_cmp(sfn: [u8; 11], name: &str) -> bool {
         let mut name83 = [0x20; 11];
 
@@ -181,50 +199,55 @@ impl FAT {
         let mut dir_clus = self.bpb.root_clus;
         let mut lfn_flag = false;
         let mut lfn = String::from("");
-        for name in full_path.path_iter() {
-            while dir_clus != END_OF_CLUSTER_CHAIN {
-                let dir = self.get_sector_by_cluster::<DirectoryEntry>(dir_clus);
-                dir_clus = self.next_cluster(dir_clus);
-                let mut i = 0;
-                while i < self.bpc as usize / size_of::<DirectoryEntry>() {
-                    unsafe { entry = *dir.add(i); }
-                    match entry.attr {
-                        0x08 => {
-                            if (lfn_flag && lfn == name) || (!lfn_flag && Self::sfn_cmp(entry.name, &name)) {
-                                if &name == full_path.path.last().unwrap() {
-                                    return Ok(entry)
-                                } else {
-                                    return Err(1)
-                                }
-                            }
-                            if lfn_flag {lfn_flag = false}
-                        },
-                        0x10 => {
-                            if (lfn_flag && lfn == name) || (!lfn_flag && Self::sfn_cmp(entry.name, &name)) {
-                                if &name == full_path.path.last().unwrap() {
-                                    return Ok(entry)
-                                } else {
-                                    dir_clus = entry.first_cluster();
-                                    break
-                                }
-                            }
-                            if lfn_flag {lfn_flag = false}
-                        },
-                        0x0f => {
-                            let lfn_entry = unsafe { *(dir as *const LFNEntry) };
-                            if lfn_entry.is_end() {
-                                lfn = String::new();
-                            } else if lfn_entry.ord() == 1 {
-                                lfn_flag = true;
-                            }
-                            lfn = format!("{}{}", bytes2str(&lfn_entry.get_name()), lfn);
-                        },
-                        _ => {
-                            // Unkown Attribute
-                            return Err(2)
+        let mut i = 0;
+        let mut name = &full_path.path[i];
+        let mut buf = vec![0u8; self.bpc];
+        while dir_clus != END_OF_CLUSTER_CHAIN {
+            crate::debug!("cluster: {:x}", dir_clus);
+            self.get_cluster(dir_clus, &mut buf);
+            dir_clus = self.next_cluster(dir_clus);
+            for c in 0..self.bpc as usize / size_of::<DirectoryEntry>() {
+                let entry_ptr = unsafe { (buf.as_ptr() as *const DirectoryEntry).add(c) };
+                unsafe { entry = *entry_ptr; }
+                // Long File Name
+                if entry.attr == (FATFileAttribute::LongName as u8) {
+                    crate::debug!("Long File Name");
+                    let lfn_entry = unsafe { *(entry_ptr as *const LFNEntry) };
+                        if lfn_entry.is_end() {
+                            lfn = String::new();
+                        } else if lfn_entry.ord() == 1 {
+                            lfn_flag = true;
+                        }
+                    lfn = format!("{}{}", bytes2str(&lfn_entry.get_name()), lfn);
+                    continue
+                // Volumen ID
+                } else if entry.attr & 0x08 != 0 {
+                    crate::debug!("Volume Name");
+                // Directory
+                } else if entry.attr & 0x10 != 0 {
+                    crate::debug!("Directory");
+                    if (lfn_flag && &lfn == name) || (!lfn_flag && Self::sfn_cmp(entry.name, &name)) {
+                        if i == full_path.path.len()-1 {
+                            return Ok(entry)
+                        } else {
+                            dir_clus = entry.first_cluster();
+                            i += 1;
+                            name = &full_path.path[i];
+                            break
+                        }
+                    }
+                // Regular File
+                } else {
+                    crate::debug!("Regular File");
+                    if (lfn_flag && &lfn == name) || (!lfn_flag && Self::sfn_cmp(entry.name, &name)) {
+                        if i == full_path.path.len()-1 {
+                            return Ok(entry)
+                        } else {
+                            return Err(1)
                         }
                     }
                 }
+                if lfn_flag {lfn_flag = false}
             }
         }
         return Err(3)
@@ -245,15 +268,16 @@ impl FileSystem for FAT {
         if entry.attr & 0x08 != 0 || entry.attr & 0x10 != 0 {
             return -1
         }
-        let bpc = self.bpc;
         let mut cluster = entry.first_cluster();
         let mut i = 0;
+        let mut bytes_buf = vec![0u8; self.bpc];
         while cluster != END_OF_CLUSTER_CHAIN {
-            let data = unsafe { slice::from_raw_parts(self.get_sector_by_cluster::<u8>(cluster), bpc) };
-            if bpc*(i+1) < nbytes {
-                buf[bpc*i..bpc*(i+1)].copy_from_slice(data);
+            self.get_cluster(cluster, &mut bytes_buf);
+            if self.bpc*(i+1) <= nbytes {
+                buf[self.bpc*i..self.bpc*(i+1)].copy_from_slice(&bytes_buf);
             } else {
-                buf[bpc*i..nbytes].copy_from_slice(data);
+                buf[self.bpc*i..nbytes].copy_from_slice(&bytes_buf[..(nbytes-self.bpc*i)]);
+                break
             }
             cluster = self.next_cluster(cluster);
             i += 1
