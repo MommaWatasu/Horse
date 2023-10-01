@@ -20,7 +20,7 @@ use core::{
     arch::asm,
     mem::size_of,
     ptr::{read, write},
-    slice::from_raw_parts_mut,
+    slice::from_raw_parts_mut, num,
 };
 use spin::Mutex;
 
@@ -308,9 +308,7 @@ impl IdeController {
         dma = 0; // currently, we don't support DMA
 
         // Wait if the drive is busy
-        while self.ide_read(channel, Register::AtaRegCommandStatus as u16) & Status::AtaSrBsy as u8
-            != 0
-        {}
+        while self.ide_read(channel, Register::AtaRegCommandStatus as u16) & Status::AtaSrBsy as u8 != 0 {}
 
         // Select the drive from controller
         if lba_mode == 0 {
@@ -379,7 +377,7 @@ impl IdeController {
                     channel,
                     Register::AtaRegData as u16,
                     buf,
-                    (128 * numsects) as u32,
+                    128 * numsects as u32,
                 );
             } else {
                 // PIO Write
@@ -388,7 +386,7 @@ impl IdeController {
                     channel,
                     Register::AtaRegData as u16,
                     buf,
-                    (128 * numsects) as u32,
+                    128 * numsects as u32,
                 );
                 if lba_mode == 2 {
                     self.ide_write(
@@ -406,6 +404,7 @@ impl IdeController {
                 self.ide_polling(channel, 0);
             }
         }
+        while self.ide_read(channel, Register::AtaRegCommandStatus as u16) & Status::AtaSrBsy as u8 != 0 {}
         return 0;
     }
     pub fn read_pata(&mut self, drive: usize, numsects: u8, lba: u32, buf: &mut [u32]) -> u8 {
@@ -438,11 +437,11 @@ impl Storage for IdeController {
         if device.reserved == 0 {
             return 1;
         }
-        if lba * 512 + nbytes as u32 > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
+        let numsects: u8 = ((nbytes + 512) / 512 - 1).try_into().unwrap();
+        if lba + numsects as u32 > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
             return 2;
         }
         let mut err = 0;
-        let numsects: u8 = ((nbytes + 512) / 512 - 1).try_into().unwrap();
         if device.ata_type == InterfaceType::IdeAta as u16 {
             err = self.ide_access(Directions::Read as u8, 0, lba, numsects, converted_buf);
         } else {
