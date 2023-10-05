@@ -4,3 +4,5 @@ mnt
 .vscode
 target
 Cargo.lock
+horse-kernel
+boot.elf
