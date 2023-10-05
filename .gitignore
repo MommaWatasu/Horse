@@ -2,3 +2,5 @@
 mnt
 .ipynb_checkpoints
 .vscode
+target
+Cargo.lock
