@@ -7,7 +7,7 @@ use spin::Mutex;
 use crate::{
     error,
     debug,
-    lib::{
+    horse_lib::{
         bytes::bytes2str,
         storage::Storage
     }

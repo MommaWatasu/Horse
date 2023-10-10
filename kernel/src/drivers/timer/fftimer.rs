@@ -1,7 +1,7 @@
 use super::{hpet::*, DescriptionHeader, PM_TIMER_FREQ};
 use crate::{
     error,
-    lib::{bytes::bytes2str, io::inl},
+    horse_lib::{bytes::bytes2str, io::inl},
     println,
 };
 

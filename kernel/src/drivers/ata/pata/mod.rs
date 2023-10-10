@@ -7,7 +7,7 @@ use crate::{
         pci::*,
     },
     error,
-    lib::{
+    horse_lib::{
         bytes::{bytes2str, negative},
         io::*,
         storage::*,
@@ -15,14 +15,7 @@ use crate::{
     print, println, sleep,
 };
 
-use alloc::string::String;
-use core::{
-    arch::asm,
-    mem::size_of,
-    ptr::{read, write},
-    slice::from_raw_parts_mut, num,
-};
-use spin::Mutex;
+use core::arch::asm;
 
 const DEFAULT_IDE_DEVICE: IdeDevice = IdeDevice {
     reserved: 0,
@@ -140,7 +133,7 @@ impl IdeController {
         }
     }
     fn ide_polling(&self, channel: usize, advanced_check: bool) -> u8 {
-        for i in 0..4 {
+        for _ in 0..4 {
             self.ide_read(channel, Register::AtaRegControlAltstatus as u16);
         }
 
@@ -236,7 +229,7 @@ impl IdeController {
         let slavebit: u32 = self.ide_devices[drive].drive.into();
         let bus: u16 = self.channels[channel].base;
         let mut err: u8;
-        let (cyl, i): (u16, u16);
+        let cyl: u16;
         let (head, sect): (u32, u32);
 
         let ide_irq_invoked = 0x0;

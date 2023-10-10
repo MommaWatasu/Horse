@@ -18,7 +18,7 @@ pub mod framebuffer;
 pub mod graphics;
 pub mod interrupt;
 pub mod layer;
-pub mod lib;
+pub mod horse_lib;
 pub mod log;
 pub mod memory_manager;
 pub mod mouse;
@@ -32,8 +32,8 @@ use drivers::{
     detect_dev::initialize_pci_devices,
     pci::*,
     timer::*,
-    usb::{classdriver::mouse::MOUSE_CURSOR, memory::*, xhci::Controller},
-    video::qemu::*, fs::init::{initialize_filesystem, FILESYSTEM_TABLE},
+    usb::{classdriver::mouse::MOUSE_CURSOR, memory::*},
+    fs::init::initialize_filesystem,
 };
 use framebuffer::*;
 use graphics::*;
@@ -63,7 +63,7 @@ use x86_64::{
     structures::idt::InterruptStackFrame,
 };
 
-use crate::{lib::bytes::bytes2str, drivers::fs::core::FILE_DESCRIPTOR_TABLE};
+use crate::{horse_lib::bytes::bytes2str, drivers::fs::core::FILE_DESCRIPTOR_TABLE};
 
 const BG_COLOR: PixelColor = PixelColor(153, 76, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);

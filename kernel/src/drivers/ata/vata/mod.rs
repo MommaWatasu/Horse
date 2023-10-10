@@ -1,4 +1,4 @@
-use crate::{lib::storage::Storage, memory_manager::*, drivers::fs::core::StorageController};
+use crate::{horse_lib::storage::Storage, memory_manager::*, drivers::fs::core::StorageController};
 
 use alloc::{vec, vec::Vec};
 

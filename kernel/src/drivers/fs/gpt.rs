@@ -3,15 +3,12 @@ use alloc::{
     vec::Vec
 };
 
-use crate::lib::{
-    storage::Storage,
-    bytes::*
-};
-use crate::debug;
+use crate::horse_lib::bytes::*;
 
 use super::core::STORAGE_CONTROLLERS;
 
 #[derive(Clone, Copy)]
+#[repr(C, packed)]
 struct PartitionTableHeader {
     signature: [u8; 8],
     revision: u32,
@@ -36,6 +33,7 @@ impl PartitionTableHeader {
 }
 
 #[derive(Clone, Copy)]
+#[repr(C, packed)]
 struct PartitionEntry {
     type_guid: [u8; 16],
     part_guid: [u8; 16],

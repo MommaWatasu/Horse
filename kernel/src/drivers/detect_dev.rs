@@ -5,9 +5,7 @@ use super::{
         pata::initialize_ide,
         vata::VataController
     },
-    fs::core::{
-        STORAGE_CONTROLLERS,
-    },
+    fs::core::STORAGE_CONTROLLERS,
     pci::{switch_echi2xhci, PciDevices},
     usb::xhci::{initialize_xhci, Controller},
     video::qemu::setup_qemu_card,

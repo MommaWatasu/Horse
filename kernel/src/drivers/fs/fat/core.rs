@@ -11,7 +11,7 @@ use crate::{
         FileSystem,
         STORAGE_CONTROLLERS, FILE_DESCRIPTOR_TABLE
     },
-    lib::{fd::{
+    horse_lib::{fd::{
         File,
         Path
     }, bytes::bytes2str}

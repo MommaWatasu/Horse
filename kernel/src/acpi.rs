@@ -1,6 +1,6 @@
-use crate::{error, fftimer::FFTimer, info, initialize_lapic_itmer, lib::bytes::*, print, println};
+use crate::{error, fftimer::FFTimer, info, initialize_lapic_itmer, horse_lib::bytes::*};
 
-use alloc::{string::String, vec::Vec};
+use alloc::vec::Vec;
 use core::{
     mem::size_of,
     ptr::{null, read_unaligned},
@@ -10,7 +10,7 @@ use uefi::{
     Guid,
 };
 
-const EfiAcpiTableGuid: Guid = Guid::new(
+const EFI_ACPI_TABLE_GUID: Guid = Guid::new(
     [0x71, 0xe8, 0x68, 0x88],
     [0xf1, 0xe4],
     [0xd3, 0x11],
@@ -104,7 +104,7 @@ impl Xsdt {
             return None;
         }
         let table_addr = addr.offset(1) as *const u64;
-        let length = ((header.length as usize - size_of::<DescriptionHeader>()) / 8);
+        let length = (header.length as usize - size_of::<DescriptionHeader>()) / 8;
         let mut entries = Vec::with_capacity(length);
         for i in 0..length {
             entries.push(read_unaligned(table_addr.wrapping_add(i)));
@@ -144,7 +144,7 @@ fn get_rsdp(st: SystemTable<Runtime>) -> Option<RSDP> {
     let table = st.config_table();
     let mut acpi_table: *const RSDP = null();
     for i in 0..table.len() {
-        if EfiAcpiTableGuid == table[i].guid {
+        if EFI_ACPI_TABLE_GUID == table[i].guid {
             acpi_table = table[i].address as *const RSDP;
             break;
         }

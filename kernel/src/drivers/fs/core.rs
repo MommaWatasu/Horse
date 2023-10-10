@@ -5,7 +5,7 @@ use alloc::{
 use spin::Mutex;
 
 use crate::{
-    lib::{
+    horse_lib::{
         fd::FDTable,
         storage::Storage,
     },
