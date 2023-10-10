@@ -51,7 +51,7 @@ script = ['''
 DISK_IMG=Horse.iso
 
 qemu-system-x86_64 \
-    -m 1G \
+    -m 2G \
     -drive if=pflash,format=raw,readonly=on,file=./dev-tools/OVMF/OVMF_CODE.fd \
     -drive if=pflash,format=raw,file=./dev-tools/OVMF/OVMF_VARS.fd \
     -drive if=ide,index=0,media=disk,format=raw,file=$DISK_IMG \
@@ -64,7 +64,7 @@ rm $DISK_IMG
 dependencies = ['make-image']
 
 [tasks.save-img]
-description = "run OS on QEMU with GDB"
+description = "run OS on QEMU and save image"
 script = ['''
 DISK_IMG=Horse.iso
 
@@ -76,5 +76,24 @@ qemu-system-x86_64 \
     -device nec-usb-xhci,id=xhci \
     -device usb-mouse -device usb-kbd \
     -monitor stdio \
+''']
+dependencies = ['make-image']
+
+[tasks.gdb]
+description = "run OS on QEMU with GDB"
+script = ['''
+DISK_IMG=Horse.iso
+
+qemu-system-x86_64 \
+    -m 2G \
+    -s -S \
+    -drive if=pflash,format=raw,readonly=on,file=./dev-tools/OVMF/OVMF_CODE.fd \
+    -drive if=pflash,format=raw,file=./dev-tools/OVMF/OVMF_VARS.fd \
+    -drive if=ide,index=0,media=disk,format=raw,file=$DISK_IMG \
+    -device nec-usb-xhci,id=xhci \
+    -device usb-mouse -device usb-kbd \
+    -monitor stdio \
+
+rm $DISK_IMG
 ''']
 dependencies = ['make-image']
