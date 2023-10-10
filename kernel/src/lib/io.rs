@@ -1,12 +1,69 @@
 use core::arch::asm;
 
-extern "C" {
-    pub fn inb(addr: u16) -> u8;
-    pub fn inw(addr: u16) -> u16;
-    pub fn inl(addr: u16) -> u32;
-    pub fn outb(addr: u16, value: u8);
-    pub fn outw(addr: u16, value: u16);
-    pub fn outl(addr: u16, value: u32);
+#[inline(always)]
+pub unsafe fn inb(port: u16) -> u8 {
+    let result: u8;
+    asm!(
+        "in al, dx",
+        in("dx") port,
+        out("al") result,
+        options(nomem, nostack)
+    );
+    return result
+}
+
+#[inline(always)]
+pub unsafe fn inw(port: u16) -> u16 {
+    let result: u16;
+    asm!(
+        "in ax, dx",
+        in("dx") port,
+        out("ax") result,
+        options(nomem, nostack)
+    );
+    return result
+}
+
+#[inline(always)]
+pub unsafe fn inl(port: u16) -> u32 {
+    let result: u32;
+    asm!(
+        "in eax, dx",
+        in("dx") port,
+        out("eax") result,
+        options(nomem, nostack)
+    );
+    return result
+}
+
+#[inline(always)]
+pub unsafe fn outb(port: u16, value: u8) {
+    asm!(
+        "out dx, al",
+        in("dx") port,
+        in("al") value,
+        options(nomem, nostack)
+    );
+}
+
+#[inline(always)]
+pub unsafe fn outw(port: u16, value: u16) {
+    asm!(
+        "out dx, ax",
+        in("dx") port,
+        in("ax") value,
+        options(nomem, nostack)
+    );
+}
+
+#[inline(always)]
+pub unsafe fn outl(port: u16, value: u32) {
+    asm!(
+        "out dx, eax",
+        in("dx") port,
+        in("eax") value,
+        options(nomem, nostack)
+    );
 }
 
 pub unsafe fn insb(port: u16, buffer: &mut [u8], count: u32) {

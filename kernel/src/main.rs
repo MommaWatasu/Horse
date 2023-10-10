@@ -188,10 +188,10 @@ extern "sysv64" fn kernel_main_virt(
     initialize_filesystem();
 
     FILE_DESCRIPTOR_TABLE.lock().initialize();
-    let mut buf = [0; 1024];
+    let mut buf = [0; 1800];
     unsafe { 
         let fd = drivers::fs::init::FILESYSTEM_TABLE.lock()[0].open("memmap", 0);
-        drivers::fs::init::FILESYSTEM_TABLE.lock()[0].read(fd, &mut buf, 1024);
+        drivers::fs::init::FILESYSTEM_TABLE.lock()[0].read(fd, &mut buf, 1800);
         drivers::fs::init::FILESYSTEM_TABLE.lock()[0].close(fd);
     }
     println!("{}", bytes2str(&buf));

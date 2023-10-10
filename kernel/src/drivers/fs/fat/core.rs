@@ -140,29 +140,12 @@ impl FAT {
         let nbytes = self.bpc;
         STORAGE_CONTROLLERS.lock()[self.storage_id].read(buf, lba, nbytes);
     }
-    /*fn next_cluster(&self, cluster: u32) -> u32 {
-        let offset = self.bpb.rsvd_sec_cnt as u32 * self.bpb.bytes_per_sec as u32 + 4 * cluster;
-        let lba = offset / 512;
-        let padding = offset as usize % 512;
-        crate::debug!("next_cluster- lba: {}, padding: {}", lba, padding);
-        let mut buf = [0; 512];
-        STORAGE_CONTROLLERS.lock()[self.storage_id].read(&mut buf, lba, 512);
-        //crate::debug!("next: {:?}", buf);
-        let next = u32::from_be_bytes(buf[padding..padding+4].try_into().unwrap());
-        if next >= 0x0ffffff8 {
-            return END_OF_CLUSTER_CHAIN
-        }
-        return next
-    }*/
     fn next_cluster(&self, cluster: u32) -> u32 {
         let offset = self.bpb.rsvd_sec_cnt as u32 * self.bpb.bytes_per_sec as u32 + 4 * cluster;
         let lba = offset / 512;
         let padding = offset as usize % 512;
         let mut buf = vec![0; 512];
-        // This is very strange! IF I read from disk only once, it returns zero-array.
         STORAGE_CONTROLLERS.lock()[self.storage_id].read(&mut buf, lba, 512);
-        STORAGE_CONTROLLERS.lock()[self.storage_id].read(&mut buf, lba, 512);
-        crate::sleep(2);
         let next = u32::from_le_bytes(buf[padding..padding+4].try_into().unwrap());
         if next >= 0x0ffffff8 {
             return END_OF_CLUSTER_CHAIN
@@ -203,7 +186,6 @@ impl FAT {
         let mut name = &full_path.path[i];
         let mut buf = vec![0u8; self.bpc];
         while dir_clus != END_OF_CLUSTER_CHAIN {
-            crate::debug!("cluster: {:x}", dir_clus);
             self.get_cluster(dir_clus, &mut buf);
             dir_clus = self.next_cluster(dir_clus);
             for c in 0..self.bpc as usize / size_of::<DirectoryEntry>() {
@@ -280,7 +262,7 @@ impl FileSystem for FAT {
                 break
             }
             cluster = self.next_cluster(cluster);
-            i += 1
+            i += 1;
         }
         return nbytes as isize
     }
