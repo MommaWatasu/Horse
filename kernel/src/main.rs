@@ -22,6 +22,7 @@ pub mod horse_lib;
 pub mod log;
 pub mod memory_manager;
 pub mod mouse;
+pub mod proc;
 pub mod status;
 pub mod volatile;
 pub mod window;
@@ -43,6 +44,7 @@ use log::*;
 use memory_allocator::KernelMemoryAllocator;
 use memory_manager::*;
 use mouse::{draw_mouse_cursor, MOUSE_CURSOR_HEIGHT, MOUSE_CURSOR_WIDTH, MOUSE_TRANSPARENT_COLOR};
+use proc::{TASK_B_CONTEXT, taskb};
 use queue::ArrayQueue;
 use status::StatusCode;
 use window::*;
@@ -188,13 +190,6 @@ extern "sysv64" fn kernel_main_virt(
     initialize_filesystem();
 
     FILE_DESCRIPTOR_TABLE.lock().initialize();
-    let mut buf = [0; 1800];
-    unsafe { 
-        let fd = drivers::fs::init::FILESYSTEM_TABLE.lock()[0].open("memmap", 0);
-        drivers::fs::init::FILESYSTEM_TABLE.lock()[0].read(fd, &mut buf, 1800);
-        drivers::fs::init::FILESYSTEM_TABLE.lock()[0].close(fd);
-    }
-    println!("{}", bytes2str(&buf));
     //set the IDT entry
     IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
     IDT.lock()[InterruptVector::LAPICTimer as usize].set_handler_fn(handler_lapic_timer);
