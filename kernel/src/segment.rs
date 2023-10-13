@@ -91,13 +91,14 @@ unsafe fn setup_segments() {
     );
 }
 
-pub fn initialize() {
-    const KERNEL_CS: u16 = 1 << 3;
-    const KERNEL_SS: u16 = 2 << 3;
+pub const KERNEL_CS: u16 = 1 << 3;
+pub const KERNEL_SS: u16 = 2 << 3;
+const KERNEL_DS: u16 = 0;
 
+pub fn initialize() {
     unsafe {
         setup_segments();
-        set_ds_all(0);
+        set_ds_all(KERNEL_DS);
         set_cs_ss(KERNEL_CS, KERNEL_SS);
     }
 }

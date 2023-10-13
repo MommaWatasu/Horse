@@ -44,8 +44,9 @@ use log::*;
 use memory_allocator::KernelMemoryAllocator;
 use memory_manager::*;
 use mouse::{draw_mouse_cursor, MOUSE_CURSOR_HEIGHT, MOUSE_CURSOR_WIDTH, MOUSE_TRANSPARENT_COLOR};
-use proc::{TASK_B_CONTEXT, taskb};
+use proc::{TASK_B_CONTEXT, taskb, get_cr3, switch_context, TASK_A_CONTEXT};
 use queue::ArrayQueue;
+use segment::{KERNEL_CS, KERNEL_SS};
 use status::StatusCode;
 use window::*;
 
@@ -190,6 +191,25 @@ extern "sysv64" fn kernel_main_virt(
     initialize_filesystem();
 
     FILE_DESCRIPTOR_TABLE.lock().initialize();
+
+    let task_b_stack = [0; 1024];
+    let task_b_stack_end = task_b_stack.as_ptr() as u64;
+
+    let ctx_wrapper = &mut *TASK_B_CONTEXT.lock();
+    let task_b_ctx = ctx_wrapper.unwrap();
+    task_b_ctx.rip = (taskb as *mut ()) as u64;
+    task_b_ctx.cr3 = unsafe { get_cr3() };
+    task_b_ctx.rflags = 0x202;
+    task_b_ctx.cs = KERNEL_CS as u64;
+    task_b_ctx.ss = KERNEL_SS as u64;
+    task_b_ctx.rsp = (task_b_stack_end & !0xfu64) - 8;
+
+    // mask all the exceptions except MXCSR
+    unsafe {
+        let ptr = (&mut task_b_ctx.fxsave_area[24] as *const u8 as *mut u32);
+        *ptr = 0x1f80;
+    }
+
     //set the IDT entry
     IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
     IDT.lock()[InterruptVector::LAPICTimer as usize].set_handler_fn(handler_lapic_timer);
@@ -204,6 +224,8 @@ extern "sysv64" fn kernel_main_virt(
         disable();
         if INTERRUPTION_QUEUE.lock().count == 0 {
             unsafe { asm!("sti", "hlt") }; //don't touch this line!These instructions must be in a row.
+            debug!("switch_context");
+            unsafe { switch_context(&mut *TASK_B_CONTEXT.lock().unwrap(), &mut *TASK_A_CONTEXT.lock().unwrap()); }
             continue;
         }
         let msg = INTERRUPTION_QUEUE.lock().pop().unwrap();

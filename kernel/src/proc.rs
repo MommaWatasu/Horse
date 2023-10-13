@@ -5,12 +5,12 @@ pub static TASK_A_CONTEXT: Mutex<ContextWrapper> = Mutex::new(DEFAULT_CONTEXT);
 pub static TASK_B_CONTEXT: Mutex<ContextWrapper> = Mutex::new(DEFAULT_CONTEXT);
 
 extern "C" {
-    fn switch_context(next_ctx: &mut ContextWrapper, current_ctx: &mut ContextWrapper);
-    fn get_cr3() -> u64;
+    pub fn switch_context(next_ctx: &mut ProcessContext, current_ctx: &mut ProcessContext);
+    pub fn get_cr3() -> u64;
 }
 
 
-#[repr(C, align(16))]
+#[repr(align(16))]
 pub struct ContextWrapper(ProcessContext);
 
 impl ContextWrapper {
@@ -19,7 +19,7 @@ impl ContextWrapper {
     }
 }
 
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct ProcessContext {
     pub cr3: u64,
     pub rip: u64,
@@ -53,6 +53,6 @@ pub fn taskb() {
     loop {
         crate::println!("TaskB is running! - count: {}", count);
         count += 1;
-        unsafe { switch_context(&mut *TASK_A_CONTEXT.lock(), &mut *TASK_B_CONTEXT.lock()); }
+        unsafe { switch_context(&mut *TASK_A_CONTEXT.lock().unwrap(), &mut *TASK_B_CONTEXT.lock().unwrap()); }
     }
 }
