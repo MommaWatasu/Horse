@@ -44,7 +44,7 @@ use log::*;
 use memory_allocator::KernelMemoryAllocator;
 use memory_manager::*;
 use mouse::{draw_mouse_cursor, MOUSE_CURSOR_HEIGHT, MOUSE_CURSOR_WIDTH, MOUSE_TRANSPARENT_COLOR};
-use proc::{TASK_B_CONTEXT, taskb, get_cr3, switch_context, TASK_A_CONTEXT};
+use proc::{TASK_B_CONTEXT, taskb, get_cr3, switch_context, TASK_A_CONTEXT, switch_process, initialize_process_manager, CURRENT_PROCESS};
 use queue::ArrayQueue;
 use segment::{KERNEL_CS, KERNEL_SS};
 use status::StatusCode;
@@ -157,9 +157,12 @@ extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
-    lapic_timer_on_interrupt();
+    let proc = TIMER_MANAGER.lock().get_mut().unwrap().tick();
     unsafe {
         notify_end_of_interrupt();
+        if proc {
+            switch_process();
+        }
     }
 }
 
@@ -193,21 +196,21 @@ extern "sysv64" fn kernel_main_virt(
     FILE_DESCRIPTOR_TABLE.lock().initialize();
 
     let task_b_stack = [0; 1024];
-    let task_b_stack_end = task_b_stack.as_ptr() as u64;
+    let task_b_stack_end = task_b_stack.as_ptr() as u64 + 8 * 1024;
 
-    let ctx_wrapper = &mut *TASK_B_CONTEXT.lock();
-    let task_b_ctx = ctx_wrapper.unwrap();
-    task_b_ctx.rip = (taskb as *mut ()) as u64;
-    task_b_ctx.cr3 = unsafe { get_cr3() };
-    task_b_ctx.rflags = 0x202;
-    task_b_ctx.cs = KERNEL_CS as u64;
-    task_b_ctx.ss = KERNEL_SS as u64;
-    task_b_ctx.rsp = (task_b_stack_end & !0xfu64) - 8;
-
-    // mask all the exceptions except MXCSR
     unsafe {
-        let ptr = (&mut task_b_ctx.fxsave_area[24] as *const u8 as *mut u32);
-        *ptr = 0x1f80;
+        let task_b_ctx = TASK_B_CONTEXT.unwrap();
+        task_b_ctx.rip = (taskb as *mut ()) as u64;
+        task_b_ctx.cr3 = get_cr3();
+        task_b_ctx.rflags = 0x202;
+        task_b_ctx.cs = KERNEL_CS as u64;
+        task_b_ctx.ss = KERNEL_SS as u64;
+        task_b_ctx.rsp = (task_b_stack_end & !0xfu64) - 8;
+
+        // mask all the exceptions except MXCSR
+        task_b_ctx.fxsave_area[25] = 0x8;
+        task_b_ctx.fxsave_area[26] = 0xf;
+        task_b_ctx.fxsave_area[27] = 0x1;
     }
 
     //set the IDT entry
@@ -220,12 +223,11 @@ extern "sysv64" fn kernel_main_virt(
         .lock()
         .initialize(Message::NoInterruption);
 
+    initialize_process_manager();
     loop {
         disable();
         if INTERRUPTION_QUEUE.lock().count == 0 {
             unsafe { asm!("sti", "hlt") }; //don't touch this line!These instructions must be in a row.
-            debug!("switch_context");
-            unsafe { switch_context(&mut *TASK_B_CONTEXT.lock().unwrap(), &mut *TASK_A_CONTEXT.lock().unwrap()); }
             continue;
         }
         let msg = INTERRUPTION_QUEUE.lock().pop().unwrap();
@@ -239,7 +241,7 @@ extern "sysv64" fn kernel_main_virt(
                     }
                 }
             }
-            Message::TimerTimeout { timeout, value } => {
+            Message::TimerTimeout { timeout: _, value } => {
                 if value != -1 {
                     println!("Timer timeout: {}", value)
                 };
