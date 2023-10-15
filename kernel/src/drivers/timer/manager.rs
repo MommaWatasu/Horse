@@ -18,11 +18,11 @@ impl TimerManager {
             fft,
         };
     }
-    pub fn add_timer(&mut self, timeout: u64, value: i32) {
-        let timer = Timer::new(self.tick, timeout, value);
-        self.timers.push(timer)
+    pub fn add_timer(&mut self, timeout: u64, value: i32, periodic: bool) {
+        self.timers.push(Timer::new(self.tick, timeout, value, periodic));
     }
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self) -> bool {
+        let mut proc = false;
         self.tick = self.tick.wrapping_add(1);
         loop {
             if let Some(t) = self.timers.peek() {
@@ -33,11 +33,18 @@ impl TimerManager {
                     timeout: t.timeout,
                     value: t.value,
                 });
+                if t.value == -1 {
+                    proc = true;
+                }
+                if t.periodic != 0 {
+                    self.add_timer(t.periodic, t.value, true)
+                }
                 self.timers.pop();
             } else {
                 break;
             }
         }
+        return proc
     }
     pub fn wait_seconds(&self, sec: u64) {
         for i in 0..sec {
@@ -52,14 +59,22 @@ struct Timer {
     absolute_timeout: u128,
     pub timeout: u64,
     pub value: i32,
+    periodic: u64,
 }
 
 impl Timer {
-    fn new(tick: u64, timeout: u64, value: i32) -> Self {
+    fn new(tick: u64, timeout: u64, value: i32, periodic: bool) -> Self {
+        let relational_timeout;
+        if periodic {
+            relational_timeout = timeout;
+        } else {
+            relational_timeout = 0;
+        }
         return Self {
             absolute_timeout: (tick as u128) + (timeout as u128),
             timeout: tick.wrapping_add(timeout),
             value,
+            periodic: relational_timeout
         };
     }
 }

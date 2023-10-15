@@ -68,10 +68,6 @@ pub fn stop_lapic_timer() {
     }
 }
 
-pub fn lapic_timer_on_interrupt() {
-    TIMER_MANAGER.lock().get_mut().unwrap().tick();
-}
-
 pub fn sleep(t: u64) {
     TIMER_MANAGER.lock().get_mut().unwrap().wait_seconds(t);
 }
