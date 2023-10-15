@@ -1,16 +1,19 @@
-use core::{arch::asm, sync::atomic::{
-    Ordering,
-    AtomicPtr
-}};
-use spin::Mutex;
-use x86_64::instructions::interrupts::enable;
+use alloc::{
+    vec,
+    collections::VecDeque,
+    vec::Vec,
+};
+use core::{arch::asm, mem::size_of};
+use core::cmp::{Ord, Ordering};
+use spin::{
+    Mutex,
+    Once
+};
 
-use crate::drivers::timer::TIMER_MANAGER;
+use crate::{drivers::timer::TIMER_MANAGER, segment::{KERNEL_CS, KERNEL_SS}};
 
 const DEFAULT_CONTEXT: ContextWrapper = ContextWrapper(ProcessContext { cr3: 0, rip: 0, rflags: 0, reserved1: 0, cs: 0, ss: 0, fs: 0, gs: 0, rax: 0, rbx: 0, rcx: 0, rdx: 0, rdi: 0, rsi: 0, rsp: 0, rbp: 0, r8: 0, r9: 0, r10: 0, r11: 0, r12: 0, r13: 0, r14: 0, r15: 0, fxsave_area: [0; 512] });
-pub static mut TASK_A_CONTEXT: ContextWrapper = DEFAULT_CONTEXT;
-pub static mut TASK_B_CONTEXT: ContextWrapper = DEFAULT_CONTEXT;
-pub static mut CURRENT_PROCESS: u64 = 0;
+pub static PROCESS_MANAGER: Mutex<Once<ProcessManager>> = Mutex::new(Once::new());
 
 extern "C" {
     pub fn switch_context(next_ctx: u64, current_ctx: u64);
@@ -18,7 +21,7 @@ extern "C" {
 }
 
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 #[repr(align(16))]
 pub struct ContextWrapper(ProcessContext);
 
@@ -34,7 +37,7 @@ impl ContextWrapper {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 #[repr(C, packed)]
 pub struct ProcessContext {
     pub cr3: u64,
@@ -64,25 +67,115 @@ pub struct ProcessContext {
     pub fxsave_area: [u8; 512]
 }
 
-pub fn initialize_process_manager() {
-    unsafe { CURRENT_PROCESS = TASK_A_CONTEXT.as_ptr() };
+pub struct ProcessManager<'a> {
+    procs: Vec<Process>,
+    latest_id: usize,
+    run_queue: VecDeque<&'a mut Process>
+}
 
-    unsafe {
-        asm!("cli");
-        TIMER_MANAGER.lock().get_mut().unwrap().add_timer(10, -1, true);
-        asm!("sti");
+impl<'a> ProcessManager<'a> {
+    pub fn new() -> Self {
+        let mut manager = Self {
+            procs: Vec::new(),
+            latest_id: 0,
+            run_queue: VecDeque::new()
+        };
+        manager.new_proc();
+        manager.id_wake_up(0);
+        return manager
+    }
+    pub fn new_proc(&mut self) -> &mut Process {
+        self.latest_id += 1;
+        self.procs.push(Process::new(self.latest_id));
+        return self.procs.last_mut().unwrap()
+    }
+    pub fn wake_up(&mut self, proc: &'a mut Process) {
+        if self.run_queue.iter_mut().position(|x| *x == proc) == None {
+            self.run_queue.push_back(proc)
+        }
+    }
+    pub fn id_wake_up(&'a mut self, id: usize) {
+        if let Some(idx) = self.procs.iter_mut().position(|x| x.id() == id) {
+            self.run_queue.push_back(&mut self.procs[idx])
+        }
+    }
+    pub fn sleep(&mut self, proc: &mut Process) {
+        if let Some(idx) = self.run_queue.iter_mut().position(|x| *x == proc) {
+            if idx == 0 {
+                self.switch_process(true);
+            } else {
+                self.run_queue.remove(idx);
+            }
+        }
+    }
+    pub fn id_sleep(&mut self, id: usize) {
+        if let Some(idx) = self.procs.iter_mut().position(|x| x.id() == id) {
+            if idx == 0 {
+                self.switch_process(true);
+            } else {
+                self.run_queue.remove(idx);
+            }
+        }
+    }
+    pub fn switch_process(&mut self, sleep: bool) {
+        let current_proc = self.run_queue.pop_front().unwrap();
+        let current_proc_ptr = current_proc.context().as_ptr();
+        if !sleep {
+            self.run_queue.push_back(current_proc)
+        }
+        let next_proc = self.run_queue.front_mut().unwrap();
+
+        unsafe { switch_context(next_proc.context().as_ptr(), current_proc_ptr) }
     }
 }
 
-pub unsafe fn switch_process() {
-    let old_process = CURRENT_PROCESS;
-    let task_a = TASK_A_CONTEXT.as_ptr();
-    if old_process == task_a {
-        CURRENT_PROCESS = TASK_B_CONTEXT.as_ptr();
-    } else {
-        CURRENT_PROCESS = TASK_A_CONTEXT.as_ptr();
+#[derive(Eq, PartialEq)]
+pub struct Process {
+    id: usize,
+    stack: Vec<u64>,
+    context: ContextWrapper
+}
+
+impl Process {
+    const DEFAULT_STACK_BYTES: usize = 4096;
+    pub fn new(id: usize) -> Self {
+        return Self {
+            id,
+            stack: Vec::new(),
+            context: DEFAULT_CONTEXT
+        }
     }
-    switch_context(CURRENT_PROCESS, old_process)
+    pub fn id(&self) -> usize { self.id }
+    pub fn init_context(&mut self, f: fn()) {
+        let stack_size = Self::DEFAULT_STACK_BYTES / size_of::<u64>();
+        self.stack.resize(stack_size, 0);
+        let stack_end = self.stack.as_ptr() as u64 + stack_size as u64;
+
+        let ctx = self.context.unwrap();
+        ctx.cr3 = unsafe { get_cr3() };
+        ctx.rflags = 0x202;
+        ctx.cs = KERNEL_CS as u64;
+        ctx.ss = KERNEL_SS as u64;
+        ctx.rsp = (stack_end & !0xfu64) - 8;
+        ctx.rip = f as *const () as u64;
+        
+        ctx.fxsave_area[25] = 0x8;
+        ctx.fxsave_area[26] = 0xf;
+        ctx.fxsave_area[27] = 0x1;
+    }
+    pub fn context(&mut self) -> &mut ContextWrapper {
+        return &mut self.context
+    }
+}
+
+pub fn initialize_process_manager() {
+    PROCESS_MANAGER.lock().call_once(|| ProcessManager::new());
+
+    unsafe {
+        asm!("cli");
+        TIMER_MANAGER.lock().get_mut().unwrap().add_timer(2, -1, true);
+        asm!("sti");
+    }
 }
 
 pub fn taskb() {

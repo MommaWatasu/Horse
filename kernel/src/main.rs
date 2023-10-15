@@ -44,7 +44,7 @@ use log::*;
 use memory_allocator::KernelMemoryAllocator;
 use memory_manager::*;
 use mouse::{draw_mouse_cursor, MOUSE_CURSOR_HEIGHT, MOUSE_CURSOR_WIDTH, MOUSE_TRANSPARENT_COLOR};
-use proc::{TASK_B_CONTEXT, taskb, get_cr3, switch_context, TASK_A_CONTEXT, switch_process, initialize_process_manager, CURRENT_PROCESS};
+use proc::{PROCESS_MANAGER, initialize_process_manager};
 use queue::ArrayQueue;
 use segment::{KERNEL_CS, KERNEL_SS};
 use status::StatusCode;
@@ -161,7 +161,7 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
     unsafe {
         notify_end_of_interrupt();
         if proc {
-            switch_process();
+            PROCESS_MANAGER.lock().get_mut().unwrap().switch_process(false);
         }
     }
 }
@@ -194,24 +194,6 @@ extern "sysv64" fn kernel_main_virt(
     initialize_filesystem();
 
     FILE_DESCRIPTOR_TABLE.lock().initialize();
-
-    let task_b_stack = [0; 1024];
-    let task_b_stack_end = task_b_stack.as_ptr() as u64 + 8 * 1024;
-
-    unsafe {
-        let task_b_ctx = TASK_B_CONTEXT.unwrap();
-        task_b_ctx.rip = (taskb as *mut ()) as u64;
-        task_b_ctx.cr3 = get_cr3();
-        task_b_ctx.rflags = 0x202;
-        task_b_ctx.cs = KERNEL_CS as u64;
-        task_b_ctx.ss = KERNEL_SS as u64;
-        task_b_ctx.rsp = (task_b_stack_end & !0xfu64) - 8;
-
-        // mask all the exceptions except MXCSR
-        task_b_ctx.fxsave_area[25] = 0x8;
-        task_b_ctx.fxsave_area[26] = 0xf;
-        task_b_ctx.fxsave_area[27] = 0x1;
-    }
 
     //set the IDT entry
     IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
