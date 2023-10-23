@@ -161,7 +161,7 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
     unsafe {
         notify_end_of_interrupt();
         if proc {
-            PROCESS_MANAGER.lock().get_mut().unwrap().switch_process(false);
+            PROCESS_MANAGER.get_mut().unwrap().switch_process(false);
         }
     }
 }
