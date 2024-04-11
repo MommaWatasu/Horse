@@ -23,7 +23,7 @@ jobs:
       - name: Run Build
         run: cargo make make-image
       - name: create artifact
-        uses: actions/upload-artifact@4
+        uses: actions/upload-artifact@4.3.1
         with:
           name: Horse.iso
           path: ./Horse.iso
