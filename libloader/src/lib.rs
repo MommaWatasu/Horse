@@ -1,52 +1,6 @@
 #![no_std]
 
-use uefi::table::boot::{
-    MemoryDescriptor,
-    MemoryMapSize,
-    MemoryType
-};
-use core::{
-    iter::Iterator,
-    slice::from_raw_parts
-};
-
-//MemoryMap
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct MemoryMap {
-    pub buf: *mut MemoryDescriptor,
-    pub buf_size: usize,
-    pub entry_size: usize,
-    count: usize,
-}
-
-impl MemoryMap {
-    pub fn new(ptr: *mut MemoryDescriptor, mmap_size: MemoryMapSize) -> Self {
-        Self {
-            buf: ptr as *mut MemoryDescriptor,
-            buf_size: mmap_size.map_size,
-            entry_size: mmap_size.entry_size,
-            count: 0
-        }
-    }
-
-    pub fn descriptors(&self) -> &[MemoryDescriptor] {
-        unsafe { from_raw_parts(self.buf, (self.buf_size/self.entry_size)-1) }
-    }
-}
-
-impl Iterator for MemoryMap {
-    type Item = *mut MemoryDescriptor;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.count > self.buf_size / self.entry_size {
-            return None;
-        }
-        let descriptor = (self.buf as usize + self.entry_size * self.count) as *mut MemoryDescriptor;
-        self.count += 1;
-        return Some(descriptor);
-    }
-}
+use uefi::mem::memory_map::MemoryType;
 
 pub fn is_available(ty: MemoryType) -> bool {
     ty == MemoryType::BOOT_SERVICES_CODE

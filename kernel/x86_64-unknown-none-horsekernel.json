@@ -9,10 +9,9 @@
   "linker": "ld.lld",
   "linker-flavor": "ld",
   "has-rpath": true,
-  "is-builtin": false,
   "linker-is-gnu": true,
   "llvm-target": "x86_64-unknown-none-elf",
-  "max-atomic-width": 64,
+  "max-atomic-width": 64,   
   "position-independent-executables": true,
   "post-link-args": {
     "ld": [
@@ -34,5 +33,5 @@
     ]
   },
   "target-family": "unix",
-  "target-pointer-width": "64"
+  "target-pointer-width": 64
 }
