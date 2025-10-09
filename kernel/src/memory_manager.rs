@@ -1,6 +1,6 @@
-use crate::{MemoryMap, StatusCode};
+use crate::StatusCode;
 use core::{marker::Sync, mem::size_of};
-use libloader::is_available;
+use libloader::{is_available, BootMemoryMap};
 use spin::mutex::{Mutex, MutexGuard};
 
 type MapLineType = usize;
@@ -54,9 +54,9 @@ impl BitmapMemoryManager {
         }
     }
 
-    pub fn initialize(&mut self, memory_map: MemoryMap) {
+    pub fn initialize(&mut self, memory_map: BootMemoryMap) {
         let mut available_end: u64 = 0;
-        for desc in memory_map.descriptors() {
+        for desc in memory_map.entries() {
             if available_end < desc.phys_start {
                 self.mark_allocated(
                     FrameID::new(available_end as usize / BYTES_PER_FRAME),

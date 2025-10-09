@@ -2,7 +2,6 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 #![feature(core_intrinsics)]
-#![feature(type_name_of_val)]
 
 mod acpi;
 mod ascii_font;
@@ -51,13 +50,12 @@ use status::StatusCode;
 use window::*;
 
 extern crate libloader;
-use libloader::MemoryMap;
 
 extern crate alloc;
 use alloc::sync::Arc;
 use core::{arch::asm, panic::PanicInfo};
 use spin::{once::Once, Mutex};
-use uefi::table::{Runtime, SystemTable};
+use uefi_raw::table::system::SystemTable;
 use x86_64::{
     instructions::interrupts::{
         disable, //cli
@@ -67,6 +65,7 @@ use x86_64::{
 };
 
 use crate::{horse_lib::bytes::bytes2str, drivers::fs::core::FILE_DESCRIPTOR_TABLE};
+use libloader::BootMemoryMap;
 
 const BG_COLOR: PixelColor = PixelColor(153, 76, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
@@ -168,16 +167,16 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
 
 #[no_mangle]
 extern "sysv64" fn kernel_main_virt(
-    st: SystemTable<Runtime>,
+    sys_table: SystemTable,    
     fb_config: *mut FrameBufferConfig,
-    memory_map: *const MemoryMap,
+    memory_map: BootMemoryMap,
 ) -> ! {
     //setup memory allocator
     segment::initialize();
     unsafe {
         paging::initialize();
     }
-    frame_manager_instance().initialize(unsafe { *memory_map });
+    frame_manager_instance().initialize(memory_map);
     //initialize allocator for usb
     initialize_usballoc();
 
@@ -187,7 +186,7 @@ extern "sysv64" fn kernel_main_virt(
     welcome_message();
     unsafe { debug!("fb: {:?}", (*fb_config).fb) };
 
-    initialize_acpi(st);
+    initialize_acpi(sys_table);
 
     let pci_devices = find_pci_devices();
     let mut xhc = initialize_pci_devices(&pci_devices).unwrap();
@@ -196,8 +195,8 @@ extern "sysv64" fn kernel_main_virt(
     FILE_DESCRIPTOR_TABLE.lock().initialize();
 
     //set the IDT entry
-    IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
-    IDT.lock()[InterruptVector::LAPICTimer as usize].set_handler_fn(handler_lapic_timer);
+    IDT.lock()[InterruptVector::Xhci as u8].set_handler_fn(handler_xhci);
+    IDT.lock()[InterruptVector::LAPICTimer as u8].set_handler_fn(handler_lapic_timer);
     unsafe {
         IDT.lock().load_unsafe();
     }

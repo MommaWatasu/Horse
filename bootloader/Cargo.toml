@@ -9,4 +9,5 @@ edition = "2021"
 goblin = {version = "0.10.2", features = ["elf32", "elf64", "endian_fd"], default-features = false}
 log = { version = "0.4.28", default-features = false }
 uefi = { version = "0.35.0", features = ["alloc", "global_allocator", "logger"] }
+uefi-raw = "0.11.0"
 libloader = {path = "../libloader"}

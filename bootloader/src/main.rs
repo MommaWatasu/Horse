@@ -13,6 +13,7 @@ use file::*;
 extern crate alloc;
 use alloc::string::ToString;
 extern crate libloader;
+use libloader::BootMemoryMap;
 use log::error;
 use goblin::elf;
 use core::{
@@ -27,8 +28,9 @@ use uefi::{
     }, fs::{
         FileSystem,
         Path
-    }, mem::memory_map::{MemoryMap, MemoryMapOwned}, prelude::*, proto::console::gop::{GraphicsOutput, Mode}, system::firmware_vendor
+    }, mem::memory_map::MemoryMap, prelude::*, proto::console::gop::{GraphicsOutput, Mode}, system::firmware_vendor, table::system_table_raw
 };
+use uefi_raw::table::system::SystemTable;
 
 const UEFI_PAGE_SIZE: u64 = 0x1000;
 
@@ -73,15 +75,17 @@ fn efi_main() -> Status {
         transmute::<
             *const (),
             extern "sysv64" fn(
+                sys_table: SystemTable,
                 fb_config: *mut FrameBufferConfig,
-                memmap: *const MemoryMapOwned) -> (),
+                memmap: BootMemoryMap) -> (),
         >(entry_point_addr as *const ())
     };
 
     //exit bootservices and get MemoryMap
-    let memory_map = unsafe { exit_boot_services(None) };
+    let memory_map = unsafe { BootMemoryMap::new(exit_boot_services(None)) };
+    let sys_table = unsafe { system_table_raw().expect("failed to get system table").read() };
 
-    kernel_entry(&mut fb_config, &memory_map);
+    kernel_entry(sys_table, &mut fb_config, memory_map);
     uefi::Status::SUCCESS
 }
 
