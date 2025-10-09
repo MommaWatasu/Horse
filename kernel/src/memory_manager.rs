@@ -134,7 +134,7 @@ impl BitmapMemoryManager {
         if allocated {
             self.alloc_map[line_idx] |= (1 as MapLineType) << bit_idx
         } else {
-            self.alloc_map[line_idx] &= (1 as MapLineType) << bit_idx
+            self.alloc_map[line_idx] &= !((1 as MapLineType) << bit_idx);
         }
     }
 

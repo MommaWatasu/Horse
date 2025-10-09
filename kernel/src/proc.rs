@@ -1,16 +1,11 @@
 use alloc::sync::Arc;
 use alloc::{
-    vec,
     collections::VecDeque,
     vec::Vec,
 };
 use core::{arch::asm, mem::size_of};
-use core::cmp::{Ord, Ordering};
-use spin::{
-    Mutex,
-    Once
-};
-use core::cell::{Cell, RefCell, Ref};
+use spin::Once;
+use core::cell::RefCell;
 
 use crate::{drivers::timer::TIMER_MANAGER, segment::{KERNEL_CS, KERNEL_SS}};
 

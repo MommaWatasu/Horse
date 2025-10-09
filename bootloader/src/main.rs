@@ -77,7 +77,7 @@ fn efi_main() -> Status {
             extern "sysv64" fn(
                 sys_table: SystemTable,
                 fb_config: *mut FrameBufferConfig,
-                memmap: BootMemoryMap) -> (),
+                memmap: *const BootMemoryMap) -> (),
         >(entry_point_addr as *const ())
     };
 
@@ -85,7 +85,7 @@ fn efi_main() -> Status {
     let memory_map = unsafe { BootMemoryMap::new(exit_boot_services(None)) };
     let sys_table = unsafe { system_table_raw().expect("failed to get system table").read() };
 
-    kernel_entry(sys_table, &mut fb_config, memory_map);
+    kernel_entry(sys_table, &mut fb_config, &memory_map);
     uefi::Status::SUCCESS
 }
 
