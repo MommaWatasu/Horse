@@ -1,7 +1,10 @@
 #![no_std]
 
 use core::{
-    slice::from_raw_parts_mut,
+    slice::{
+        from_raw_parts,
+        from_raw_parts_mut,
+    },
     ffi::c_void,
 };
 use uefi::mem::memory_map::{
@@ -39,13 +42,13 @@ impl ConfigTableEntries {
     }
 }
 
-const MAX_MEMORY_MAP_ENTRIES: usize = 256;
-
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct BootMemoryMap {
-    descriptors: [MemoryDescriptor; MAX_MEMORY_MAP_ENTRIES],
-    entry_count: usize,
+    buf: *mut MemoryDescriptor,
+    buf_size: usize,
+    entry_size: usize,
+    count: usize,
 }
 
 impl BootMemoryMap {
@@ -53,36 +56,28 @@ impl BootMemoryMap {
     /// This function copies all memory descriptors from the MemoryMapOwned
     /// to create an independent, copyable structure.
     pub fn new(memmap: MemoryMapOwned) -> Self {
-        let mut descriptors = [MemoryDescriptor::default(); MAX_MEMORY_MAP_ENTRIES];
-        let mut count = 0;
-        
-        for (i, entry) in memmap.entries().enumerate() {
-            if i >= MAX_MEMORY_MAP_ENTRIES {
-                break;
-            }
-            descriptors[i] = *entry;
-            count += 1;
-        }
-        
         Self {
-            descriptors,
-            entry_count: count,
+            buf: memmap.buffer().as_ptr() as *mut MemoryDescriptor,
+            buf_size: memmap.entries().len() * size_of::<MemoryDescriptor>(),
+            entry_size: size_of::<MemoryDescriptor>(),
+            count: memmap.entries().len(),
         }
     }
-
-    /// Returns an iterator over the memory descriptors.
-    pub fn iter(&self) -> core::slice::Iter<'_, MemoryDescriptor> {
-        self.descriptors[..self.entry_count].iter()
+    pub fn descriptors(&self) -> &[MemoryDescriptor] {
+        unsafe { from_raw_parts(self.buf, (self.buf_size/self.entry_size)-1) }
     }
+}
 
-    /// Returns the number of memory descriptors.
-    pub fn len(&self) -> usize {
-        self.entry_count
-    }
+impl Iterator for BootMemoryMap {
+    type Item = *mut MemoryDescriptor;
 
-    /// Returns a slice of the memory descriptors.
-    pub fn entries(&self) -> &[MemoryDescriptor] {
-        &self.descriptors[..self.entry_count]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.count > self.buf_size / self.entry_size {
+            return None;
+        }
+        let descriptor = (self.buf as usize + self.entry_size * self.count) as *mut MemoryDescriptor;
+        self.count += 1;
+        return Some(descriptor);
     }
 }
 
