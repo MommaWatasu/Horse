@@ -32,7 +32,7 @@ macro_rules! println {
     ($fmt:expr, $($arg:tt)*) => ($crate::print!(concat!($fmt, "\n"), $($arg)*));
 }
 
-#[macro_export(local_inner_macro)]
+#[macro_export]
 macro_rules! log {
     (level: $level:expr, $fmt:expr) => {
         if $level <= $crate::_log_level() {

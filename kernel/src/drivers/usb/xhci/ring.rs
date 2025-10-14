@@ -102,7 +102,7 @@ impl EventRing {
         }
         unsafe {
             table[0].set_pointer((*buf).as_ptr() as usize);
-            table[0].set_ring_segment_size((*buf).len() as u16);
+            table[0].set_ring_segment_size(buf.len() as u16);
         }
         let table = table as *const [EventRingSegmentTableEntry];
 
@@ -117,7 +117,7 @@ impl EventRing {
     pub fn initialize(&mut self, interrupter: *mut InterrupterRegisterSet) {
         self.interrupter = interrupter;
 
-        let (ptr, len) = unsafe { ((*self.erst).as_ptr(), (*self.erst).len()) };
+        let (ptr, len) = unsafe { ((*self.erst).as_ptr(), self.erst.len()) };
 
         unsafe {
             (*interrupter).erstsz.modify(|erstsz| {
