@@ -2,7 +2,6 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 #![feature(core_intrinsics)]
-#![feature(type_name_of_val)]
 
 mod acpi;
 mod ascii_font;
@@ -46,18 +45,16 @@ use memory_manager::*;
 use mouse::{draw_mouse_cursor, MOUSE_CURSOR_HEIGHT, MOUSE_CURSOR_WIDTH, MOUSE_TRANSPARENT_COLOR};
 use proc::{PROCESS_MANAGER, initialize_process_manager};
 use queue::ArrayQueue;
-use segment::{KERNEL_CS, KERNEL_SS};
 use status::StatusCode;
 use window::*;
 
 extern crate libloader;
-use libloader::MemoryMap;
 
 extern crate alloc;
 use alloc::sync::Arc;
 use core::{arch::asm, panic::PanicInfo};
 use spin::{once::Once, Mutex};
-use uefi::table::{Runtime, SystemTable};
+use uefi_raw::table::system::SystemTable;
 use x86_64::{
     instructions::interrupts::{
         disable, //cli
@@ -66,7 +63,8 @@ use x86_64::{
     structures::idt::InterruptStackFrame,
 };
 
-use crate::{horse_lib::bytes::bytes2str, drivers::fs::core::FILE_DESCRIPTOR_TABLE};
+use crate::drivers::fs::core::FILE_DESCRIPTOR_TABLE;
+use libloader::BootMemoryMap;
 
 const BG_COLOR: PixelColor = PixelColor(153, 76, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
@@ -144,8 +142,8 @@ fn initialize(fb_config: *mut FrameBufferConfig) {
         .id();
 
     MOUSE_CURSOR.lock().set_layer_id(mouse_layer_id);
-    layer_manager.up_down(bglayer_id, LayerHeight::Height(0));
-    layer_manager.up_down(mouse_layer_id, LayerHeight::Height(1));
+    layer_manager.up_down(bglayer_id, LayerHeight::Height(0)).expect("Cannot set background layer to bottom");
+    layer_manager.up_down(mouse_layer_id, LayerHeight::Height(1)).expect("Cannot set mouse layer to top");
     layer_manager.draw();
 }
 
@@ -168,9 +166,9 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
 
 #[no_mangle]
 extern "sysv64" fn kernel_main_virt(
-    st: SystemTable<Runtime>,
+    sys_table: SystemTable,
     fb_config: *mut FrameBufferConfig,
-    memory_map: *const MemoryMap,
+    memory_map: *const BootMemoryMap,
 ) -> ! {
     //setup memory allocator
     segment::initialize();
@@ -187,7 +185,7 @@ extern "sysv64" fn kernel_main_virt(
     welcome_message();
     unsafe { debug!("fb: {:?}", (*fb_config).fb) };
 
-    initialize_acpi(st);
+    initialize_acpi(sys_table);
 
     let pci_devices = find_pci_devices();
     let mut xhc = initialize_pci_devices(&pci_devices).unwrap();
@@ -196,8 +194,8 @@ extern "sysv64" fn kernel_main_virt(
     FILE_DESCRIPTOR_TABLE.lock().initialize();
 
     //set the IDT entry
-    IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
-    IDT.lock()[InterruptVector::LAPICTimer as usize].set_handler_fn(handler_lapic_timer);
+    IDT.lock()[InterruptVector::Xhci as u8].set_handler_fn(handler_xhci);
+    IDT.lock()[InterruptVector::LAPICTimer as u8].set_handler_fn(handler_lapic_timer);
     unsafe {
         IDT.lock().load_unsafe();
     }

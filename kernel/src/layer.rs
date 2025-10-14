@@ -1,6 +1,6 @@
 use crate::{
     error,
-    graphics::{Coord, FrameBufferWriter, PixelWriter},
+    graphics::Coord,
     window::Window,
     FrameBuffer, FrameBufferConfig,
 };

@@ -1,41 +1,74 @@
 #![no_std]
 
-use uefi::table::boot::{
-    MemoryDescriptor,
-    MemoryMapSize,
-    MemoryType
-};
 use core::{
-    iter::Iterator,
-    slice::from_raw_parts
+    slice::{
+        from_raw_parts,
+        from_raw_parts_mut,
+    },
+    ffi::c_void,
+};
+use uefi::mem::memory_map::{
+    MemoryType,
+    MemoryMap,
+    MemoryMapOwned,
+    MemoryDescriptor
+};
+use uefi_raw::table::{
+    configuration::ConfigurationTable,
+    system::SystemTable
 };
 
-//MemoryMap
+pub struct ConfigTableEntries {
+    entries: &'static [ConfigurationTable],
+}
+
+impl ConfigTableEntries {
+    pub unsafe fn new(st: SystemTable) -> Self {
+        return Self {
+            entries: from_raw_parts_mut(
+                st.configuration_table as *mut ConfigurationTable,
+                st.number_of_configuration_table_entries as usize,
+            ),
+        };
+    }
+
+    pub fn get_by_guid(&self, guid: uefi::Guid) -> Option<*mut c_void> {
+        for entry in self.entries {
+            if entry.vendor_guid == guid {
+                return Some(entry.vendor_table as *mut c_void);
+            }
+        }
+        return None;
+    }
+}
+
 #[repr(C)]
-#[derive(Clone, Copy)]
-pub struct MemoryMap {
-    pub buf: *mut MemoryDescriptor,
-    pub buf_size: usize,
-    pub entry_size: usize,
+#[derive(Copy, Clone)]
+pub struct BootMemoryMap {
+    buf: *mut MemoryDescriptor,
+    buf_size: usize,
+    entry_size: usize,
     count: usize,
 }
 
-impl MemoryMap {
-    pub fn new(ptr: *mut MemoryDescriptor, mmap_size: MemoryMapSize) -> Self {
+impl BootMemoryMap {
+    /// Creates a new BootMemoryMap from a MemoryMapOwned.
+    /// This function copies all memory descriptors from the MemoryMapOwned
+    /// to create an independent, copyable structure.
+    pub fn new(memmap: MemoryMapOwned) -> Self {
         Self {
-            buf: ptr as *mut MemoryDescriptor,
-            buf_size: mmap_size.map_size,
-            entry_size: mmap_size.entry_size,
-            count: 0
+            buf: memmap.buffer().as_ptr() as *mut MemoryDescriptor,
+            buf_size: memmap.entries().len() * size_of::<MemoryDescriptor>(),
+            entry_size: size_of::<MemoryDescriptor>(),
+            count: memmap.entries().len(),
         }
     }
-
     pub fn descriptors(&self) -> &[MemoryDescriptor] {
         unsafe { from_raw_parts(self.buf, (self.buf_size/self.entry_size)-1) }
     }
 }
 
-impl Iterator for MemoryMap {
+impl Iterator for BootMemoryMap {
     type Item = *mut MemoryDescriptor;
 
     fn next(&mut self) -> Option<Self::Item> {
