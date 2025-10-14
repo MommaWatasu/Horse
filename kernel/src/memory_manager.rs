@@ -103,16 +103,12 @@ impl BitmapMemoryManager {
     }
 
     pub fn free(&mut self, start_frame: FrameID, n_frames: usize) -> StatusCode {
-        for i in 0..n_frames {
-            self.set_bit(FrameID::new(start_frame.id() + i), false);
-        }
+        self.set_bit_range(start_frame, n_frames, false);
         return StatusCode::Success;
     }
 
     pub fn mark_allocated(&mut self, start_frame: FrameID, n_frames: usize) {
-        for i in 0..n_frames {
-            self.set_bit(FrameID::new(start_frame.id() + i), true);
-        }
+        self.set_bit_range(start_frame, n_frames, true);
     }
 
     pub fn set_memory_range(&mut self, range_begin: FrameID, range_end: FrameID) {
@@ -127,14 +123,90 @@ impl BitmapMemoryManager {
         return (self.alloc_map[line_idx] & (1 as MapLineType) << bit_idx) != 0;
     }
 
-    fn set_bit(&mut self, frame: FrameID, allocated: bool) {
-        let line_idx = frame.id() / BITS_PER_MAP_LINE;
-        let bit_idx = frame.id() % BITS_PER_MAP_LINE;
+    /// Efficiently set a range of bits at once using bit masks
+    /// This is much faster than calling set_bit in a loop
+    fn set_bit_range(&mut self, start_frame: FrameID, n_frames: usize, allocated: bool) {
+        if n_frames == 0 {
+            return;
+        }
 
-        if allocated {
-            self.alloc_map[line_idx] |= (1 as MapLineType) << bit_idx
+        let start_id = start_frame.id();
+        let end_id = start_id.checked_add(n_frames)
+            .expect("set_bit_range: start_id + n_frames overflowed");
+        
+        // Bounds checking
+        if end_id > FRAME_COUNT {
+            panic!(
+                "set_bit_range: end_id {} exceeds FRAME_COUNT {}. start_id={}, n_frames={}",
+                end_id, FRAME_COUNT, start_id, n_frames
+            );
+        }
+        
+        let start_line = start_id / BITS_PER_MAP_LINE;
+        let end_line = (end_id - 1) / BITS_PER_MAP_LINE;
+        let start_bit = start_id % BITS_PER_MAP_LINE;
+        let end_bit = (end_id - 1) % BITS_PER_MAP_LINE;
+        
+        // Additional bounds checking
+        if start_line >= MAP_LINE_COUNT || end_line >= MAP_LINE_COUNT {
+            panic!(
+                "set_bit_range: line index out of bounds. start_line={}, end_line={}, MAP_LINE_COUNT={}",
+                start_line, end_line, MAP_LINE_COUNT
+            );
+        }
+
+        if start_line == end_line {
+            // All bits are in the same map line
+            let mask = self.create_mask(start_bit, end_bit + 1);
+            if allocated {
+                self.alloc_map[start_line] |= mask;
+            } else {
+                self.alloc_map[start_line] &= !mask;
+            }
         } else {
-            self.alloc_map[line_idx] &= (1 as MapLineType) << bit_idx
+            // Bits span multiple map lines
+            
+            // Handle the first partial line
+            let first_mask = self.create_mask(start_bit, BITS_PER_MAP_LINE);
+            if allocated {
+                self.alloc_map[start_line] |= first_mask;
+            } else {
+                self.alloc_map[start_line] &= !first_mask;
+            }
+
+            // Handle complete lines in the middle
+            for line in (start_line + 1)..end_line {
+                self.alloc_map[line] = if allocated { !0 } else { 0 };
+            }
+
+            // Handle the last partial line
+            let last_mask = self.create_mask(0, end_bit + 1);
+            if allocated {
+                self.alloc_map[end_line] |= last_mask;
+            } else {
+                self.alloc_map[end_line] &= !last_mask;
+            }
+        }
+    }
+
+    /// Create a bit mask for bits from start_bit (inclusive) to end_bit (exclusive)
+    #[inline]
+    fn create_mask(&self, start_bit: usize, end_bit: usize) -> MapLineType {
+        debug_assert!(start_bit < BITS_PER_MAP_LINE, "start_bit must be < BITS_PER_MAP_LINE");
+        debug_assert!(end_bit <= BITS_PER_MAP_LINE, "end_bit must be <= BITS_PER_MAP_LINE");
+        debug_assert!(start_bit < end_bit, "start_bit must be < end_bit");
+        
+        if end_bit >= BITS_PER_MAP_LINE {
+            // All bits from start_bit to the end of the line
+            !0 << start_bit
+        } else {
+            let num_bits = end_bit - start_bit;
+            // Prevent shift overflow: if num_bits == BITS_PER_MAP_LINE, use !0
+            if num_bits >= BITS_PER_MAP_LINE {
+                !0
+            } else {
+                (((1 as MapLineType) << num_bits) - 1) << start_bit
+            }
         }
     }
 
