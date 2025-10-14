@@ -1,13 +1,14 @@
 use crate::{error, fftimer::FFTimer, info, initialize_lapic_itmer, horse_lib::bytes::*};
-use libloader::ConfigTableEntries;
 
 use alloc::vec::Vec;
 use core::{
     mem::size_of,
-    ptr::read_unaligned,
+    ptr::{null, read_unaligned},
 };
-use uefi::Guid;
-use uefi_raw::table::system::SystemTable;
+use uefi::{
+    table::{Runtime, SystemTable},
+    Guid,
+};
 
 const EFI_ACPI_TABLE_GUID: Guid = Guid::new(
     [0x71, 0xe8, 0x68, 0x88],
@@ -139,9 +140,18 @@ impl Xsdt {
     }
 }
 
-fn get_rsdp(sys_table: SystemTable) -> Option<RSDP> {
-    let table = unsafe { ConfigTableEntries::new(sys_table) };
-    let acpi_table = table.get_by_guid(EFI_ACPI_TABLE_GUID)? as *const RSDP;
+fn get_rsdp(st: SystemTable<Runtime>) -> Option<RSDP> {
+    let table = st.config_table();
+    let mut acpi_table: *const RSDP = null();
+    for i in 0..table.len() {
+        if EFI_ACPI_TABLE_GUID == table[i].guid {
+            acpi_table = table[i].address as *const RSDP;
+            break;
+        }
+    }
+    if acpi_table.is_null() {
+        return None;
+    }
     let rsdp = RSDP::new(acpi_table);
     if rsdp.validate() {
         return Some(rsdp);
@@ -150,7 +160,7 @@ fn get_rsdp(sys_table: SystemTable) -> Option<RSDP> {
     }
 }
 
-pub fn initialize_acpi(st: SystemTable) {
+pub fn initialize_acpi(st: SystemTable<Runtime>) {
     let rsdp = get_rsdp(st).unwrap();
     let xsdt = unsafe { Xsdt::new(rsdp.xsdt_address).unwrap() };
     let fftimer = xsdt.get_timer().unwrap();

@@ -11,37 +11,61 @@ use file::*;
 
 #[macro_use]
 extern crate alloc;
-use alloc::string::ToString;
+use alloc::{
+    string::ToString,
+    vec::Vec
+};
 extern crate libloader;
-use libloader::BootMemoryMap;
+use libloader::MemoryMap;
 use log::error;
 use goblin::elf;
 use core::{
     arch::asm,
-    mem::transmute,
+    ffi::c_void,
+    mem::{
+        size_of,
+        transmute
+    },
     ops::DerefMut,
+    ptr::NonNull,
     slice::from_raw_parts_mut
 };
 use uefi::{
-    boot::{
-        allocate_pages, exit_boot_services, get_handle_for_protocol, image_handle, memory_map, open_protocol, AllocateType, MemoryType, OpenProtocolAttributes, OpenProtocolParams,
-    }, fs::{
+    prelude::*,
+    fs::{
         FileSystem,
         Path
-    }, mem::memory_map::MemoryMap, prelude::*, proto::console::gop::{GraphicsOutput, Mode}, system::firmware_vendor, table::system_table_raw
+    },
+    proto::{
+        console::gop::{GraphicsOutput, Mode},
+    },
+    table::{
+        Runtime,
+        boot::{
+            self,
+            AllocateType,
+            EventType,
+            MemoryDescriptor,
+            OpenProtocolParams,
+            OpenProtocolAttributes,
+            Tpl,
+        },
+    },
 };
-use uefi_raw::table::system::SystemTable;
 
 const UEFI_PAGE_SIZE: u64 = 0x1000;
+const BUFFER_MARGIN: usize = 8 * size_of::<MemoryDescriptor>();
 
 #[entry]
-fn efi_main() -> Status {
-    let gop_handle = get_handle_for_protocol::<GraphicsOutput>().unwrap();
+fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
+    let bt = st.boot_services();
+
+    let gop_handle = bt.get_handle_for_protocol::<GraphicsOutput>().unwrap();
     let mut protocol = unsafe {
-        open_protocol::<GraphicsOutput>(
+        bt.open_protocol::<GraphicsOutput>(
             OpenProtocolParams{
                 handle: gop_handle,
-                agent: image_handle(),
+                agent: bt.image_handle(),
                 controller: None
             },
             OpenProtocolAttributes::GetProtocol
@@ -49,7 +73,19 @@ fn efi_main() -> Status {
     };
     let gop = protocol.deref_mut();
 
-    if firmware_vendor().to_string() != "EDK II" {
+    unsafe {
+        uefi::allocator::init(bt);
+        bt.create_event(
+            EventType::SIGNAL_EXIT_BOOT_SERVICES,
+            Tpl::NOTIFY,
+            Some(exit_signal),
+            None
+        )
+        .map(|_| ())
+        .unwrap();
+    }
+
+    if st.firmware_vendor().to_string() != "EDK II" {
         // set gop mode if it is not in QEMU
         set_gop_mode(gop);
     }
@@ -61,36 +97,37 @@ fn efi_main() -> Status {
     drop(protocol);
 
     // open file protocol
-    let mut fs = open_root();
+    let mut fs = open_root(bt, handler);
 
     //write memory map
     let mut mmap_file = FileBuffer::new();
-    dump(&mut mmap_file);
+    dump(&mut mmap_file, bt);
     mmap_file.flush(&mut fs, cstr16!("memmap"));
 
     //load kernel file
-    let entry_point_addr = load_kernel(&mut fs);
+    let entry_point_addr = load_kernel(&mut fs, &st);
     drop(fs);
     let kernel_entry = unsafe {
         transmute::<
             *const (),
             extern "sysv64" fn(
-                sys_table: SystemTable,
+                st: SystemTable<Runtime>,
                 fb_config: *mut FrameBufferConfig,
-                memmap: *const BootMemoryMap) -> (),
+                memmap: *const MemoryMap) -> (),
         >(entry_point_addr as *const ())
     };
 
     //exit bootservices and get MemoryMap
-    let memory_map = unsafe { BootMemoryMap::new(exit_boot_services(None)) };
-    let sys_table = unsafe { system_table_raw().expect("failed to get system table").read() };
+    let (st, memory_map) = exit_boot_services(st);
 
-    kernel_entry(sys_table, &mut fb_config, &memory_map);
+    kernel_entry(st, &mut fb_config, &memory_map);
     uefi::Status::SUCCESS
 }
 
-fn dump(file: &mut FileBuffer) {
-    let memory_map = memory_map(MemoryType::LOADER_DATA).expect("failed to get memory map");
+fn dump(file: &mut FileBuffer, bt: &BootServices) {
+    let max_mmap_size = bt.memory_map_size().map_size + BUFFER_MARGIN;
+    let mut mmap_buf = vec![0; max_mmap_size];
+    let memory_map = bt.memory_map(&mut mmap_buf).expect("failed to get memory map");
     file.writeln("Index, Type, PhysicalStart, NumberOfPages, Attribute");
     for (i, d) in memory_map.entries().enumerate() {
         file.writeln(&format!(
@@ -104,7 +141,7 @@ fn dump(file: &mut FileBuffer) {
     }
 }
 
-fn load_kernel(fs: &mut FileSystem) -> usize {
+fn load_kernel(fs: &mut FileSystem, st: &SystemTable<Boot>) -> usize {
     //open kernel file
     let buf = fs.read(Path::new(&cstr16!("horse-kernel"))).expect("failed to read kernel file");
     let elf = elf::Elf::parse(&buf).expect("failed to parse ELF");
@@ -122,7 +159,7 @@ fn load_kernel(fs: &mut FileSystem) -> usize {
 
     //allocate pages for kernel file
     let n_of_pages = ((kernel_end - kernel_start + UEFI_PAGE_SIZE - 1) / UEFI_PAGE_SIZE) as usize;
-    allocate_pages(
+    st.boot_services().allocate_pages(
         AllocateType::Address(kernel_start),
         boot::MemoryType::LOADER_DATA,
         n_of_pages.try_into().unwrap(),
@@ -159,6 +196,26 @@ fn set_gop_mode(gop: &mut GraphicsOutput) {
     if let Some(mode) = mode {
         gop.set_mode(&mode).expect("failed to setup GOP mode");
     }
+}
+
+fn exit_boot_services(st: SystemTable<Boot>) -> (SystemTable<Runtime>, MemoryMap) {
+    let mmap_size = st.boot_services().memory_map_size();
+    let mut descriptors = Vec::with_capacity(mmap_size.map_size/mmap_size.entry_size);
+    let (st, memory_map) = st.exit_boot_services();
+
+    //make MemoryMap to send to kernel
+    let memory_map = {
+        for d in memory_map.entries() {
+            descriptors.push(*d);
+        }
+        let (ptr, _, _) = descriptors.into_raw_parts();
+        MemoryMap::new(ptr, mmap_size)
+    };
+    return (st, memory_map);
+}
+
+unsafe extern "efiapi" fn exit_signal(_: uefi::Event, _: Option<NonNull<c_void>>) {
+    uefi::allocator::exit_boot_services();
 }
 
 #[alloc_error_handler]

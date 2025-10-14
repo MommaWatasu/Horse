@@ -3,7 +3,6 @@ description = "build OS"
 script = ['''
 #!/bin/bash
 cd bootloader
-echo $PWD
 cargo build
 cp ./target/x86_64-unknown-uefi/debug/horse-bootloader.efi ../dev-tools
 cd ../kernel

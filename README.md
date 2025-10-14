@@ -11,13 +11,12 @@ When you need to build and run this OS, you need these tools:
 To install them, run the following command
 ```
 $ rustup install nightly
-$ rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
-$ cd /path/to/this/repository
-$ rustup override set nightly
 $ sudo apt install nasm
 $ sudo apt install lld
+$ sudo apt install qemu
 $ sudo apt install qemu-utils
 $ sudo apt install qemu-system-x86
+$ rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
 ```
 
 ## Build OS

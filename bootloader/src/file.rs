@@ -1,12 +1,10 @@
 use uefi::{
-    boot::{
-        get_image_file_system,
-        image_handle,
-    },
-    data_types::CStr16, fs::{
+    prelude::*,
+    data_types::CStr16,
+    fs::{
+        FileSystem,
         Path,
     },
-    fs::FileSystem
 };
 use alloc::string::String;
 
@@ -34,8 +32,9 @@ impl FileBuffer {
     }
 }
 
-pub fn open_root() -> FileSystem {
-    FileSystem::new(get_image_file_system(image_handle()).expect("can't open filesystem protocol"))
+pub fn open_root(bt: &BootServices, handler: Handle) -> FileSystem {
+    let fs = bt.get_image_file_system(handler).expect("can't open filesystem protocol");
+    fs
 }
 
 #[macro_export]

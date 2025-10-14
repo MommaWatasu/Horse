@@ -4,7 +4,6 @@ use core::mem::size_of;
 
 static mut GDT: [SegmentDescriptor; 3] = [SegmentDescriptor::new(); 3];
 
-#[allow(dead_code)]
 enum DescriptorType {
     Upper8Bytes = 0,
     TSSAvailable = 9,

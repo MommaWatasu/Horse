@@ -48,7 +48,7 @@ impl Window {
             resolution: (width, height),
             format,
         };
-        let shadow_buffer = FrameBuffer::new(config);
+        let mut shadow_buffer = FrameBuffer::new(config);
         Self {
             writer: WindowWriter(width, height),
             width,
