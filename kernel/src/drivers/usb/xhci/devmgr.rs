@@ -300,7 +300,7 @@ impl Device {
                 info!("keyboard found");
                 use classdriver::HidKeyboardDriver;
                 let keyboard_driver = unsafe {
-                    let keyboard_driver: *mut HidKeyboardDriver = usballoc()
+                    let keyboard_driver: *mut HidKeyboardDriver = USB_ALLOC.lock().get_mut().unwrap()
                         .alloc_obj::<HidKeyboardDriver>()
                         .unwrap()
                         .as_ptr();
@@ -314,7 +314,7 @@ impl Device {
                 use classdriver::HidMouseDriver;
                 let mouse_driver = unsafe {
                     let mouse_driver: *mut HidMouseDriver =
-                        usballoc().alloc_obj::<HidMouseDriver>().unwrap().as_ptr();
+                        USB_ALLOC.lock().get_mut().unwrap().alloc_obj::<HidMouseDriver>().unwrap().as_ptr();
                     mouse_driver.write(HidMouseDriver::new(if_desc.interface_number)?);
                     mouse_driver.as_mut().unwrap()
                 };
@@ -784,7 +784,7 @@ impl DeviceManager {
         scratchpad_buf_arr: *const *const u8,
     ) -> Result<Self> {
         let devices: &mut [Option<&'static mut Device>] = unsafe {
-            usballoc()
+            USB_ALLOC.lock().get_mut().unwrap()
                 .alloc_slice::<Option<&'static mut Device>>(max_slots + 1)
                 .unwrap()
                 .as_mut()
@@ -795,7 +795,7 @@ impl DeviceManager {
 
         // NOTE: DCBAA: alignment = 64-bytes, boundary = PAGESIZE
         let dcbaap: &mut [*const DeviceContext] = unsafe {
-            usballoc()
+            USB_ALLOC.lock().get_mut().unwrap()
                 .alloc_slice_ext::<*const DeviceContext>(max_slots + 1, 64, None)
                 .unwrap()
                 .as_mut()
@@ -828,10 +828,10 @@ impl DeviceManager {
         }
 
         let device_ctx: &mut DeviceContext =
-            unsafe { usballoc().alloc_obj::<DeviceContext>().unwrap().as_mut() };
+            unsafe { USB_ALLOC.lock().get_mut().unwrap().alloc_obj::<DeviceContext>().unwrap().as_mut() };
         unsafe { DeviceContext::initialize_ptr(device_ctx as *mut DeviceContext) };
 
-        let device: *mut Device = usballoc().alloc_obj::<Device>().unwrap().as_ptr();
+        let device: *mut Device = USB_ALLOC.lock().get_mut().unwrap().alloc_obj::<Device>().unwrap().as_ptr();
 
         let input_ctx = unsafe {
             Device::initialize_ptr(

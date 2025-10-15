@@ -2,7 +2,6 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 #![feature(core_intrinsics)]
-#![feature(type_name_of_val)]
 
 mod acpi;
 mod ascii_font;
@@ -46,7 +45,6 @@ use memory_manager::*;
 use mouse::{draw_mouse_cursor, MOUSE_CURSOR_HEIGHT, MOUSE_CURSOR_WIDTH, MOUSE_TRANSPARENT_COLOR};
 use proc::{PROCESS_MANAGER, initialize_process_manager};
 use queue::ArrayQueue;
-use segment::{KERNEL_CS, KERNEL_SS};
 use status::StatusCode;
 use window::*;
 
@@ -66,7 +64,7 @@ use x86_64::{
     structures::idt::InterruptStackFrame,
 };
 
-use crate::{horse_lib::bytes::bytes2str, drivers::fs::core::FILE_DESCRIPTOR_TABLE};
+use crate::drivers::fs::core::FILE_DESCRIPTOR_TABLE;
 
 const BG_COLOR: PixelColor = PixelColor(153, 76, 0);
 const FG_COLOR: PixelColor = PixelColor(255, 255, 255);

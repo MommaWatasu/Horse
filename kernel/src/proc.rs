@@ -1,11 +1,9 @@
 use alloc::sync::Arc;
 use alloc::{
-    vec,
     collections::VecDeque,
     vec::Vec,
 };
 use core::{arch::asm, mem::size_of};
-use core::cmp::{Ord, Ordering};
 use spin::{
     Mutex,
     Once

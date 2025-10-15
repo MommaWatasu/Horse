@@ -19,7 +19,6 @@ macro_rules! bit_setter {
 }
 
 #[macro_export]
-#[allow(deref_nullptr)]
 macro_rules! container_of {
     ($ptr: expr, $container: path, $field: ident) => {
         unsafe {

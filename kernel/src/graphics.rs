@@ -7,6 +7,7 @@ use core::{
     mem::MaybeUninit,
     ops::{Add, AddAssign, Sub},
 };
+use spin::Mutex;
 use libloader::{PixelFormat, TSFrameBuffer};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -106,8 +107,8 @@ impl PixelWriter for FrameBufferWriter {
 }
 
 // static singleton pointer
-static mut RAW_GRAPHICS: MaybeUninit<Graphics> = MaybeUninit::<Graphics>::uninit();
-static mut GRAPHICS_INITIALIZED: bool = false;
+static RAW_GRAPHICS: MaybeUninit<Graphics> = MaybeUninit::<Graphics>::uninit();
+static GRAPHICS_INITIALIZED: Mutex<bool> = Mutex::new(false);
 
 #[derive(Clone)]
 pub struct Graphics {
@@ -127,7 +128,7 @@ impl Graphics {
     }
 
     pub fn instance() -> &'static mut Self {
-        if unsafe { !GRAPHICS_INITIALIZED } {
+        if !*GRAPHICS_INITIALIZED.lock() {
             panic!("graphics not initialized");
         }
         unsafe { &mut *RAW_GRAPHICS.as_mut_ptr() }
@@ -138,7 +139,7 @@ impl Graphics {
     /// This is unsafe : handle raw pointers.
     pub unsafe fn initialize_instance(fb_config: FrameBufferConfig) {
         RAW_GRAPHICS.write(Graphics::new(fb_config));
-        GRAPHICS_INITIALIZED = true;
+        *GRAPHICS_INITIALIZED.lock() = true;
     }
 
     /// Write to the pixel of the buffer

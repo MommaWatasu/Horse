@@ -4,15 +4,15 @@ use core::{
     mem::{align_of, size_of},
     ptr::{slice_from_raw_parts_mut, NonNull},
 };
-use spin::Once;
+use spin::{
+    Once,
+    Mutex,
+};
 
 const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
-pub static mut USB_ALLOC: Once<USBAlloc<MEM_POOL_SIZE>> = Once::new();
+pub static USB_ALLOC: Mutex<Once<USBAlloc<MEM_POOL_SIZE>>> = Mutex::new(Once::new());
 pub fn initialize_usballoc() {
-    unsafe { USB_ALLOC.call_once(|| USBAlloc::new()) };
-}
-pub fn usballoc() -> &'static mut USBAlloc<MEM_POOL_SIZE> {
-    unsafe { USB_ALLOC.get_mut().unwrap() }
+    USB_ALLOC.lock().call_once(|| USBAlloc::new());
 }
 
 #[repr(C)]
