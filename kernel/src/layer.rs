@@ -1,14 +1,13 @@
 use crate::{
     error,
-    graphics::{Coord, FrameBufferWriter, PixelWriter},
+    graphics::Coord,
     window::Window,
     FrameBuffer, FrameBufferConfig,
 };
 use alloc::{sync::Arc, vec, vec::Vec};
-use core::cell::RefCell;
-use spin::Once;
+use spin::Mutex;
 
-pub static mut LAYER_MANAGER: Once<LayerManager> = Once::new();
+pub static LAYER_MANAGER: Mutex<Option<LayerManager>> = Mutex::new(None);
 
 #[derive(Clone, Default, PartialEq)]
 pub struct Layer {
@@ -74,8 +73,8 @@ impl LayerHeight {
 
 pub struct LayerManager {
     fb: FrameBuffer,
-    layers: Vec<Arc<RefCell<Layer>>>,
-    layer_stack: Vec<Arc<RefCell<Layer>>>,
+    layers: Vec<Arc<Mutex<Layer>>>,
+    layer_stack: Vec<Arc<Mutex<Layer>>>,
     layer_id: u32,
 }
 
@@ -89,28 +88,28 @@ impl LayerManager {
         };
     }
 
-    pub fn new_layer(&mut self) -> Arc<RefCell<Layer>> {
+    pub fn new_layer(&mut self) -> Arc<Mutex<Layer>> {
         self.layer_id += 1;
-        let layer = Arc::new(RefCell::new(Layer::new(self.layer_id)));
+        let layer = Arc::new(Mutex::new(Layer::new(self.layer_id)));
         self.layers.push(layer.clone());
         return layer.clone();
     }
 
     pub fn draw(&mut self) {
         for layer in &self.layer_stack {
-            layer.borrow().draw_to(&mut self.fb);
+            layer.lock().draw_to(&mut self.fb);
         }
     }
 
     pub fn move_absolute(&mut self, id: u32, new_position: Coord) -> Result<(), ()> {
         self.find_layer(id)?
-            .borrow_mut()
+            .lock()
             .move_absolute(new_position);
         Ok(())
     }
 
     pub fn move_relative(&mut self, id: u32, pos_diff: Coord) -> Result<(), ()> {
-        self.find_layer(id)?.borrow_mut().move_relative(pos_diff);
+        self.find_layer(id)?.lock().move_relative(pos_diff);
         Ok(())
     }
 
@@ -145,8 +144,8 @@ impl LayerManager {
         Ok(())
     }
 
-    fn find_layer(&self, id: u32) -> Result<Arc<RefCell<Layer>>, ()> {
-        match self.layers.iter().find(|x| x.borrow().id() == id) {
+    fn find_layer(&self, id: u32) -> Result<Arc<Mutex<Layer>>, ()> {
+        match self.layers.iter().find(|x| x.lock().id() == id) {
             Some(layer) => Ok(layer.clone()),
             None => {
                 error!("the layer isn't available");
@@ -156,6 +155,6 @@ impl LayerManager {
     }
 
     fn find_ord(&self, id: u32) -> Option<usize> {
-        self.layer_stack.iter().position(|x| x.borrow().id() == id)
+        self.layer_stack.iter().position(|x| x.lock().id() == id)
     }
 }

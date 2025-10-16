@@ -8,12 +8,11 @@ use spin::{
     Mutex,
     Once
 };
-use core::cell::{Cell, RefCell, Ref};
 
 use crate::{drivers::timer::TIMER_MANAGER, segment::{KERNEL_CS, KERNEL_SS}};
 
 const DEFAULT_CONTEXT: ContextWrapper = ContextWrapper(ProcessContext { cr3: 0, rip: 0, rflags: 0, reserved1: 0, cs: 0, ss: 0, fs: 0, gs: 0, rax: 0, rbx: 0, rcx: 0, rdx: 0, rdi: 0, rsi: 0, rsp: 0, rbp: 0, r8: 0, r9: 0, r10: 0, r11: 0, r12: 0, r13: 0, r14: 0, r15: 0, fxsave_area: [0; 512] });
-pub static mut PROCESS_MANAGER: Once<ProcessManager> = Once::new();
+pub static PROCESS_MANAGER: Mutex<Once<ProcessManager>> = Mutex::new(Once::new());
 
 extern "C" {
     pub fn switch_context(next_ctx: u64, current_ctx: u64);
@@ -69,8 +68,8 @@ pub struct ProcessContext {
 
 pub struct ProcessManager {
     latest_id: usize,
-    run_queue: VecDeque<Arc<RefCell<Process>>>,
-    pending_queue: Vec<Arc<RefCell<Process>>>
+    run_queue: VecDeque<Arc<Mutex<Process>>>,
+    pending_queue: Vec<Arc<Mutex<Process>>>
 }
 
 impl ProcessManager {
@@ -84,26 +83,26 @@ impl ProcessManager {
         manager.id_wake_up(1);
         return manager
     }
-    pub fn new_proc(&mut self) -> Arc<RefCell<Process>> {
+    pub fn new_proc(&mut self) -> Arc<Mutex<Process>> {
         self.latest_id += 1;
-        let proc = Arc::new(RefCell::new(Process::new(self.latest_id)));
+        let proc = Arc::new(Mutex::new(Process::new(self.latest_id)));
         self.pending_queue.push(proc.clone());
         return proc
     }
-    pub fn wake_up(&mut self, proc: Arc<RefCell<Process>>) {
-        if let Some(idx) = self.pending_queue.iter().position(|x| *x == proc) {
+    pub fn wake_up(&mut self, proc: Arc<Mutex<Process>>) {
+        if let Some(idx) = self.pending_queue.iter().position(|x| Arc::ptr_eq(x, &proc)) {
             self.run_queue.push_back(proc);
             self.pending_queue.remove(idx);
         }
     }
     pub fn id_wake_up(&mut self, id: usize) {
-        if let Some(idx) = self.pending_queue.iter().position(|x| x.borrow().id() == id) {
+        if let Some(idx) = self.pending_queue.iter().position(|x| x.lock().id() == id) {
             self.run_queue.push_back(self.pending_queue[idx].clone());
             self.pending_queue.remove(idx);
         }
     }
-    pub fn sleep(&mut self, proc: Arc<RefCell<Process>>) {
-        if let Some(idx) = self.run_queue.iter().position(|x| *x == proc) {
+    pub fn sleep(&mut self, proc: Arc<Mutex<Process>>) {
+        if let Some(idx) = self.run_queue.iter().position(|x| Arc::ptr_eq(x, &proc)) {
             if idx == 0 {
                 self.switch_process(true);
             } else {
@@ -113,7 +112,7 @@ impl ProcessManager {
         }
     }
     pub fn id_sleep(&mut self, id: usize) {
-        if let Some(idx) = self.run_queue.iter().position(|x| x.borrow().id() == id) {
+        if let Some(idx) = self.run_queue.iter().position(|x| x.lock().id() == id) {
             self.pending_queue.push(self.run_queue[idx].clone());
             self.run_queue.remove(idx);
             if idx == 0 {
@@ -123,13 +122,13 @@ impl ProcessManager {
     }
     pub fn switch_process(&mut self, sleep: bool) {
         let current_proc = self.run_queue.pop_front().unwrap();
-        let current_proc_ptr = current_proc.borrow_mut().context().as_ptr();
+        let current_proc_ptr = current_proc.lock().context().as_ptr();
         if !sleep {
             self.run_queue.push_back(current_proc)
         }
         let next_proc = self.run_queue.front_mut().unwrap();
 
-        unsafe { switch_context(next_proc.borrow_mut().context().as_ptr(), current_proc_ptr) }
+        unsafe { switch_context(next_proc.lock().context().as_ptr(), current_proc_ptr) }
     }
 }
 
@@ -173,7 +172,7 @@ impl Process {
 }
 
 pub fn initialize_process_manager() {
-    unsafe { PROCESS_MANAGER.call_once(|| ProcessManager::new()); }
+    PROCESS_MANAGER.lock().call_once(|| ProcessManager::new());
 
     unsafe {
         asm!("cli");

@@ -1,4 +1,4 @@
-use crate::{graphics::Coord, layer::LAYER_MANAGER, Graphics, PixelColor, WindowWriter};
+use crate::{graphics::{Coord, RAW_GRAPHICS}, layer::LAYER_MANAGER, PixelColor, WindowWriter};
 pub const MOUSE_CURSOR_HEIGHT: usize = 24;
 pub const MOUSE_CURSOR_WIDTH: usize = 15;
 pub const MOUSE_TRANSPARENT_COLOR: PixelColor = PixelColor(0, 0, 1);
@@ -55,7 +55,11 @@ pub fn erase_mouse_cursor(
     limit: (usize, usize),
     erase_color: &PixelColor,
 ) {
-    let graphics = Graphics::instance();
+    let mut graphics_lock = RAW_GRAPHICS.lock();
+    let graphics = match graphics_lock.as_mut() {
+        Some(g) => g,
+        None => return,
+    };
     let lx: usize = limit.0 - position.0;
     for (dy, l) in MOUSE_CURSOR_SHAPE.iter().enumerate() {
         if position.1 + dy > limit.1 {
@@ -131,8 +135,12 @@ impl MouseCursor {
         new_pos = new_pos.elem_max(Coord::from_tuple((0, 0)));
         self.position = new_pos;
 
-        let layer_manager = unsafe { LAYER_MANAGER.get_mut().unwrap() };
-        layer_manager.move_absolute(self.layer_id, new_pos);
+        let mut layer_manager_lock = LAYER_MANAGER.lock();
+        let layer_manager = match layer_manager_lock.as_mut() {
+            Some(lm) => lm,
+            None => return,
+        };
+        layer_manager.move_absolute(self.layer_id, new_pos).expect("failed to move mouse layer");
         layer_manager.draw();
     }
 }

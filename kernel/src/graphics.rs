@@ -4,11 +4,15 @@ use crate::{
     println,
 };
 use core::{
-    mem::MaybeUninit,
     ops::{Add, AddAssign, Sub},
 };
-use spin::Mutex;
+use spin::{
+    Mutex
+};
 use libloader::{PixelFormat, TSFrameBuffer};
+
+// static singleton pointer
+pub static RAW_GRAPHICS: Mutex<Option<Graphics>> = Mutex::new(None);
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct PixelColor(pub u8, pub u8, pub u8); // RGB
@@ -88,6 +92,9 @@ impl FrameBufferWriter {
             fb: unsafe { TSFrameBuffer::new(fb) },
         }
     }
+    pub unsafe fn get_fb(&self) -> *mut u8 {
+        self.fb.as_mut_ptr()
+    }
 }
 
 impl PixelWriter for FrameBufferWriter {
@@ -106,10 +113,6 @@ impl PixelWriter for FrameBufferWriter {
     }
 }
 
-// static singleton pointer
-static RAW_GRAPHICS: MaybeUninit<Graphics> = MaybeUninit::<Graphics>::uninit();
-static GRAPHICS_INITIALIZED: Mutex<bool> = Mutex::new(false);
-
 #[derive(Clone)]
 pub struct Graphics {
     fb: FrameBuffer,
@@ -127,19 +130,11 @@ impl Graphics {
         }
     }
 
-    pub fn instance() -> &'static mut Self {
-        if !*GRAPHICS_INITIALIZED.lock() {
-            panic!("graphics not initialized");
-        }
-        unsafe { &mut *RAW_GRAPHICS.as_mut_ptr() }
-    }
-
     ///
     /// # Safety
     /// This is unsafe : handle raw pointers.
     pub unsafe fn initialize_instance(fb_config: FrameBufferConfig) {
-        RAW_GRAPHICS.write(Graphics::new(fb_config));
-        *GRAPHICS_INITIALIZED.lock() = true;
+        *RAW_GRAPHICS.lock() = Some(Graphics::new(fb_config));
     }
 
     /// Write to the pixel of the buffer
@@ -211,7 +206,7 @@ impl Graphics {
     }
 
     pub fn resolution(&self) -> (usize, usize) {
-        let r = self.fb.config.resolution;
+        let r = self.fb.resolution;
         let r = if self.rotated { (r.1, r.0) } else { r };
         if self.double_scaled {
             (r.0 / 2, r.1 / 2)
@@ -238,7 +233,7 @@ impl Graphics {
         first_x: usize,
         first_y: usize,
         color: &PixelColor,
-    ) -> TextWriter {
+    ) -> TextWriter<'_> {
         TextWriter::new(self, first_x, first_y, color)
     }
 }

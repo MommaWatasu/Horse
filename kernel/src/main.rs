@@ -53,7 +53,7 @@ use libloader::MemoryMap;
 
 extern crate alloc;
 use alloc::sync::Arc;
-use core::{arch::asm, panic::PanicInfo};
+use core::{arch::asm, panic::PanicInfo, ops::DerefMut};
 use spin::{once::Once, Mutex};
 use uefi::table::{Runtime, SystemTable};
 use x86_64::{
@@ -100,7 +100,8 @@ fn initialize(fb_config: *mut FrameBufferConfig) {
     let fb_config_ref = unsafe { *fb_config };
     let resolution = fb_config_ref.resolution;
     unsafe { Graphics::initialize_instance(fb_config_ref) }
-    let graphics = Graphics::instance();
+    let mut graphics_lock = RAW_GRAPHICS.lock();
+    let graphics = graphics_lock.as_mut().unwrap();
     graphics.clear(&BG_COLOR);
 
     let mut bgwindow = Arc::new(Window::new(
@@ -124,26 +125,29 @@ fn initialize(fb_config: *mut FrameBufferConfig) {
         Coord::new(0, 0),
     );
 
-    unsafe { LAYER_MANAGER.call_once(|| LayerManager::new(fb_config_ref)) };
-    let layer_manager = unsafe { LAYER_MANAGER.get_mut().unwrap() };
+    // initialize layer manager
+    let mut layer_manager_lock = LAYER_MANAGER.lock();
+    let layer_manager_ref = layer_manager_lock.deref_mut();
+    *layer_manager_ref = Some(LayerManager::new(fb_config_ref));
+    let layer_manager = layer_manager_ref.as_mut().unwrap();
 
     let bglayer_id = layer_manager
         .new_layer()
-        .borrow_mut()
+        .lock()
         .set_window(bgwindow)
         .move_absolute(Coord::new(0, 0))
         .id();
 
     let mouse_layer_id = layer_manager
         .new_layer()
-        .borrow_mut()
+        .lock()
         .set_window(mouse_window)
         .move_absolute(Coord::new(resolution.0 / 2, resolution.1 / 2))
         .id();
 
     MOUSE_CURSOR.lock().set_layer_id(mouse_layer_id);
-    layer_manager.up_down(bglayer_id, LayerHeight::Height(0));
-    layer_manager.up_down(mouse_layer_id, LayerHeight::Height(1));
+    layer_manager.up_down(bglayer_id, LayerHeight::Height(0)).expect("failed to set bg layer height");
+    layer_manager.up_down(mouse_layer_id, LayerHeight::Height(1)).expect("failed to set mouse layer height");
     layer_manager.draw();
 }
 
@@ -159,7 +163,7 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
     unsafe {
         notify_end_of_interrupt();
         if proc {
-            PROCESS_MANAGER.get_mut().unwrap().switch_process(false);
+            PROCESS_MANAGER.lock().get_mut().unwrap().switch_process(false);
         }
     }
 }

@@ -27,6 +27,7 @@ pub enum StatusCode {
     UnknownPixelFormat,
     NoPCIMSI,
     NoWaiter,
+    NotInitialized,
     LastOfCode,
 }
 
@@ -60,6 +61,7 @@ impl StatusCode {
             StatusCode::UnknownPixelFormat => "UnknownPixelFormat",
             StatusCode::NoPCIMSI => "NoPCIMSI",
             StatusCode::NoWaiter => "NoWaiter",
+            StatusCode::NotInitialized => "NotInitialized",
             StatusCode::LastOfCode => "LastOfCode",
         }
     }

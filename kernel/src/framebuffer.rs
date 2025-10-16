@@ -5,7 +5,7 @@ use core::{
     default::Default,
     ptr::{copy_nonoverlapping, null_mut},
 };
-use libloader::{PixelFormat, TSFrameBuffer};
+use libloader::PixelFormat;
 
 /// This struct has information about FrameBuffer.
 /// - fb: the base address of framebuffer
@@ -38,7 +38,7 @@ pub struct FrameBuffer {
     //writer has the problem
     pub writer: FrameBufferWriter,
     pub stride: usize,
-    resolution: (usize, usize),
+    pub resolution: (usize, usize),
     format: PixelFormat,
 }
 
@@ -76,8 +76,8 @@ impl FrameBuffer {
         };
     }
 
-    pub unsafe fn get_fb_mut_ptr(&mut self) -> *mut u8 {
-        return self.writer.fb.as_mut_ptr();
+    pub unsafe fn get_fb_mut_ptr(&self) -> *mut u8 {
+        return self.writer.get_fb();
     }
 
     pub unsafe fn copy(&self, pos: Coord, src: &FrameBuffer) {
@@ -99,10 +99,9 @@ impl FrameBuffer {
 
         let stride = bpp * (copy_end_dst_x - copy_start_dst_x);
         let mut dst_buf: *mut u8 = self
-            .config
-            .fb
+            .get_fb_mut_ptr()
             .add(bpp * (self.stride * copy_start_dst_y + copy_start_dst_x));
-        let mut src_buf: *const u8 = src.fb;
+        let mut src_buf: *const u8 = src.get_fb_mut_ptr();
 
         for _ in 0..(copy_end_dst_y - copy_start_dst_y) {
             copy_nonoverlapping(src_buf, dst_buf, stride);
@@ -116,8 +115,8 @@ impl FrameBuffer {
         let bpsl = Self::bytes_per_scan_line(self.stride, self.format);
 
         if dst_pos.y < src_pos.y {
-            let mut dst_buf: *mut u8 = Self::frame_addr_at(dst_pos, self.fb.as_mut_ptr(), self.stride, self.format);
-            let mut src_buf: *const u8 = Self::frame_addr_at(src_pos, self.fb.as_mut_ptr(), self.stride, self.format);
+            let mut dst_buf: *mut u8 = Self::frame_addr_at(dst_pos, self.get_fb_mut_ptr(), self.stride, self.format);
+            let mut src_buf: *const u8 = Self::frame_addr_at(src_pos, self.get_fb_mut_ptr(), self.stride, self.format);
 
             for _ in 0..size.y {
                 copy_nonoverlapping(src_buf, dst_buf, bpp * size.x);
@@ -126,9 +125,9 @@ impl FrameBuffer {
             }
         } else {
             let mut dst_buf: *mut u8 =
-                Self::frame_addr_at(dst_pos + Coord::new(0, size.y - 1), &self);
+                Self::frame_addr_at(dst_pos + Coord::new(0, size.y - 1), self.get_fb_mut_ptr(), self.stride, self.format);
             let mut src_buf: *const u8 =
-                Self::frame_addr_at(src_pos + Coord::new(0, size.y - 1), &self);
+                Self::frame_addr_at(src_pos + Coord::new(0, size.y - 1), self.get_fb_mut_ptr(), self.stride, self.format);
 
             for _ in 0..size.y {
                 copy_nonoverlapping(src_buf, dst_buf, bpp * size.x);

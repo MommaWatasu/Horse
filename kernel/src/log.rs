@@ -105,9 +105,7 @@ pub fn _print(args: core::fmt::Arguments) {
     let mut locked_console = crate::console::Console::instance();
     let console = locked_console.as_mut().unwrap();
     console.write_fmt(args).unwrap();
-    unsafe {
-        LAYER_MANAGER.get_mut().unwrap().draw();
-    }
+    LAYER_MANAGER.lock().as_mut().unwrap().draw();
 }
 
 pub fn _log_level() -> LogLevel {

@@ -4,10 +4,13 @@ use crate::{
         endpoint::{EndpointConfig, EndpointId},
         setupdata::SetupData,
     },
-    graphics::Coord,
+    graphics::{
+        Coord,
+        RAW_GRAPHICS
+    },
     mouse::*,
     status::Result,
-    trace, Graphics, PixelColor,
+    trace, PixelColor, StatusCode
 };
 use core::ptr::NonNull;
 use spin::Mutex;
@@ -21,7 +24,11 @@ pub struct HidMouseDriver {
 }
 impl HidMouseDriver {
     pub fn new(interface_idx: u8) -> Result<Self> {
-        let graphics = Graphics::instance();
+        let graphics_lock = RAW_GRAPHICS.lock();
+        let graphics = match graphics_lock.as_ref() {
+            Some(g) => g,
+            None => return Err(StatusCode::NotInitialized),
+        };
         Ok(Self {
             hid_driver: HidDriver::new(interface_idx, 8)?,
             screen_size: Coord::from_tuple(graphics.resolution()),
