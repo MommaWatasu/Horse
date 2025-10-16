@@ -17,6 +17,9 @@ pub static RAW_GRAPHICS: Mutex<Option<Graphics>> = Mutex::new(None);
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct PixelColor(pub u8, pub u8, pub u8); // RGB
 
+pub const BG_COLOR: PixelColor = PixelColor(153, 76, 0);
+pub const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
+
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct Coord {
     pub x: usize,
@@ -115,7 +118,7 @@ impl PixelWriter for FrameBufferWriter {
 
 #[derive(Clone)]
 pub struct Graphics {
-    fb: FrameBuffer,
+    pub fb: FrameBuffer,
     rotated: bool,
     double_scaled: bool,
 }
@@ -128,6 +131,18 @@ impl Graphics {
             rotated: fb_config.resolution == (1200, 1920),
             double_scaled: fb_config.resolution == (1200, 1920),
         }
+    }
+
+    pub unsafe fn change_resolution(&mut self, resolution: (usize, usize)) {
+        let format = self.fb.format;
+        self.fb = FrameBuffer::new(FrameBufferConfig {
+            fb: self.fb.get_fb_mut_ptr(),
+            stride: resolution.0,
+            resolution,
+            format,
+        });
+        self.rotated = resolution == (1200, 1920);
+        self.double_scaled = resolution == (1200, 1920);
     }
 
     ///

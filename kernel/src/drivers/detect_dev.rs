@@ -10,7 +10,9 @@ use super::{
     usb::xhci::{initialize_xhci, Controller},
     video::qemu::setup_qemu_card,
 };
-use crate::{info, warn};
+use crate::{
+    graphics::{BG_COLOR, RAW_GRAPHICS}, info, warn
+};
 
 pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
     let mut xhc = None;
@@ -39,7 +41,14 @@ pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
             // Display Controller
             0x03 => match dev.get_vendor_id() {
                 0x1234 => {
-                    setup_qemu_card(&dev);
+                    let resolution = setup_qemu_card(&dev);
+                    let mut graphics_lock = RAW_GRAPHICS.lock();
+                    let graphics = match graphics_lock.as_mut() {
+                        Some(g) => g,
+                        None => continue,
+                    };
+                    unsafe { graphics.change_resolution(resolution) };
+                    graphics.clear(&BG_COLOR);
                 }
                 _ => {
                     info!(

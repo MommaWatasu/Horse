@@ -39,7 +39,7 @@ pub struct FrameBuffer {
     pub writer: FrameBufferWriter,
     pub stride: usize,
     pub resolution: (usize, usize),
-    format: PixelFormat,
+    pub format: PixelFormat,
 }
 
 impl FrameBuffer {

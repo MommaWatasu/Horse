@@ -1,5 +1,5 @@
 use super::edid::*;
-use crate::{drivers::pci::*, println};
+use crate::drivers::pci::*;
 
 enum BGARegisters {
     VbeDisplIndexId = 0,
@@ -22,7 +22,7 @@ unsafe fn bga_read_register(mmio_base: u32, index: u32) -> u16 {
     return ((mmio_base + 0x500 + (index << 1)) as *mut u16).read();
 }
 
-pub fn setup_qemu_card(dev: &Device) {
+pub fn setup_qemu_card(dev: &Device) -> (usize, usize) {
     let mmio_base = read_bar32(&dev, 2).unwrap();
     let edid = EDID::new(mmio_base).expect("invalid edid");
     unsafe {
@@ -48,5 +48,6 @@ pub fn setup_qemu_card(dev: &Device) {
         );
         // enable VBE extensions
         bga_write_register(mmio_base, BGARegisters::VbeDisplIndexEnable as u32, 0x01);
+        return (max_res.0 as usize, max_res.1 as usize);
     }
 }

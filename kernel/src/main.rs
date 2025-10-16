@@ -66,9 +66,6 @@ use x86_64::{
 
 use crate::drivers::fs::core::FILE_DESCRIPTOR_TABLE;
 
-const BG_COLOR: PixelColor = PixelColor(153, 76, 0);
-const FG_COLOR: PixelColor = PixelColor(255, 255, 255);
-
 #[derive(Clone, Copy, Debug)]
 pub enum Message {
     NoInterruption,

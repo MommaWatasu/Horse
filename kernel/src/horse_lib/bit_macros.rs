@@ -21,9 +21,9 @@ macro_rules! bit_setter {
 #[macro_export]
 macro_rules! container_of {
     ($ptr:expr, $container:ty, $field:ident) => {
-        unsafe { &*(($ptr as *const _ as usize - core::mem::offset_of!($container, $field)) as *const $container) }
+        unsafe { &*(($ptr as usize - core::mem::offset_of!($container, $field)) as *const $container) }
     };
     ($ptr:expr, mutable $container:ty, $field:ident) => {
-        unsafe { &mut *(($ptr as *const _ as usize - core::mem::offset_of!($container, $field)) as *mut $container) }
+        unsafe { &mut *(($ptr as usize - core::mem::offset_of!($container, $field)) as *mut $container) }
     };
 }
