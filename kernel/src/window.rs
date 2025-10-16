@@ -13,14 +13,12 @@ pub struct WindowWriter(usize, usize);
 
 impl WindowWriter {
     pub fn write(&self, x: usize, y: usize, c: &PixelColor) {
-        #[allow(deref_nullptr)]
         let window = container_of!(self, mutable Window, writer);
         window.data[x][y] = *c;
         window.shadow_buffer.writer.write(x, y, c);
     }
 
     pub fn move_buffer(&self, dst: Coord, src: Coord, size: Coord) {
-        #[allow(deref_nullptr)]
         let window = container_of!(self, mutable Window, writer);
         unsafe {
             window.shadow_buffer.move_buffer(dst, src, size);
@@ -50,7 +48,7 @@ impl Window {
             resolution: (width, height),
             format,
         };
-        let mut shadow_buffer = FrameBuffer::new(config);
+        let shadow_buffer = FrameBuffer::new(config);
         Self {
             writer: WindowWriter(width, height),
             width,

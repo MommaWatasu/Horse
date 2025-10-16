@@ -20,18 +20,10 @@ macro_rules! bit_setter {
 
 #[macro_export]
 macro_rules! container_of {
-    ($ptr: expr, $container: path, $field: ident) => {
-        unsafe {
-            let inner = $ptr as *const _;
-            let outer = &(*(0 as *const $container)).$field as *const _;
-            &*((inner as usize - outer as usize) as *const $container)
-        }
+    ($ptr:expr, $container:ty, $field:ident) => {
+        unsafe { &*(($ptr as *const _ as usize - core::mem::offset_of!($container, $field)) as *const $container) }
     };
-    ($ptr: expr, mutable $container: path, $field: ident) => {
-        unsafe {
-            let inner = $ptr as *const _;
-            let outer = &(*(0 as *const $container)).$field as *const _;
-            &mut *((inner as usize - outer as usize) as *mut $container)
-        }
+    ($ptr:expr, mutable $container:ty, $field:ident) => {
+        unsafe { &mut *(($ptr as *const _ as usize - core::mem::offset_of!($container, $field)) as *mut $container) }
     };
 }
