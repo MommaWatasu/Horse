@@ -9,6 +9,7 @@ mod memory_allocator;
 mod paging;
 mod queue;
 mod segment;
+mod syscall;
 
 pub mod console;
 pub mod drivers;
@@ -62,6 +63,7 @@ use x86_64::{
         enable,  //sti
     },
     structures::idt::InterruptStackFrame,
+    VirtAddr,
 };
 
 use crate::drivers::fs::core::FILE_DESCRIPTOR_TABLE;
@@ -197,6 +199,11 @@ extern "sysv64" fn kernel_main_virt(
     //set the IDT entry
     IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
     IDT.lock()[InterruptVector::LAPICTimer as usize].set_handler_fn(handler_lapic_timer);
+    // Set up syscall handler (int 0x80)
+    unsafe {
+        IDT.lock()[InterruptVector::Syscall as usize]
+            .set_handler_addr(VirtAddr::new(interrupt::syscall_handler_asm as *const () as u64));
+    }
     unsafe {
         IDT.lock().load_unsafe();
     }

@@ -136,3 +136,51 @@ global set_cr3 ; fn set_cr3(u64)
 set_cr3:
   mov cr3, rdi
   ret
+
+; Syscall interrupt handler (int 0x80)
+; Arguments are passed in: RAX (syscall number), RDI, RSI, RDX, R10, R8, R9
+; Return value in RAX
+extern syscall_entry
+global syscall_handler_asm
+syscall_handler_asm:
+  ; Save callee-saved registers
+  push rbx
+  push rbp
+  push r12
+  push r13
+  push r14
+  push r15
+
+  ; Build SyscallArgs struct on stack (must be 16-byte aligned)
+  ; struct SyscallArgs { syscall_num, arg1, arg2, arg3, arg4, arg5, arg6 }
+  sub rsp, 64            ; 7 * 8 = 56 bytes, rounded to 64 for alignment
+  mov [rsp + 0], rax     ; syscall_num
+  mov [rsp + 8], rdi     ; arg1
+  mov [rsp + 16], rsi    ; arg2
+  mov [rsp + 24], rdx    ; arg3
+  mov [rsp + 32], r10    ; arg4
+  mov [rsp + 40], r8     ; arg5
+  mov [rsp + 48], r9     ; arg6
+
+  ; Pass pointer to SyscallArgs as first argument
+  mov rdi, rsp
+  call syscall_entry
+
+  ; Return value is already in RAX, save it in RBX (callee-saved)
+  mov rbx, rax
+
+  ; Clean up SyscallArgs
+  add rsp, 64
+
+  ; Restore callee-saved registers
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbp
+
+  ; Move return value to RAX (rbx will be popped next)
+  mov rax, rbx
+  pop rbx
+
+  iretq
