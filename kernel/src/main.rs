@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 #![feature(core_intrinsics)]
+#![feature(never_type)]
 
 mod acpi;
 mod ascii_font;
@@ -12,6 +13,8 @@ mod segment;
 mod syscall;
 
 pub mod console;
+pub mod elf;
+pub mod exec;
 pub mod drivers;
 pub mod fixed_vec;
 pub mod framebuffer;

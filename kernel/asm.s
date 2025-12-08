@@ -184,3 +184,45 @@ syscall_handler_asm:
   pop rbx
 
   iretq
+
+; Jump to user mode
+; fn jump_to_user_mode(entry: u64, user_stack: u64, user_cs: u64, user_ss: u64)
+; Arguments: rdi=entry, rsi=user_stack, rdx=user_cs, rcx=user_ss
+global jump_to_user_mode
+jump_to_user_mode:
+  ; Disable interrupts while setting up
+  cli
+
+  ; Set up data segment registers for user mode
+  mov ax, cx          ; user_ss
+  mov ds, ax
+  mov es, ax
+  mov fs, ax
+  mov gs, ax
+
+  ; Build iretq stack frame
+  push rcx            ; SS (user stack segment)
+  push rsi            ; RSP (user stack pointer)
+  push 0x202          ; RFLAGS (IF=1, reserved bit 1=1)
+  push rdx            ; CS (user code segment)
+  push rdi            ; RIP (entry point)
+
+  ; Clear all general-purpose registers for clean start
+  xor rax, rax
+  xor rbx, rbx
+  xor rcx, rcx
+  xor rdx, rdx
+  xor rsi, rsi
+  xor rdi, rdi
+  xor rbp, rbp
+  xor r8, r8
+  xor r9, r9
+  xor r10, r10
+  xor r11, r11
+  xor r12, r12
+  xor r13, r13
+  xor r14, r14
+  xor r15, r15
+
+  ; Jump to user mode!
+  iretq
