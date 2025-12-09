@@ -69,7 +69,9 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::drivers::fs::core::FILE_DESCRIPTOR_TABLE;
+use crate::drivers::fs::core::{FILE_DESCRIPTOR_TABLE, FileSystem};
+use crate::drivers::fs::init::FILESYSTEM_TABLE;
+use alloc::vec;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Message {
@@ -96,6 +98,59 @@ fn welcome_message() {
 "
     );
     println!("Horse is the OS made by Momma Watasu. This OS is distributed under the MIT license.")
+}
+
+/// Load and execute the gallop user program from filesystem
+fn run_gallop() {
+    info!("Loading gallop user program...");
+
+    // Access filesystem - we need at least one filesystem to be available
+    let fs_table = unsafe { FILESYSTEM_TABLE.lock() };
+    if fs_table.is_empty() {
+        error!("No filesystem available to load gallop");
+        return;
+    }
+
+    // Try to open the gallop file from the root of the filesystem
+    let fs = &fs_table[0];
+    let mut fd = fs.open("\\gallop", 0); // FAT32 uses backslash paths
+    if fd < 0 {
+        // Try alternative path
+        fd = fs.open("/gallop", 0);
+        if fd < 0 {
+            // Try uppercase filename (FAT32 often uppercases)
+            fd = fs.open("\\GALLOP", 0);
+            if fd < 0 {
+                error!("Failed to open gallop: fd={}", fd);
+                return;
+            }
+        }
+    }
+
+    // Read the ELF file into a buffer
+    // Allocate a buffer large enough for the ELF (gallop is ~9KB)
+    const MAX_ELF_SIZE: usize = 64 * 1024; // 64KB max
+    let mut elf_buffer = vec![0u8; MAX_ELF_SIZE];
+
+    let bytes_read = fs.read(fd, &mut elf_buffer, MAX_ELF_SIZE);
+    fs.close(fd);
+
+    if bytes_read <= 0 {
+        error!("Failed to read gallop: bytes_read={}", bytes_read);
+        return;
+    }
+
+    let elf_size = bytes_read as usize;
+    info!("Loaded gallop ELF: {} bytes", elf_size);
+
+    // Truncate buffer to actual size
+    elf_buffer.truncate(elf_size);
+
+    // Drop the filesystem lock before executing (exec never returns)
+    drop(fs_table);
+
+    // Execute the ELF
+    exec::run_elf(&elf_buffer);
 }
 
 fn initialize(fb_config: *mut FrameBufferConfig) {
@@ -215,6 +270,10 @@ extern "sysv64" fn kernel_main_virt(
         .initialize(Message::NoInterruption);
 
     initialize_process_manager();
+
+    // Load and execute the gallop user program
+    run_gallop();
+
     loop {
         disable();
         if INTERRUPTION_QUEUE.lock().count == 0 {
