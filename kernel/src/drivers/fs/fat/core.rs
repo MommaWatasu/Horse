@@ -246,24 +246,29 @@ impl FileSystem for FAT {
     }
     fn read(&self, fd: i32, buf: &mut [u8], nbytes: usize) -> isize {
         let file = FILE_DESCRIPTOR_TABLE.lock().get(fd);
-        let entry = self.find_file(&file.path).unwrap();
+        let entry = match self.find_file(&file.path) {
+            Ok(e) => e,
+            Err(_) => return -1, // File not found
+        };
         if entry.attr & 0x08 != 0 || entry.attr & 0x10 != 0 {
             return -1
         }
+        let file_size = entry.file_size() as usize;
+        let bytes_to_read = core::cmp::min(nbytes, file_size);
         let mut cluster = entry.first_cluster();
         let mut i = 0;
         let mut bytes_buf = vec![0u8; self.bpc];
         while cluster != END_OF_CLUSTER_CHAIN {
             self.get_cluster(cluster, &mut bytes_buf);
-            if self.bpc*(i+1) <= nbytes {
+            if self.bpc*(i+1) <= bytes_to_read {
                 buf[self.bpc*i..self.bpc*(i+1)].copy_from_slice(&bytes_buf);
             } else {
-                buf[self.bpc*i..nbytes].copy_from_slice(&bytes_buf[..(nbytes-self.bpc*i)]);
+                buf[self.bpc*i..bytes_to_read].copy_from_slice(&bytes_buf[..(bytes_to_read-self.bpc*i)]);
                 break
             }
             cluster = self.next_cluster(cluster);
             i += 1;
         }
-        return nbytes as isize
+        return bytes_to_read as isize
     }
 }
