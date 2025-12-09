@@ -66,6 +66,7 @@ use x86_64::{
         enable,  //sti
     },
     structures::idt::InterruptStackFrame,
+    PrivilegeLevel,
     VirtAddr,
 };
 
@@ -250,9 +251,11 @@ extern "sysv64" fn kernel_main_virt(
     IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
     IDT.lock()[InterruptVector::LAPICTimer as usize].set_handler_fn(handler_lapic_timer);
     // Set up syscall handler (int 0x80)
+    // DPL must be 3 to allow user mode (Ring 3) to invoke int 0x80
     unsafe {
         IDT.lock()[InterruptVector::Syscall as usize]
-            .set_handler_addr(VirtAddr::new(interrupt::syscall_handler_asm as *const () as u64));
+            .set_handler_addr(VirtAddr::new(interrupt::syscall_handler_asm as *const () as u64))
+            .set_privilege_level(PrivilegeLevel::Ring3);
     }
     unsafe {
         IDT.lock().load_unsafe();
