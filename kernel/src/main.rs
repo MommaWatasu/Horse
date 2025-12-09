@@ -113,18 +113,10 @@ fn run_gallop() {
 
     // Try to open the gallop file from the root of the filesystem
     let fs = &fs_table[0];
-    let mut fd = fs.open("\\gallop", 0); // FAT32 uses backslash paths
+    let fd = fs.open("/gallop", 0);
     if fd < 0 {
-        // Try alternative path
-        fd = fs.open("/gallop", 0);
-        if fd < 0 {
-            // Try uppercase filename (FAT32 often uppercases)
-            fd = fs.open("\\GALLOP", 0);
-            if fd < 0 {
-                error!("Failed to open gallop: fd={}", fd);
-                return;
-            }
-        }
+        error!("Failed to open gallop: fd={}", fd);
+        return;
     }
 
     // Read the ELF file into a buffer
