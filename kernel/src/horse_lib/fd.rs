@@ -21,7 +21,13 @@ pub struct Path {
 
 impl Path {
     pub fn new(full_path: String)  -> Self {
-        return Self { path: full_path.split('/').map(|s| s.to_string()).collect() }
+        // Filter out empty components from leading/trailing slashes
+        let path: Vec<String> = full_path
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect();
+        return Self { path }
     }
     pub fn path_iter(&self) -> Vec<String> {
         return self.path.clone()
