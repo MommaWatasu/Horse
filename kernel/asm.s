@@ -136,3 +136,93 @@ global set_cr3 ; fn set_cr3(u64)
 set_cr3:
   mov cr3, rdi
   ret
+
+; Syscall interrupt handler (int 0x80)
+; Arguments are passed in: RAX (syscall number), RDI, RSI, RDX, R10, R8, R9
+; Return value in RAX
+extern syscall_entry
+global syscall_handler_asm
+syscall_handler_asm:
+  ; Save callee-saved registers
+  push rbx
+  push rbp
+  push r12
+  push r13
+  push r14
+  push r15
+
+  ; Build SyscallArgs struct on stack (must be 16-byte aligned)
+  ; struct SyscallArgs { syscall_num, arg1, arg2, arg3, arg4, arg5, arg6 }
+  sub rsp, 64            ; 7 * 8 = 56 bytes, rounded to 64 for alignment
+  mov [rsp + 0], rax     ; syscall_num
+  mov [rsp + 8], rdi     ; arg1
+  mov [rsp + 16], rsi    ; arg2
+  mov [rsp + 24], rdx    ; arg3
+  mov [rsp + 32], r10    ; arg4
+  mov [rsp + 40], r8     ; arg5
+  mov [rsp + 48], r9     ; arg6
+
+  ; Pass pointer to SyscallArgs as first argument
+  mov rdi, rsp
+  call syscall_entry
+
+  ; Return value is already in RAX, save it in RBX (callee-saved)
+  mov rbx, rax
+
+  ; Clean up SyscallArgs
+  add rsp, 64
+
+  ; Restore callee-saved registers
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbp
+
+  ; Move return value to RAX (rbx will be popped next)
+  mov rax, rbx
+  pop rbx
+
+  iretq
+
+; Jump to user mode
+; fn jump_to_user_mode(entry: u64, user_stack: u64, user_cs: u64, user_ss: u64)
+; Arguments: rdi=entry, rsi=user_stack, rdx=user_cs, rcx=user_ss
+global jump_to_user_mode
+jump_to_user_mode:
+  ; Disable interrupts while setting up
+  cli
+
+  ; Set up data segment registers for user mode
+  mov ax, cx          ; user_ss
+  mov ds, ax
+  mov es, ax
+  mov fs, ax
+  mov gs, ax
+
+  ; Build iretq stack frame
+  push rcx            ; SS (user stack segment)
+  push rsi            ; RSP (user stack pointer)
+  push 0x202          ; RFLAGS (IF=1, reserved bit 1=1)
+  push rdx            ; CS (user code segment)
+  push rdi            ; RIP (entry point)
+
+  ; Clear all general-purpose registers for clean start
+  xor rax, rax
+  xor rbx, rbx
+  xor rcx, rcx
+  xor rdx, rdx
+  xor rsi, rsi
+  xor rdi, rdi
+  xor rbp, rbp
+  xor r8, r8
+  xor r9, r9
+  xor r10, r10
+  xor r11, r11
+  xor r12, r12
+  xor r13, r13
+  xor r14, r14
+  xor r15, r15
+
+  ; Jump to user mode!
+  iretq

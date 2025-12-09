@@ -2,7 +2,8 @@ use crate::{bit_setter, trace};
 
 use core::mem::size_of;
 
-static mut GDT: [SegmentDescriptor; 3] = [SegmentDescriptor::new(); 3];
+// GDT entries: null, kernel_cs, kernel_ss, user_cs, user_ss
+static mut GDT: [SegmentDescriptor; 5] = [SegmentDescriptor::new(); 5];
 
 #[allow(dead_code)]
 enum DescriptorType {
@@ -84,17 +85,28 @@ fn setup_data_segment(
 unsafe fn setup_segments() {
     // TODO: GDT needs to be created for each processor.
     trace!("INITIALIZING segmentation");
+    // Kernel segments (DPL=0)
     setup_code_segment(&mut GDT[1], DescriptorType::ExecuteRead, 0, 0, 0xfffff);
     setup_data_segment(&mut GDT[2], DescriptorType::ReadWrite, 0, 0, 0xfffff);
+    // User segments (DPL=3)
+    setup_code_segment(&mut GDT[3], DescriptorType::ExecuteRead, 3, 0, 0xfffff);
+    setup_data_segment(&mut GDT[4], DescriptorType::ReadWrite, 3, 0, 0xfffff);
     load_gdt(
-        (size_of::<[SegmentDescriptor; 3]>()) as u16 - 1,
+        (size_of::<[SegmentDescriptor; 5]>()) as u16 - 1,
         &GDT[0] as *const SegmentDescriptor as usize,
     );
 }
 
+/// Kernel code segment selector
 pub const KERNEL_CS: u16 = 1 << 3;
+/// Kernel stack segment selector
 pub const KERNEL_SS: u16 = 2 << 3;
+/// Kernel data segment selector
 const KERNEL_DS: u16 = 0;
+/// User code segment selector (index 3, RPL=3)
+pub const USER_CS: u16 = (3 << 3) | 3;
+/// User stack/data segment selector (index 4, RPL=3)
+pub const USER_SS: u16 = (4 << 3) | 3;
 
 pub fn initialize() {
     unsafe {

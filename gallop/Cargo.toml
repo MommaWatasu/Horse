@@ -1,0 +1,16 @@
+[package]
+name = "gallop"
+version = "0.1.0"
+edition = "2021"
+description = "Example user-space program for Horse OS"
+
+[dependencies]
+horse_syscall = { path = "../horse_syscall" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = "z"      # Optimize for size
+lto = true           # Link-time optimization

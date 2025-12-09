@@ -10,7 +10,9 @@ const CRC32_POLYNOMIAL: u32 = 0xedb88320;
 static CRC_TABLE: Once<[u32; 256]> = Once::new();
 
 pub fn bytes2str(bytes: &[u8]) -> String {
-    return String::from_utf8(bytes.to_vec()).unwrap();
+    // Use lossy conversion to handle invalid UTF-8 gracefully
+    // FAT32 LFN entries are UTF-16LE, so we need special handling
+    String::from_utf8_lossy(bytes).into_owned()
 }
 
 pub fn sum_bytes<T>(data: &T, len: usize) -> u8 {

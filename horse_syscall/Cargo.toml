@@ -1,0 +1,16 @@
+[package]
+name = "horse_syscall"
+version = "0.1.0"
+edition = "2021"
+authors = ["Horse OS Contributors"]
+description = "System call wrapper library for Horse OS user-space applications"
+license = "MIT"
+
+[lib]
+name = "horse_syscall"
+crate-type = ["rlib"]
+
+[dependencies]
+
+[features]
+default = []

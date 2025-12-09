@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 #![feature(core_intrinsics)]
+#![feature(never_type)]
 
 mod acpi;
 mod ascii_font;
@@ -9,8 +10,11 @@ mod memory_allocator;
 mod paging;
 mod queue;
 mod segment;
+mod syscall;
 
 pub mod console;
+pub mod elf;
+pub mod exec;
 pub mod drivers;
 pub mod fixed_vec;
 pub mod framebuffer;
@@ -62,9 +66,13 @@ use x86_64::{
         enable,  //sti
     },
     structures::idt::InterruptStackFrame,
+    PrivilegeLevel,
+    VirtAddr,
 };
 
-use crate::drivers::fs::core::FILE_DESCRIPTOR_TABLE;
+use crate::drivers::fs::core::{FILE_DESCRIPTOR_TABLE, FileSystem};
+use crate::drivers::fs::init::FILESYSTEM_TABLE;
+use alloc::vec;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Message {
@@ -91,6 +99,51 @@ fn welcome_message() {
 "
     );
     println!("Horse is the OS made by Momma Watasu. This OS is distributed under the MIT license.")
+}
+
+/// Load and execute the gallop user program from filesystem
+fn run_gallop() {
+    info!("Loading gallop user program...");
+
+    // Access filesystem - we need at least one filesystem to be available
+    let fs_table = unsafe { FILESYSTEM_TABLE.lock() };
+    if fs_table.is_empty() {
+        error!("No filesystem available to load gallop");
+        return;
+    }
+
+    // Try to open the gallop file from the root of the filesystem
+    let fs = &fs_table[0];
+    let fd = fs.open("/gallop", 0);
+    if fd < 0 {
+        error!("Failed to open gallop: fd={}", fd);
+        return;
+    }
+
+    // Read the ELF file into a buffer
+    // Allocate a buffer large enough for the ELF (gallop is ~9KB)
+    const MAX_ELF_SIZE: usize = 64 * 1024; // 64KB max
+    let mut elf_buffer = vec![0u8; MAX_ELF_SIZE];
+
+    let bytes_read = fs.read(fd, &mut elf_buffer, MAX_ELF_SIZE);
+    fs.close(fd);
+
+    if bytes_read <= 0 {
+        error!("Failed to read gallop: bytes_read={}", bytes_read);
+        return;
+    }
+
+    let elf_size = bytes_read as usize;
+    info!("Loaded gallop ELF: {} bytes", elf_size);
+
+    // Truncate buffer to actual size
+    elf_buffer.truncate(elf_size);
+
+    // Drop the filesystem lock before executing (exec never returns)
+    drop(fs_table);
+
+    // Execute the ELF
+    exec::run_elf(&elf_buffer);
 }
 
 fn initialize(fb_config: *mut FrameBufferConfig) {
@@ -197,6 +250,13 @@ extern "sysv64" fn kernel_main_virt(
     //set the IDT entry
     IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
     IDT.lock()[InterruptVector::LAPICTimer as usize].set_handler_fn(handler_lapic_timer);
+    // Set up syscall handler (int 0x80)
+    // DPL must be 3 to allow user mode (Ring 3) to invoke int 0x80
+    unsafe {
+        IDT.lock()[InterruptVector::Syscall as usize]
+            .set_handler_addr(VirtAddr::new(interrupt::syscall_handler_asm as *const () as u64))
+            .set_privilege_level(PrivilegeLevel::Ring3);
+    }
     unsafe {
         IDT.lock().load_unsafe();
     }
@@ -205,6 +265,10 @@ extern "sysv64" fn kernel_main_virt(
         .initialize(Message::NoInterruption);
 
     initialize_process_manager();
+
+    // Load and execute the gallop user program
+    run_gallop();
+
     loop {
         disable();
         if INTERRUPTION_QUEUE.lock().count == 0 {

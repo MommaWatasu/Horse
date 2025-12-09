@@ -8,6 +8,9 @@ cp ./target/x86_64-unknown-uefi/debug/horse-bootloader.efi ../dev-tools
 cd ../kernel
 cargo build
 cp ./horse-kernel ../dev-tools
+cd ../gallop
+cargo build --release
+cp ./target/x86_64-horse-user/release/gallop ../dev-tools/
 cd ../
 ''']
 
@@ -20,6 +23,7 @@ DISK_IMG=Horse.iso
 MOUNT_POINT=mnt
 EFI_FILE=./dev-tools/horse-bootloader.efi
 ANOTHER_FILE=kernel/horse-kernel
+GALLOP_FILE=./dev-tools/gallop
 
 if [ ! -f $EFI_FILE ]
 then
@@ -39,6 +43,10 @@ sudo cp $EFI_FILE $MOUNT_POINT/EFI/BOOT/BOOTX64.EFI
 if [ "$ANOTHER_FILE" != "" ]
 then
     sudo cp $ANOTHER_FILE $MOUNT_POINT/
+fi
+if [ -f "$GALLOP_FILE" ]
+then
+    sudo cp $GALLOP_FILE $MOUNT_POINT/
 fi
 sleep 0.5
 sudo umount $MOUNT_POINT
