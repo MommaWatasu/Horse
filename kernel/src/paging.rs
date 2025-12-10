@@ -23,10 +23,31 @@ const PAGE_TABLE_ENTRIES: usize = 512;
 // Initial page directory count for kernel identity mapping
 const PAGE_DIRECTORY_COUNT: usize = 64;
 
-// Virtual address space layout
-pub const KERNEL_BASE: u64 = 0xFFFF_8000_0000_0000; // Upper half for kernel (optional)
+// Virtual address space layout (kernel code model compatible - top 2GB)
+pub const KERNEL_BASE: u64 = 0xFFFF_FFFF_8000_0000; // Higher half kernel (top 2GB)
 pub const USER_STACK_TOP: u64 = 0x0000_7FFF_FFFF_0000;
 pub const USER_STACK_SIZE: usize = 64 * 1024; // 64 KB
+
+// PML4 index for higher half kernel (0xFFFFFFFF80000000 >> 39) & 0x1FF = 511
+pub const KERNEL_PML4_INDEX: usize = 511;
+
+/// Convert physical address to kernel virtual address
+#[inline]
+pub const fn phys_to_virt(phys: u64) -> u64 {
+    phys + KERNEL_BASE
+}
+
+/// Convert kernel virtual address to physical address
+#[inline]
+pub const fn virt_to_phys(virt: u64) -> u64 {
+    virt - KERNEL_BASE
+}
+
+/// Convert physical address to pointer (for kernel access)
+#[inline]
+pub fn phys_to_ptr<T>(phys: u64) -> *mut T {
+    phys_to_virt(phys) as *mut T
+}
 
 /// Page table entry flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -279,38 +300,51 @@ impl PageTableManager {
     }
 
     /// Allocate a new page table (4KB aligned)
-    pub fn allocate_page_table(&self) -> Option<*mut PageTable> {
+    /// Returns the physical address of the allocated page table
+    pub fn allocate_page_table_phys(&self) -> Option<u64> {
         let frame = frame_manager_instance().allocate(1).ok()?;
-        let ptr = frame.phys_addr() as *mut PageTable;
+        let phys = frame.phys_addr() as u64;
+        let ptr = phys_to_ptr::<PageTable>(phys);
 
-        // Zero out the page table
+        // Zero out the page table via virtual address
         unsafe {
             core::ptr::write_bytes(ptr, 0, 1);
         }
 
-        Some(ptr)
+        Some(phys)
     }
 
-    /// Free a page table
+    /// Allocate a new page table and return virtual pointer
+    /// For backward compatibility
+    pub fn allocate_page_table(&self) -> Option<*mut PageTable> {
+        let phys = self.allocate_page_table_phys()?;
+        Some(phys_to_ptr::<PageTable>(phys))
+    }
+
+    /// Free a page table (takes virtual address)
     pub fn free_page_table(&self, table: *mut PageTable) {
-        let frame = FrameID::from_phys_addr(table as *mut u8);
+        // Convert virtual address to physical for frame manager
+        let phys = virt_to_phys(table as u64);
+        let frame = FrameID::from_phys_addr(phys as *mut u8);
         frame_manager_instance().free(frame, 1);
     }
 
     /// Create a new user page table with kernel mappings
-    pub fn create_user_page_table(&self) -> Option<*mut PageTable> {
+    /// Returns (physical_address, virtual_pointer)
+    pub fn create_user_page_table(&self) -> Option<(u64, *mut PageTable)> {
         use core::ptr::addr_of;
 
-        let pml4 = self.allocate_page_table()?;
+        let phys = self.allocate_page_table_phys()?;
+        let pml4 = phys_to_ptr::<PageTable>(phys);
 
         unsafe {
-            // Copy kernel mappings (first entry for identity mapping)
-            // This ensures kernel code/data is accessible in user space
+            // Copy higher half kernel mappings (PML4[256])
+            // This ensures kernel code/data is accessible when switching to kernel mode
             let kernel_pml4 = addr_of!(KERNEL_PML4);
-            (*pml4).entries[0] = (*kernel_pml4).entries[0];
+            (*pml4).entries[KERNEL_PML4_INDEX] = (*kernel_pml4).entries[KERNEL_PML4_INDEX];
         }
 
-        Some(pml4)
+        Some((phys, pml4))
     }
 
     /// Map a 4KB page
@@ -373,20 +407,23 @@ impl PageTableManager {
     }
 
     /// Get or create a page table for the given entry
+    /// Returns virtual pointer to the table
     unsafe fn get_or_create_table(
         &self,
         entry: &mut PageTableEntry,
         flags: PageTableFlags,
     ) -> Result<*mut PageTable, &'static str> {
         if entry.is_present() {
-            // Table already exists
-            Ok(entry.addr() as *mut PageTable)
+            // Table already exists - entry contains physical address
+            // Convert to virtual address for access
+            let phys = entry.addr();
+            Ok(phys_to_ptr::<PageTable>(phys))
         } else {
-            // Create new table
-            let table = self.allocate_page_table()
+            // Create new table - get physical address
+            let phys = self.allocate_page_table_phys()
                 .ok_or("Failed to allocate page table")?;
 
-            // Set entry to point to new table
+            // Set entry to point to new table (store physical address)
             // Use USER_ACCESSIBLE flag if the mapping is for user space
             let table_flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE |
                 if flags.contains(PageTableFlags::USER_ACCESSIBLE) {
@@ -394,9 +431,10 @@ impl PageTableManager {
                 } else {
                     PageTableFlags::empty()
                 };
-            entry.set(table as u64, table_flags);
+            entry.set(phys, table_flags);
 
-            Ok(table)
+            // Return virtual pointer for access
+            Ok(phys_to_ptr::<PageTable>(phys))
         }
     }
 
@@ -411,14 +449,15 @@ impl PageTableManager {
                 return Err("PML4 entry not present");
             }
 
-            let pdpt = pml4_entry.addr() as *const PageTable;
+            // Convert physical addresses from entries to virtual for access
+            let pdpt = phys_to_ptr::<PageTable>(pml4_entry.addr());
             let pdpt_ref = &*pdpt;
             let pdpt_entry = &pdpt_ref.entries[vaddr.pdpt_index()];
             if !pdpt_entry.is_present() {
                 return Err("PDPT entry not present");
             }
 
-            let pd = pdpt_entry.addr() as *const PageTable;
+            let pd = phys_to_ptr::<PageTable>(pdpt_entry.addr());
             let pd_ref = &*pd;
             let pd_entry = &pd_ref.entries[vaddr.pd_index()];
             if !pd_entry.is_present() {
@@ -429,7 +468,7 @@ impl PageTableManager {
                 return Err("Cannot unmap 4K page from 2M mapping");
             }
 
-            let pt = pd_entry.addr() as *mut PageTable;
+            let pt = phys_to_ptr::<PageTable>(pd_entry.addr());
             let pt_ref = &mut *pt;
             pt_ref.entries[vaddr.pt_index()].clear();
 
@@ -451,7 +490,8 @@ impl PageTableManager {
                 return None;
             }
 
-            let pdpt = pml4_entry.addr() as *const PageTable;
+            // Convert physical addresses from entries to virtual for access
+            let pdpt = phys_to_ptr::<PageTable>(pml4_entry.addr()) as *const PageTable;
             let pdpt_ref = &*pdpt;
             let pdpt_entry = &pdpt_ref.entries[vaddr.pdpt_index()];
             if !pdpt_entry.is_present() {
@@ -464,7 +504,7 @@ impl PageTableManager {
                 return Some(pdpt_entry.addr() + offset);
             }
 
-            let pd = pdpt_entry.addr() as *const PageTable;
+            let pd = phys_to_ptr::<PageTable>(pdpt_entry.addr()) as *const PageTable;
             let pd_ref = &*pd;
             let pd_entry = &pd_ref.entries[vaddr.pd_index()];
             if !pd_entry.is_present() {
@@ -477,7 +517,7 @@ impl PageTableManager {
                 return Some(pd_entry.addr() + offset);
             }
 
-            let pt = pd_entry.addr() as *const PageTable;
+            let pt = phys_to_ptr::<PageTable>(pd_entry.addr()) as *const PageTable;
             let pt_ref = &*pt;
             let pt_entry = &pt_ref.entries[vaddr.pt_index()];
             if !pt_entry.is_present() {
@@ -528,9 +568,10 @@ impl PageTableManager {
 
             let phys = frame.phys_addr() as u64;
 
-            // Zero the frame
+            // Zero the frame via virtual address
             unsafe {
-                core::ptr::write_bytes(phys as *mut u8, 0, PAGE_SIZE_4K);
+                let virt_ptr = phys_to_virt(phys) as *mut u8;
+                core::ptr::write_bytes(virt_ptr, 0, PAGE_SIZE_4K);
             }
 
             self.map_4k(pml4, virt, phys, flags)?;
@@ -584,42 +625,47 @@ extern "C" {
     fn set_cr3(value: u64);
 }
 
-/// Initialize the kernel page tables with identity mapping
-/// This is called early in the boot process
+/// Initialize the kernel page tables with higher half mapping
+/// This is called early in the boot process (after boot page tables are set up)
+/// The kernel is now running at virtual address KERNEL_BASE + physical_address
 pub unsafe fn initialize() {
     let pml4_ptr = addr_of_mut!(KERNEL_PML4);
     let pdpt_ptr = addr_of_mut!(KERNEL_PDPT);
     let pd_ptr = addr_of_mut!(KERNEL_PD);
 
-    // Set up PML4 -> PDPT mapping
-    (*pml4_ptr).entries[0].set(
-        pdpt_ptr as u64,
+    // Set up PML4[256] -> PDPT (higher half mapping at 0xFFFF800000000000)
+    // Note: pml4_ptr, pdpt_ptr, pd_ptr are virtual addresses (linker placed them there)
+    // Page table entries need physical addresses
+    (*pml4_ptr).entries[KERNEL_PML4_INDEX].set(
+        virt_to_phys(pdpt_ptr as u64),
         PageTableFlags::KERNEL_RW,
     );
 
     // Set up PDPT -> PD mappings and PD entries for 2MB pages
+    // This maps physical memory starting at 0 to virtual KERNEL_BASE
     for i_pdpt in 0..PAGE_DIRECTORY_COUNT {
         let pd_entry_ptr = addr_of_mut!((*pd_ptr)[i_pdpt]);
         (*pdpt_ptr).entries[i_pdpt].set(
-            pd_entry_ptr as u64,
+            virt_to_phys(pd_entry_ptr as u64),
             PageTableFlags::KERNEL_RW,
         );
 
         for i_pd in 0..PAGE_TABLE_ENTRIES {
+            // Physical address is identity: physical 0 maps to virtual KERNEL_BASE
             let phys_addr = (i_pdpt * PAGE_SIZE_1G + i_pd * PAGE_SIZE_2M) as u64;
             (*pd_entry_ptr).entries[i_pd].set(phys_addr, PageTableFlags::KERNEL_HUGE);
         }
     }
 
-    // Load the new page table
-    set_cr3(pml4_ptr as u64);
+    // Load the new page table (CR3 needs physical address)
+    set_cr3(virt_to_phys(pml4_ptr as u64));
 
     // Initialize the page table manager
     PAGE_TABLE_MANAGER.lock().initialize();
 }
 
 /// Set up user space page tables for a process
-/// Returns the physical address of the PML4 table
+/// Returns the physical address of the PML4 table (for CR3)
 pub fn setup_user_page_table(
     program_start: u64,
     program_size: usize,
@@ -629,7 +675,8 @@ pub fn setup_user_page_table(
     let manager = PAGE_TABLE_MANAGER.lock();
 
     // Create new PML4 with kernel mappings
-    let pml4 = manager.create_user_page_table()
+    // Returns (physical_address, virtual_pointer)
+    let (pml4_phys, pml4) = manager.create_user_page_table()
         .ok_or("Failed to create user page table")?;
 
     // Map program area with user read/write/execute permissions
@@ -649,7 +696,8 @@ pub fn setup_user_page_table(
         PageTableFlags::USER_RW,
     )?;
 
-    Ok(pml4 as u64)
+    // Return physical address for CR3
+    Ok(pml4_phys)
 }
 
 /// Page fault error code flags
@@ -756,9 +804,9 @@ pub fn handle_page_fault(error_code: u64) {
 
             let page_addr = faulting_address & !0xFFF; // Align to page boundary
 
-            // Get current page table
+            // Get current page table - CR3 contains physical address
             let cr3 = get_cr3();
-            let pml4 = cr3 as *mut PageTable;
+            let pml4 = phys_to_ptr::<PageTable>(cr3);
 
             let manager = PAGE_TABLE_MANAGER.lock();
 

@@ -1,29 +1,29 @@
 {
   "arch": "x86_64",
   "cpu": "x86-64",
+  "code-model": "kernel",
   "crt-static-respected": true,
   "data-layout": "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
-  "dynamic-linking": true,
+  "dynamic-linking": false,
   "env": "gnu",
   "executables": true,
   "linker": "ld.lld",
   "linker-flavor": "ld",
-  "has-rpath": true,
+  "has-rpath": false,
   "linker-is-gnu": true,
   "llvm-target": "x86_64-unknown-none-elf",
   "max-atomic-width": 64,
-  "position-independent-executables": true,
+  "position-independent-executables": false,
   "post-link-args": {
     "ld": [
-      "-entry=kernel_main",
-      "--image-base=0x100000",
+      "-Tkernel.ld",
       "-static",
       "-nostdlib",
       "-ohorse-kernel"
     ]
   },
   "relocation-model": "static",
-  "relro-level": "full",
+  "relro-level": "off",
   "stack-probes": {
     "kind": "inline-or-call",
     "min-llvm-version-for-inline": [
@@ -33,5 +33,6 @@
     ]
   },
   "target-family": "unix",
-  "target-pointer-width": 64
+  "target-pointer-width": 64,
+  "disable-redzone": true
 }

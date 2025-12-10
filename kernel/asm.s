@@ -4,15 +4,137 @@ bits 64
 
 extern kernel_main_virt
 
-section .bss align=16
+; Higher half kernel constants (kernel code model compatible - top 2GB)
+KERNEL_VIRT_BASE equ 0xFFFFFFFF80000000
+KERNEL_PHYS_BASE equ 0x100000
+
+; Page table entry flags
+PAGE_PRESENT    equ 0x001
+PAGE_WRITABLE   equ 0x002
+PAGE_USER       equ 0x004
+PAGE_HUGE       equ 0x080
+
+; Kernel page flags (present + writable)
+KERNEL_PAGE_FLAGS equ (PAGE_PRESENT | PAGE_WRITABLE)
+; Kernel huge page flags (present + writable + huge)
+KERNEL_HUGE_FLAGS equ (PAGE_PRESENT | PAGE_WRITABLE | PAGE_HUGE)
+
+section .bss align=4096
+; Boot page tables (must be page-aligned)
+align 4096
+boot_pml4:
+  resb 4096
+align 4096
+boot_pdpt_low:    ; For identity mapping (PML4[0])
+  resb 4096
+align 4096
+boot_pdpt_high:   ; For higher half mapping (PML4[256])
+  resb 4096
+align 4096
+boot_pd:          ; Page directory (shared, uses 2MB pages)
+  resb 4096 * 64  ; 64 page directories for 64GB
+
+align 16
 kernel_main_stack:
   resb 1024 * 1024
 
 section .text
 global kernel_main
 kernel_main:
-  mov rsp, kernel_main_stack + 1024 * 1024
+  ; Save arguments passed from bootloader (rdi, rsi, rdx)
+  ; At this point we're running at physical addresses (identity mapped by UEFI)
+  ; but linker symbols are at virtual addresses (KERNEL_VIRT_BASE + offset)
+  ; We need to use physical addresses until we set up our own page tables
+
+  push rdi
+  push rsi
+  push rdx
+
+  ; Calculate physical addresses for boot page tables
+  ; Symbol addresses are virtual, subtract KERNEL_VIRT_BASE to get physical
+  mov r12, boot_pml4
+  sub r12, KERNEL_VIRT_BASE           ; r12 = physical boot_pml4
+  mov r13, boot_pdpt_low
+  sub r13, KERNEL_VIRT_BASE           ; r13 = physical boot_pdpt_low
+  mov r14, boot_pdpt_high
+  sub r14, KERNEL_VIRT_BASE           ; r14 = physical boot_pdpt_high
+  mov r15, boot_pd
+  sub r15, KERNEL_VIRT_BASE           ; r15 = physical boot_pd
+
+  ; Set up boot page tables
+  ; Clear all page tables first
+  mov rdi, r12                        ; physical boot_pml4
+  mov rcx, (4096 * 67) / 8            ; 67 pages total (1 PML4 + 2 PDPT + 64 PD)
+  xor rax, rax
+  rep stosq
+
+  ; Set up PML4 entries
+  ; PML4[0] -> boot_pdpt_low (identity mapping)
+  mov rax, r13                        ; physical boot_pdpt_low
+  or rax, KERNEL_PAGE_FLAGS
+  mov [r12], rax                      ; physical boot_pml4[0]
+
+  ; PML4[511] -> boot_pdpt_high (higher half mapping at 0xFFFFFFFF80000000)
+  mov rax, r14                        ; physical boot_pdpt_high
+  or rax, KERNEL_PAGE_FLAGS
+  mov [r12 + 511 * 8], rax            ; physical boot_pml4[511]
+
+  ; Set up PDPT entries for identity mapping (PDPT[0..64] -> PD)
+  mov rcx, 64                         ; 64 entries = 64GB
+  mov rdi, r13                        ; physical boot_pdpt_low
+  mov rax, r15                        ; physical boot_pd
+  or rax, KERNEL_PAGE_FLAGS
+.setup_pdpt_low:
+  mov [rdi], rax
+  add rax, 4096                       ; Next PD (physical)
+  add rdi, 8
+  dec rcx
+  jnz .setup_pdpt_low
+
+  ; Set up PDPT entries for higher half mapping
+  ; 0xFFFFFFFF80000000: PDPT index = 510 (bits 30-38)
+  ; Map PDPT[510..512] -> first 2GB of physical memory (2 entries for 2GB kernel space)
+  mov rdi, r14                        ; physical boot_pdpt_high
+  add rdi, 510 * 8                    ; Start at PDPT[510]
+  mov rax, r15                        ; physical boot_pd (first entry)
+  or rax, KERNEL_PAGE_FLAGS
+  mov [rdi], rax                      ; PDPT[510] -> PD[0] (first 1GB)
+  add rax, 4096
+  mov [rdi + 8], rax                  ; PDPT[511] -> PD[1] (second 1GB)
+
+  ; Set up PD entries with 2MB huge pages
+  mov rcx, 64 * 512                   ; 64 PDs * 512 entries = 64GB
+  mov rdi, r15                        ; physical boot_pd
+  xor rax, rax                        ; Start at physical address 0
+  or rax, KERNEL_HUGE_FLAGS
+.setup_pd:
+  mov [rdi], rax
+  add rax, 0x200000                   ; Next 2MB page
+  add rdi, 8
+  dec rcx
+  jnz .setup_pd
+
+  ; Load new page table (CR3 takes physical address)
+  mov cr3, r12                        ; physical boot_pml4
+
+  ; Now we have both identity mapping and higher half mapping active
+  ; Jump to higher half address (virtual)
+  mov rax, .higher_half
+  jmp rax
+
+.higher_half:
+  ; We are now running in higher half!
+  ; Set up stack in higher half (kernel_main_stack is already a virtual address)
+  lea rsp, [kernel_main_stack + 1024 * 1024]
+
+  ; Restore arguments
+  pop rdx
+  pop rsi
+  pop rdi
+
+  ; Call Rust kernel main
   call kernel_main_virt
+
 .fin:
   hlt
   jmp .fin
