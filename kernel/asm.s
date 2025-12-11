@@ -41,48 +41,51 @@ kernel_main_stack:
 section .text
 global kernel_main
 kernel_main:
-  ; Save arguments passed from bootloader (rdi, rsi, rdx)
+  ; Save arguments passed from bootloader (rdi, rsi, rdx) in callee-saved registers
   ; At this point we're running at physical addresses (identity mapped by UEFI)
   ; but linker symbols are at virtual addresses (KERNEL_VIRT_BASE + offset)
   ; We need to use physical addresses until we set up our own page tables
-
-  push rdi
-  push rsi
-  push rdx
+  ;
+  ; NOTE: We save to registers instead of stack because we'll switch stacks later
+  mov rbx, rdi                        ; Save arg1 (SystemTable)
+  mov rbp, rsi                        ; Save arg2 (fb_config)
+  ; rdx is arg3 (memory_map), save it in a callee-saved register
+  push rdx                            ; Temporarily save rdx
+  pop r13                             ; Move to r13 (will use r12-r15 for page table setup)
 
   ; Calculate physical addresses for boot page tables
   ; Symbol addresses are virtual, subtract KERNEL_VIRT_BASE to get physical
-  mov r12, boot_pml4
-  sub r12, KERNEL_VIRT_BASE           ; r12 = physical boot_pml4
-  mov r13, boot_pdpt_low
-  sub r13, KERNEL_VIRT_BASE           ; r13 = physical boot_pdpt_low
-  mov r14, boot_pdpt_high
-  sub r14, KERNEL_VIRT_BASE           ; r14 = physical boot_pdpt_high
-  mov r15, boot_pd
-  sub r15, KERNEL_VIRT_BASE           ; r15 = physical boot_pd
+  mov r8, boot_pml4
+  sub r8, KERNEL_VIRT_BASE            ; r8 = physical boot_pml4
+  mov r9, boot_pdpt_low
+  sub r9, KERNEL_VIRT_BASE            ; r9 = physical boot_pdpt_low
+  mov r10, boot_pdpt_high
+  sub r10, KERNEL_VIRT_BASE           ; r10 = physical boot_pdpt_high
+  mov r11, boot_pd
+  sub r11, KERNEL_VIRT_BASE           ; r11 = physical boot_pd
 
   ; Set up boot page tables
   ; Clear all page tables first
-  mov rdi, r12                        ; physical boot_pml4
+  mov rdi, r8                         ; physical boot_pml4
   mov rcx, (4096 * 67) / 8            ; 67 pages total (1 PML4 + 2 PDPT + 64 PD)
   xor rax, rax
   rep stosq
 
   ; Set up PML4 entries
   ; PML4[0] -> boot_pdpt_low (identity mapping)
-  mov rax, r13                        ; physical boot_pdpt_low
+  mov rax, r9                         ; physical boot_pdpt_low
   or rax, KERNEL_PAGE_FLAGS
-  mov [r12], rax                      ; physical boot_pml4[0]
+  mov [r8], rax                       ; physical boot_pml4[0]
 
   ; PML4[511] -> boot_pdpt_high (higher half mapping at 0xFFFFFFFF80000000)
-  mov rax, r14                        ; physical boot_pdpt_high
+  mov rax, r10                        ; physical boot_pdpt_high
   or rax, KERNEL_PAGE_FLAGS
-  mov [r12 + 511 * 8], rax            ; physical boot_pml4[511]
+  mov [r8 + 511 * 8], rax             ; physical boot_pml4[511]
 
   ; Set up PDPT entries for identity mapping (PDPT[0..64] -> PD)
   mov rcx, 64                         ; 64 entries = 64GB
-  mov rdi, r13                        ; physical boot_pdpt_low
-  mov rax, r15                        ; physical boot_pd
+  mov rdi, r9                         ; physical boot_pdpt_low
+  mov rax, r11                        ; physical boot_pd
   or rax, KERNEL_PAGE_FLAGS
 .setup_pdpt_low:
   mov [rdi], rax
@@ -94,9 +97,9 @@ kernel_main:
   ; Set up PDPT entries for higher half mapping
   ; 0xFFFFFFFF80000000: PDPT index = 510 (bits 30-38)
   ; Map PDPT[510..512] -> first 2GB of physical memory (2 entries for 2GB kernel space)
-  mov rdi, r14                        ; physical boot_pdpt_high
+  mov rdi, r10                        ; physical boot_pdpt_high
   add rdi, 510 * 8                    ; Start at PDPT[510]
-  mov rax, r15                        ; physical boot_pd (first entry)
+  mov rax, r11                        ; physical boot_pd (first entry)
   or rax, KERNEL_PAGE_FLAGS
   mov [rdi], rax                      ; PDPT[510] -> PD[0] (first 1GB)
   add rax, 4096
@@ -104,7 +107,7 @@ kernel_main:
 
   ; Set up PD entries with 2MB huge pages
   mov rcx, 64 * 512                   ; 64 PDs * 512 entries = 64GB
-  mov rdi, r15                        ; physical boot_pd
+  mov rdi, r11                        ; physical boot_pd
   xor rax, rax                        ; Start at physical address 0
   or rax, KERNEL_HUGE_FLAGS
 .setup_pd:
@@ -115,7 +118,7 @@ kernel_main:
   jnz .setup_pd
 
   ; Load new page table (CR3 takes physical address)
-  mov cr3, r12                        ; physical boot_pml4
+  mov cr3, r8                         ; physical boot_pml4
 
   ; Now we have both identity mapping and higher half mapping active
   ; Jump to higher half address (virtual)
@@ -127,10 +130,10 @@ kernel_main:
   ; Set up stack in higher half (kernel_main_stack is already a virtual address)
   lea rsp, [kernel_main_stack + 1024 * 1024]
 
-  ; Restore arguments
-  pop rdx
-  pop rsi
-  pop rdi
+  ; Restore arguments from callee-saved registers to argument registers
+  mov rdi, rbx                        ; arg1 (SystemTable)
+  mov rsi, rbp                        ; arg2 (fb_config)
+  mov rdx, r13                        ; arg3 (memory_map)
 
   ; Call Rust kernel main
   call kernel_main_virt
