@@ -278,7 +278,8 @@ impl VirtAddr {
 
 // Static page tables for kernel identity mapping
 static mut KERNEL_PML4: PageTable = PageTable::new();
-static mut KERNEL_PDPT: PageTable = PageTable::new();
+static mut KERNEL_PDPT: PageTable = PageTable::new();       // For higher half (PML4[511])
+static mut KERNEL_PDPT_LOW: PageTable = PageTable::new();   // For identity mapping (PML4[0])
 static mut KERNEL_PD: [PageTable; PAGE_DIRECTORY_COUNT] = [const { PageTable::new() }; PAGE_DIRECTORY_COUNT];
 
 // Global page table manager
@@ -628,12 +629,36 @@ extern "C" {
 /// Initialize the kernel page tables with higher half mapping
 /// This is called early in the boot process (after boot page tables are set up)
 /// The kernel is now running at virtual address KERNEL_BASE + physical_address
+/// 
+/// For 0xFFFFFFFF80000000:
+/// - PML4 index = 511 (bits 39-47)
+/// - PDPT index = 510 (bits 30-38)
 pub unsafe fn initialize() {
     let pml4_ptr = addr_of_mut!(KERNEL_PML4);
     let pdpt_ptr = addr_of_mut!(KERNEL_PDPT);
+    let pdpt_low_ptr = addr_of_mut!(KERNEL_PDPT_LOW);
     let pd_ptr = addr_of_mut!(KERNEL_PD);
 
-    // Set up PML4[256] -> PDPT (higher half mapping at 0xFFFF800000000000)
+    // PDPT index for 0xFFFFFFFF80000000 is 510
+    const PDPT_START_INDEX: usize = 510;
+
+    // ===== Set up identity mapping (PML4[0]) for low addresses =====
+    // This is needed to access bootloader-provided data (fb_config, memory_map, etc.)
+    (*pml4_ptr).entries[0].set(
+        virt_to_phys(pdpt_low_ptr as u64),
+        PageTableFlags::KERNEL_RW,
+    );
+
+    // Set up PDPT_LOW -> PD mappings for identity mapping (first 64GB)
+    for i in 0..PAGE_DIRECTORY_COUNT {
+        let pd_entry_ptr = addr_of_mut!((*pd_ptr)[i]);
+        (*pdpt_low_ptr).entries[i].set(
+            virt_to_phys(pd_entry_ptr as u64),
+            PageTableFlags::KERNEL_RW,
+        );
+    }
+
+    // ===== Set up higher half mapping (PML4[511]) for kernel =====
     // Note: pml4_ptr, pdpt_ptr, pd_ptr are virtual addresses (linker placed them there)
     // Page table entries need physical addresses
     (*pml4_ptr).entries[KERNEL_PML4_INDEX].set(
@@ -642,17 +667,31 @@ pub unsafe fn initialize() {
     );
 
     // Set up PDPT -> PD mappings and PD entries for 2MB pages
+    // PDPT[510] and PDPT[511] map to our PD entries (2GB total for kernel space)
     // This maps physical memory starting at 0 to virtual KERNEL_BASE
-    for i_pdpt in 0..PAGE_DIRECTORY_COUNT {
-        let pd_entry_ptr = addr_of_mut!((*pd_ptr)[i_pdpt]);
-        (*pdpt_ptr).entries[i_pdpt].set(
+    // 
+    // We have PAGE_DIRECTORY_COUNT (64) page directories, which can map 64GB
+    // But for the higher half kernel at 0xFFFFFFFF80000000, we only have 
+    // PDPT entries 510 and 511 available (2GB of virtual address space)
+    // So we limit to 2 PDPT entries
+    let pdpt_entries_to_use = PAGE_DIRECTORY_COUNT.min(2); // Only 2 entries (510, 511) for top 2GB
+    
+    for i in 0..pdpt_entries_to_use {
+        let pdpt_index = PDPT_START_INDEX + i;
+        let pd_entry_ptr = addr_of_mut!((*pd_ptr)[i]);
+        (*pdpt_ptr).entries[pdpt_index].set(
             virt_to_phys(pd_entry_ptr as u64),
             PageTableFlags::KERNEL_RW,
         );
+    }
 
+    // Set up PD entries with 2MB huge pages
+    // These are shared between identity mapping and higher half mapping
+    for i in 0..PAGE_DIRECTORY_COUNT {
+        let pd_entry_ptr = addr_of_mut!((*pd_ptr)[i]);
         for i_pd in 0..PAGE_TABLE_ENTRIES {
-            // Physical address is identity: physical 0 maps to virtual KERNEL_BASE
-            let phys_addr = (i_pdpt * PAGE_SIZE_1G + i_pd * PAGE_SIZE_2M) as u64;
+            // Physical address: i-th GB + i_pd * 2MB
+            let phys_addr = (i * PAGE_SIZE_1G + i_pd * PAGE_SIZE_2M) as u64;
             (*pd_entry_ptr).entries[i_pd].set(phys_addr, PageTableFlags::KERNEL_HUGE);
         }
     }
