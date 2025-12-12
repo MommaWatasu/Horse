@@ -13,3 +13,6 @@ uefi = { version = "0.24.0" }
 
 [profile.dev]
 panic="abort"
+
+[profile.release]
+panic="abort"

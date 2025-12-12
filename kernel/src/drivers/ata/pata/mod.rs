@@ -220,7 +220,7 @@ impl IdeController {
         drive: usize,
         lba: u32,
         numsects: u8,
-        mut buf: u32
+        mut buf: u64
     ) -> u8 {
         let lba_mode: u8;
         let dma: u8;
@@ -342,7 +342,7 @@ impl IdeController {
                     unsafe {
                             asm!(
                             "mov dx, {port:x}",
-                            "mov edi, {buf:e}",
+                            "mov rdi, {buf}",
                             "mov ecx, 256",
                             "rep insw",
                             port = in(reg) bus,
@@ -358,9 +358,9 @@ impl IdeController {
                     unsafe {
                         asm!(
                             "mov dx, {port:x}",
-                            "mov edi, {buf:e}",
+                            "mov rdi, {buf}",
                             "mov ecx, 256",
-                            "rep insw",
+                            "rep outsw",
                             port = in(reg) bus,
                             buf = in(reg) buf
                         );
@@ -400,10 +400,10 @@ impl Storage for IdeController {
         }
         let mut err = 0;
         if device.ata_type == InterfaceType::IdeAta as u16 {
-            err = self.ide_access(Directions::Read as u8, 0, lba, numsects, buf.as_mut_ptr() as u32);
+            err = self.ide_access(Directions::Read as u8, 0, lba, numsects, buf.as_mut_ptr() as u64);
         } else {
             for i in 0..numsects {
-                err = self.ide_access(Directions::Read as u8, 0, lba + i as u32, 1, buf.as_mut_ptr() as u32);
+                err = self.ide_access(Directions::Read as u8, 0, lba + i as u32, 1, buf.as_mut_ptr() as u64);
             }
         }
         return self.ide_print_error(0, err);
@@ -419,7 +419,7 @@ impl Storage for IdeController {
         let mut err = 0;
         let numsects: u8 = ((nbytes + 512) / 512 - 1).try_into().unwrap();
         if device.ata_type == InterfaceType::IdeAta as u16 {
-            err = self.ide_access(Directions::Write as u8, 0, lba, numsects, buf.as_ptr() as u32);
+            err = self.ide_access(Directions::Write as u8, 0, lba, numsects, buf.as_ptr() as u64);
         } else {
             return 4; // Write Protected
         }

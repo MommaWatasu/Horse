@@ -7,7 +7,7 @@
 mod acpi;
 mod ascii_font;
 mod memory_allocator;
-mod paging;
+pub mod paging;
 mod queue;
 mod segment;
 mod syscall;
@@ -65,7 +65,7 @@ use x86_64::{
         disable, //cli
         enable,  //sti
     },
-    structures::idt::InterruptStackFrame,
+    structures::idt::{InterruptStackFrame, PageFaultErrorCode},
     PrivilegeLevel,
     VirtAddr,
 };
@@ -218,6 +218,22 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
     }
 }
 
+extern "x86-interrupt" fn handler_page_fault(
+    stack_frame: InterruptStackFrame,
+    error_code: PageFaultErrorCode,
+) {
+    // Get the faulting address from CR2
+    let faulting_address = paging::get_cr2();
+
+    error!(
+        "PAGE FAULT!\n  Faulting address: 0x{:016x}\n  Error code: {:?}\n  Stack frame: {:#?}",
+        faulting_address, error_code, stack_frame
+    );
+
+    // Call the paging module's page fault handler
+    paging::handle_page_fault(error_code.bits());
+}
+
 #[no_mangle]
 extern "sysv64" fn kernel_main_virt(
     st: SystemTable<Runtime>,
@@ -250,6 +266,8 @@ extern "sysv64" fn kernel_main_virt(
     //set the IDT entry
     IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
     IDT.lock()[InterruptVector::LAPICTimer as usize].set_handler_fn(handler_lapic_timer);
+    // Set up page fault handler
+    IDT.lock().page_fault.set_handler_fn(handler_page_fault);
     // Set up syscall handler (int 0x80)
     // DPL must be 3 to allow user mode (Ring 3) to invoke int 0x80
     unsafe {

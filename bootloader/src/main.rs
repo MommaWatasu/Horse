@@ -146,18 +146,20 @@ fn load_kernel(fs: &mut FileSystem, st: &SystemTable<Boot>) -> usize {
     let buf = fs.read(Path::new(&cstr16!("horse-kernel"))).expect("failed to read kernel file");
     let elf = elf::Elf::parse(&buf).expect("failed to parse ELF");
 
-    //find kernel_start and kernel_end
+    //find kernel_start and kernel_end using physical addresses (p_paddr)
+    //For higher-half kernels, p_vaddr is the virtual address and p_paddr is the physical address
     let mut kernel_start = u64::MAX;
     let mut kernel_end = 0;
     for ph in elf.program_headers.iter() {
         if ph.p_type != elf::program_header::PT_LOAD {
             continue;
         }
-        kernel_start = kernel_start.min(ph.p_vaddr);
-        kernel_end = kernel_end.max(ph.p_vaddr + ph.p_memsz);
+        // Use physical address for memory allocation
+        kernel_start = kernel_start.min(ph.p_paddr);
+        kernel_end = kernel_end.max(ph.p_paddr + ph.p_memsz);
     }
 
-    //allocate pages for kernel file
+    //allocate pages for kernel file at physical addresses
     let n_of_pages = ((kernel_end - kernel_start + UEFI_PAGE_SIZE - 1) / UEFI_PAGE_SIZE) as usize;
     st.boot_services().allocate_pages(
         AllocateType::Address(kernel_start),
@@ -165,7 +167,7 @@ fn load_kernel(fs: &mut FileSystem, st: &SystemTable<Boot>) -> usize {
         n_of_pages.try_into().unwrap(),
     ).expect("failed to allocate pages for kernel");
 
-    //load kernel file
+    //load kernel file to physical addresses
     for ph in elf.program_headers.iter() {
         if ph.p_type != elf::program_header::PT_LOAD {
             continue;
@@ -173,12 +175,22 @@ fn load_kernel(fs: &mut FileSystem, st: &SystemTable<Boot>) -> usize {
         let ofs = ph.p_offset as usize;
         let fsize = ph.p_filesz as usize;
         let msize = ph.p_memsz as usize;
-        let dest = unsafe { from_raw_parts_mut(ph.p_vaddr as *mut u8, msize) };
+        // Load to physical address (p_paddr), not virtual address (p_vaddr)
+        let dest = unsafe { from_raw_parts_mut(ph.p_paddr as *mut u8, msize) };
         dest[..fsize].copy_from_slice(&buf[ofs..ofs + fsize]);
         dest[fsize..].fill(0);
     }
 
-    return elf.entry as usize
+    // For higher-half kernels, we need to calculate the physical entry point
+    // The ELF entry is a virtual address, we need to convert it to physical
+    // entry_phys = entry_virt - (p_vaddr - p_paddr) of the first LOAD segment
+    let first_load = elf.program_headers.iter()
+        .find(|ph| ph.p_type == elf::program_header::PT_LOAD)
+        .expect("No LOAD segment found");
+    let virt_to_phys_offset = first_load.p_vaddr - first_load.p_paddr;
+    let entry_phys = elf.entry - virt_to_phys_offset;
+
+    return entry_phys as usize
 }
 
 #[allow(dead_code)]
