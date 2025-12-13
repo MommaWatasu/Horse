@@ -270,9 +270,11 @@ extern "sysv64" fn kernel_main_virt(
     IDT.lock().page_fault.set_handler_fn(handler_page_fault);
     // Set up syscall handler (int 0x80)
     // DPL must be 3 to allow user mode (Ring 3) to invoke int 0x80
+    let syscall_handler_addr = interrupt::syscall_handler_asm as *const () as u64;
+    debug!("syscall_handler_asm address: {:#x}", syscall_handler_addr);
     unsafe {
         IDT.lock()[InterruptVector::Syscall as usize]
-            .set_handler_addr(VirtAddr::new(interrupt::syscall_handler_asm as *const () as u64))
+            .set_handler_addr(VirtAddr::new(syscall_handler_addr))
             .set_privilege_level(PrivilegeLevel::Ring3);
     }
     unsafe {

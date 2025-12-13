@@ -262,6 +262,11 @@ set_cr3:
   mov cr3, rdi
   ret
 
+global load_tss ; fn load_tss(selector: u16)
+load_tss:
+  ltr di
+  ret
+
 ; Syscall interrupt handler (int 0x80)
 ; Arguments are passed in: RAX (syscall number), RDI, RSI, RDX, R10, R8, R9
 ; Return value in RAX
