@@ -271,6 +271,7 @@ load_tss:
 ; Arguments are passed in: RAX (syscall number), RDI, RSI, RDX, R10, R8, R9
 ; Return value in RAX
 extern syscall_entry
+extern KERNEL_CR3
 global syscall_handler_asm
 syscall_handler_asm:
   ; Save callee-saved registers
@@ -281,26 +282,52 @@ syscall_handler_asm:
   push r14
   push r15
 
+  ; Save syscall arguments in callee-saved registers before switching CR3
+  mov r12, rax           ; syscall_num
+  mov r13, rdi           ; arg1
+  mov r14, rsi           ; arg2
+  mov r15, rdx           ; arg3
+  push r10               ; arg4 (save on stack)
+  push r8                ; arg5
+  push r9                ; arg6
+
+  ; Save current CR3 (user page table) and switch to kernel page table
+  mov rbx, cr3           ; Save user CR3 in rbx (callee-saved)
+  mov rax, [rel KERNEL_CR3]
+  mov cr3, rax           ; Switch to kernel page table
+
   ; Build SyscallArgs struct on stack (must be 16-byte aligned)
   ; struct SyscallArgs { syscall_num, arg1, arg2, arg3, arg4, arg5, arg6 }
-  sub rsp, 64            ; 7 * 8 = 56 bytes, rounded to 64 for alignment
-  mov [rsp + 0], rax     ; syscall_num
-  mov [rsp + 8], rdi     ; arg1
-  mov [rsp + 16], rsi    ; arg2
-  mov [rsp + 24], rdx    ; arg3
-  mov [rsp + 32], r10    ; arg4
-  mov [rsp + 40], r8     ; arg5
-  mov [rsp + 48], r9     ; arg6
+  sub rsp, 64
+  mov [rsp + 0], r12     ; syscall_num
+  mov [rsp + 8], r13     ; arg1
+  mov [rsp + 16], r14    ; arg2
+  mov [rsp + 24], r15    ; arg3
+  mov rax, [rsp + 64]    ; arg4 (r10, saved on stack)
+  mov [rsp + 32], rax
+  mov rax, [rsp + 72]    ; arg5 (r8, saved on stack)
+  mov [rsp + 40], rax
+  mov rax, [rsp + 80]    ; arg6 (r9, saved on stack)
+  mov [rsp + 48], rax
 
   ; Pass pointer to SyscallArgs as first argument
   mov rdi, rsp
   call syscall_entry
 
-  ; Return value is already in RAX, save it in RBX (callee-saved)
-  mov rbx, rax
+  ; Return value is already in RAX, save it in rbp (callee-saved)
+  mov rbp, rax
 
   ; Clean up SyscallArgs
   add rsp, 64
+
+  ; Restore user CR3 before returning to user mode
+  mov cr3, rbx
+
+  ; Clean up saved args (r10, r8, r9)
+  add rsp, 24
+
+  ; Move return value to RAX
+  mov rax, rbp
 
   ; Restore callee-saved registers
   pop r15
@@ -308,9 +335,6 @@ syscall_handler_asm:
   pop r13
   pop r12
   pop rbp
-
-  ; Move return value to RAX (rbx will be popped next)
-  mov rax, rbx
   pop rbx
 
   iretq

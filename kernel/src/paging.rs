@@ -285,6 +285,11 @@ static mut KERNEL_PD: [PageTable; PAGE_DIRECTORY_COUNT] = [const { PageTable::ne
 // Global page table manager
 pub static PAGE_TABLE_MANAGER: Mutex<PageTableManager> = Mutex::new(PageTableManager::new());
 
+// Kernel CR3 value (physical address of kernel PML4)
+// This is set during initialization and used by syscall handler to switch to kernel page table
+#[no_mangle]
+pub static mut KERNEL_CR3: u64 = 0;
+
 /// Page table manager for creating and managing page tables
 pub struct PageTableManager {
     initialized: bool,
@@ -697,7 +702,11 @@ pub unsafe fn initialize() {
     }
 
     // Load the new page table (CR3 needs physical address)
-    set_cr3(virt_to_phys(pml4_ptr as u64));
+    let kernel_cr3_value = virt_to_phys(pml4_ptr as u64);
+    set_cr3(kernel_cr3_value);
+
+    // Save kernel CR3 for syscall handler to use
+    KERNEL_CR3 = kernel_cr3_value;
 
     // Initialize the page table manager
     PAGE_TABLE_MANAGER.lock().initialize();
