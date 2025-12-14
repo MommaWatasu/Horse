@@ -274,6 +274,10 @@ extern syscall_entry
 extern KERNEL_CR3
 global syscall_handler_asm
 syscall_handler_asm:
+  ; Disable interrupts during syscall processing to prevent context switch
+  ; which would corrupt our saved user CR3 in rbx and cause crash on return
+  cli
+
   ; Save callee-saved registers
   push rbx
   push rbp
@@ -337,6 +341,7 @@ syscall_handler_asm:
   pop rbp
   pop rbx
 
+  ; iretq will restore RFLAGS from user stack, re-enabling interrupts
   iretq
 
 ; Jump to user mode
