@@ -300,38 +300,60 @@ syscall_handler_asm:
   mov rax, [rel KERNEL_CR3]
   mov cr3, rax           ; Switch to kernel page table
 
-  ; Build SyscallArgs struct on stack (must be 16-byte aligned)
+  ; Align stack to 16 bytes before building SyscallArgs
+  ; Current stack offset after pushes: 6*8 (callee-saved) + 3*8 (args) = 72 bytes from interrupt frame
+  ; We need RSP to be 16-byte aligned after sub rsp, 56 (for SyscallArgs)
+  ; and before call (which pushes 8 bytes)
+  
+  ; Build SyscallArgs struct on stack (7 * 8 = 56 bytes, padded to 64 for alignment)
   ; struct SyscallArgs { syscall_num, arg1, arg2, arg3, arg4, arg5, arg6 }
-  sub rsp, 64
+  ; Stack layout after pushes: [rsp] = r9, [rsp+8] = r8, [rsp+16] = r10
+  sub rsp, 56
   mov [rsp + 0], r12     ; syscall_num
   mov [rsp + 8], r13     ; arg1
   mov [rsp + 16], r14    ; arg2
   mov [rsp + 24], r15    ; arg3
-  mov rax, [rsp + 64]    ; arg4 (r10, saved on stack)
+  mov rax, [rsp + 72]    ; arg4 (r10, saved on stack at rsp+56+16)
   mov [rsp + 32], rax
-  mov rax, [rsp + 72]    ; arg5 (r8, saved on stack)
+  mov rax, [rsp + 64]    ; arg5 (r8, saved on stack at rsp+56+8)
   mov [rsp + 40], rax
-  mov rax, [rsp + 80]    ; arg6 (r9, saved on stack)
+  mov rax, [rsp + 56]    ; arg6 (r9, saved on stack at rsp+56)
   mov [rsp + 48], rax
 
   ; Pass pointer to SyscallArgs as first argument
   mov rdi, rsp
   call syscall_entry
 
+  ; Debug point A: after syscall_entry returns
+  mov al, 'A'
+  out 0xe9, al
+
   ; Return value is already in RAX, save it in rbp (callee-saved)
   mov rbp, rax
 
   ; Clean up SyscallArgs
-  add rsp, 64
+  add rsp, 56
+
+  ; Debug point B: after cleanup SyscallArgs
+  mov al, 'B'
+  out 0xe9, al
 
   ; Restore user CR3 before returning to user mode
   mov cr3, rbx
+
+  ; Debug point C: after CR3 restore
+  mov al, 'C'
+  out 0xe9, al
 
   ; Clean up saved args (r10, r8, r9)
   add rsp, 24
 
   ; Move return value to RAX
   mov rax, rbp
+
+  ; Debug point D: before restoring callee-saved registers
+  mov al, 'D'
+  out 0xe9, al
 
   ; Restore callee-saved registers
   pop r15
@@ -341,7 +363,25 @@ syscall_handler_asm:
   pop rbp
   pop rbx
 
-  ; iretq will restore RFLAGS from user stack, re-enabling interrupts
+  ; Debug point E: before iretq, dump stack frame
+  mov al, 'E'
+  out 0xe9, al
+  
+  ; Output RIP low byte (what we're returning to)
+  mov al, [rsp]
+  out 0xe9, al
+  
+  ; Debug: output RSP value's high nibble to see if it's user or kernel space
+  mov rax, [rsp + 24]   ; RSP from interrupt frame
+  shr rax, 44           ; Get bits 44-47 (should be 0 for user, F for kernel)
+  and al, 0x0F
+  add al, '0'
+  cmp al, '9'
+  jle .print_rsp_nibble
+  add al, 7             ; Convert to A-F
+.print_rsp_nibble:
+  out 0xe9, al
+
   iretq
 
 ; Jump to user mode

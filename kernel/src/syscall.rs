@@ -15,6 +15,7 @@
 use alloc::vec;
 use crate::drivers::fs::init::FILESYSTEM_TABLE;
 use crate::console::Console;
+use crate::layer::LAYER_MANAGER;
 
 /// System call numbers (Linux-compatible)
 #[repr(usize)]
@@ -68,6 +69,11 @@ pub struct SyscallArgs {
 ///
 /// Called from the syscall interrupt handler with saved register state
 pub fn syscall_handler(args: &SyscallArgs) -> isize {
+    // Debug: output syscall number via QEMU debug port (avoid println which may deadlock)
+    unsafe {
+        core::arch::asm!("mov al, 'H'", "out 0xe9, al", options(nostack, preserves_flags));
+    }
+    
     let syscall_num = match SyscallNumber::try_from(args.syscall_num) {
         Ok(num) => num,
         Err(_) => return SyscallError::InvalidSyscall as isize,
@@ -198,6 +204,11 @@ pub fn sys_read(fd: i32, buf: *mut u8, count: usize) -> isize {
 /// * Number of bytes written on success (>= 0)
 /// * Negative error code on failure
 pub fn sys_write(fd: i32, buf: *const u8, count: usize) -> isize {
+    // Debug point W1
+    unsafe {
+        core::arch::asm!("mov al, 'W'", "out 0xe9, al", options(nostack, preserves_flags));
+    }
+
     if buf.is_null() || count == 0 {
         return SyscallError::InvalidArg as isize;
     }
@@ -207,33 +218,73 @@ pub fn sys_write(fd: i32, buf: *const u8, count: usize) -> isize {
         return SyscallError::InvalidFd as isize;
     }
 
+    // Debug point W2
+    unsafe {
+        core::arch::asm!("mov al, 'w'", "out 0xe9, al", options(nostack, preserves_flags));
+        // Output fd value as hex digit (0-F)
+        let fd_char = if fd >= 0 && fd < 10 {
+            b'0' + fd as u8
+        } else if fd >= 10 && fd < 16 {
+            b'A' + (fd - 10) as u8
+        } else {
+            b'?'
+        };
+        core::arch::asm!("out 0xe9, al", in("al") fd_char, options(nostack, preserves_flags));
+    }
+
     // Handle stdout (fd 1) and stderr (fd 2)
     if fd == 1 || fd == 2 {
+        // Note: buf points to user space, which should be accessible since
+        // we copied PML4[0] (identity mapping) to user page tables
         let data = unsafe {
             core::slice::from_raw_parts(buf, count)
         };
 
+        // Debug point W3 - about to access string
+        unsafe {
+            core::arch::asm!("mov al, 'X'", "out 0xe9, al", options(nostack, preserves_flags));
+        }
+
         // Convert to string and print
         if let Ok(s) = core::str::from_utf8(data) {
-            // Write to console
-            let mut console = Console::instance();
-            if let Some(ref mut con) = *console {
-                con.put_string(s);
+            // Debug point W4 - got valid string
+            unsafe {
+                core::arch::asm!("mov al, 'Y'", "out 0xe9, al", options(nostack, preserves_flags));
             }
+            
+            // Write to console (use block scope to release lock before draw)
+            {
+                let mut console = Console::instance();
+                if let Some(ref mut con) = *console {
+                    con.put_string(s);
+                }
+            }
+            
+            // Debug point W5 - console write done
+            unsafe {
+                core::arch::asm!("mov al, 'Z'", "out 0xe9, al", options(nostack, preserves_flags));
+            }
+            
+            // Update screen
+            LAYER_MANAGER.lock().as_mut().unwrap().draw();
             return count as isize;
         } else {
             // Write raw bytes as characters (convert each byte to a char string)
-            let mut console = Console::instance();
-            if let Some(ref mut con) = *console {
-                for &byte in data {
-                    // Create a temporary buffer for single character
-                    let mut buf = [0u8; 4];
-                    let c = byte as char;
-                    if let Some(s) = c.encode_utf8(&mut buf).get(..c.len_utf8()) {
-                        con.put_string(s);
+            {
+                let mut console = Console::instance();
+                if let Some(ref mut con) = *console {
+                    for &byte in data {
+                        // Create a temporary buffer for single character
+                        let mut buf = [0u8; 4];
+                        let c = byte as char;
+                        if let Some(s) = c.encode_utf8(&mut buf).get(..c.len_utf8()) {
+                            con.put_string(s);
+                        }
                     }
                 }
             }
+            // Update screen
+            LAYER_MANAGER.lock().as_mut().unwrap().draw();
             return count as isize;
         }
     }
@@ -279,10 +330,51 @@ pub fn sys_close(fd: i32) -> isize {
 /// with a pointer to the SyscallArgs structure on the stack.
 #[no_mangle]
 pub extern "C" fn syscall_entry(args: *const SyscallArgs) -> isize {
+    // Disable interrupts during syscall to prevent timer interrupt interference
+    unsafe { core::arch::asm!("cli"); }
+    
+    // Debug point 1: entry
+    unsafe {
+        core::arch::asm!("mov al, '1'", "out 0xe9, al", options(nostack, preserves_flags));
+    }
+    
     if args.is_null() {
+        unsafe { core::arch::asm!("sti"); }
         return SyscallError::InvalidArg as isize;
     }
 
-    let args_ref = unsafe { &*args };
-    syscall_handler(args_ref)
+    // Debug point 2: args valid
+    unsafe {
+        core::arch::asm!("mov al, '2'", "out 0xe9, al", options(nostack, preserves_flags));
+    }
+
+    // Read fields individually using raw pointer arithmetic to handle any alignment
+    let args_copy = unsafe {
+        let base = args as *const usize;
+        SyscallArgs {
+            syscall_num: core::ptr::read_unaligned(base),
+            arg1: core::ptr::read_unaligned(base.add(1)),
+            arg2: core::ptr::read_unaligned(base.add(2)),
+            arg3: core::ptr::read_unaligned(base.add(3)),
+            arg4: core::ptr::read_unaligned(base.add(4)),
+            arg5: core::ptr::read_unaligned(base.add(5)),
+            arg6: core::ptr::read_unaligned(base.add(6)),
+        }
+    };
+    
+    // Debug point 3: before handler
+    unsafe {
+        core::arch::asm!("mov al, '3'", "out 0xe9, al", options(nostack, preserves_flags));
+    }
+    
+    let result = syscall_handler(&args_copy);
+    
+    // Debug point 4: after handler
+    unsafe {
+        core::arch::asm!("mov al, '4'", "out 0xe9, al", options(nostack, preserves_flags));
+    }
+    
+    // Re-enable interrupts before returning to user mode
+    unsafe { core::arch::asm!("sti"); }
+    result
 }

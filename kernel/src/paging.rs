@@ -344,7 +344,7 @@ impl PageTableManager {
         let pml4 = phys_to_ptr::<PageTable>(phys);
 
         unsafe {
-            // Copy higher half kernel mappings (PML4[256])
+            // Copy higher half kernel mappings (PML4[511])
             // This ensures kernel code/data is accessible when switching to kernel mode
             let kernel_pml4 = addr_of!(KERNEL_PML4);
             (*pml4).entries[KERNEL_PML4_INDEX] = (*kernel_pml4).entries[KERNEL_PML4_INDEX];
