@@ -18,6 +18,11 @@ pub extern "C" fn _start() -> ! {
     // Print Hello World using the write system call
     let message = b"Hello, World from Horse OS!\n";
     let _ = write(STDOUT, message);
+    // Successfully returned from syscall!
+
+    // Note: 'out' instruction is privileged and cannot be used in user mode
+    // Use write syscall instead for debug output
+    let _ = write(STDOUT, b"Syscall returned successfully!\n");
 
     // Since we don't have an exit syscall yet, loop forever
     // In a real program, you would call exit(0) here
