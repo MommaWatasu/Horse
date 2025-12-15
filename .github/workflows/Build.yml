@@ -14,6 +14,7 @@ jobs:
           override: true
       - name: Setup Environment
         run: |
+          sudo apt update
           sudo apt install nasm
           sudo apt install lld
           sudo apt install qemu-utils
