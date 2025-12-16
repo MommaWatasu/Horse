@@ -24,12 +24,8 @@ pub extern "C" fn _start() -> ! {
     // Use write syscall instead for debug output
     let _ = write(STDOUT, b"Syscall returned successfully!\n");
 
-    // Since we don't have an exit syscall yet, loop forever
-    // In a real program, you would call exit(0) here
-    loop {
-        // Hint to the CPU that we're in a spin loop
-        core::hint::spin_loop();
-    }
+    // Exit the process with status code 0 (success)
+    exit(0);
 }
 
 /// Panic handler

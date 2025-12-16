@@ -101,7 +101,7 @@ fn welcome_message() {
     println!("Horse is the OS made by Momma Watasu. This OS is distributed under the MIT license.")
 }
 
-/// Load and execute the gallop user program from filesystem
+/// Load and execute the gallop user program from filesystem as a process
 fn run_gallop() {
     info!("Loading gallop user program...");
 
@@ -139,11 +139,53 @@ fn run_gallop() {
     // Truncate buffer to actual size
     elf_buffer.truncate(elf_size);
 
-    // Drop the filesystem lock before executing (exec never returns)
+    // Drop the filesystem lock
     drop(fs_table);
 
-    // Execute the ELF
-    exec::run_elf(&elf_buffer);
+    // Load the program (parse ELF and set up page tables)
+    let program = match exec::load_program(&elf_buffer) {
+        Ok(p) => p,
+        Err(e) => {
+            error!("Failed to load program: {:?}", e);
+            return;
+        }
+    };
+
+    info!("Program loaded: entry=0x{:x}, stack=0x{:x}, cr3=0x{:x}",
+          program.entry_point, program.stack_pointer, program.cr3);
+
+    // Create a new process and initialize it with user context
+    {
+        let mut manager_lock = PROCESS_MANAGER.lock();
+        let manager = manager_lock.get_mut().expect("ProcessManager not initialized");
+
+        // Create a new process
+        let proc = manager.new_proc();
+        let proc_id = proc.lock().id();
+
+        // Initialize the process with user-mode context
+        proc.lock().init_user_context(
+            program.entry_point,
+            program.stack_pointer,
+            program.cr3,
+        );
+
+        // Wake up the process (add to run queue)
+        manager.wake_up(proc);
+
+        info!("User process {} created, switching to it...", proc_id);
+
+        // Update current process ID
+        *proc::CURRENT_PROCESS_ID.lock() = proc_id;
+
+        // Switch from kernel process to user process
+        // This saves the kernel's context and switches to the user process
+        manager.switch_process(false);
+    }
+
+    // When we return here, it means the user process has exited
+    // and control has returned to the kernel
+    info!("User process finished, returned to kernel");
 }
 
 fn initialize(fb_config: *mut FrameBufferConfig) {

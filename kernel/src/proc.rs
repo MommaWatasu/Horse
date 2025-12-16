@@ -9,10 +9,13 @@ use spin::{
     Once
 };
 
-use crate::{drivers::timer::TIMER_MANAGER, segment::{KERNEL_CS, KERNEL_SS}};
+use crate::{drivers::timer::TIMER_MANAGER, segment::{KERNEL_CS, KERNEL_SS, USER_CS, USER_SS}};
 
 const DEFAULT_CONTEXT: ContextWrapper = ContextWrapper(ProcessContext { cr3: 0, rip: 0, rflags: 0, reserved1: 0, cs: 0, ss: 0, fs: 0, gs: 0, rax: 0, rbx: 0, rcx: 0, rdx: 0, rdi: 0, rsi: 0, rsp: 0, rbp: 0, r8: 0, r9: 0, r10: 0, r11: 0, r12: 0, r13: 0, r14: 0, r15: 0, fxsave_area: [0; 512] });
 pub static PROCESS_MANAGER: Mutex<Once<ProcessManager>> = Mutex::new(Once::new());
+
+/// Current running process ID (0 means no user process)
+pub static CURRENT_PROCESS_ID: Mutex<usize> = Mutex::new(0);
 
 extern "C" {
     pub fn switch_context(next_ctx: u64, current_ctx: u64);
@@ -130,6 +133,43 @@ impl ProcessManager {
 
         unsafe { switch_context(next_proc.lock().context().as_ptr(), current_proc_ptr) }
     }
+
+    /// Terminate the current process and switch to the next one
+    /// Returns the exit status if there was a process to terminate
+    pub fn terminate_current(&mut self, _exit_status: i32) -> Option<i32> {
+        if self.run_queue.is_empty() {
+            return None;
+        }
+
+        // Remove the current process from the run queue
+        let current_proc = self.run_queue.pop_front().unwrap();
+        let current_id = current_proc.lock().id();
+
+        crate::info!("Process {} terminated", current_id);
+
+        // If there are no more processes, return
+        if self.run_queue.is_empty() {
+            crate::info!("No more processes in run queue");
+            *CURRENT_PROCESS_ID.lock() = 0;
+            return Some(_exit_status);
+        }
+
+        // Switch to the next process
+        let current_proc_ptr = current_proc.lock().context().as_ptr();
+        let next_proc = self.run_queue.front_mut().unwrap();
+        let next_id = next_proc.lock().id();
+        *CURRENT_PROCESS_ID.lock() = next_id;
+
+        crate::info!("Switching to process {}", next_id);
+        unsafe { switch_context(next_proc.lock().context().as_ptr(), current_proc_ptr) }
+
+        Some(_exit_status)
+    }
+
+    /// Get the ID of the current running process
+    pub fn current_id(&self) -> Option<usize> {
+        self.run_queue.front().map(|p| p.lock().id())
+    }
 }
 
 #[derive(Eq, PartialEq)]
@@ -161,11 +201,37 @@ impl Process {
         ctx.ss = KERNEL_SS as u64;
         ctx.rsp = (stack_end & !0xfu64) - 8;
         ctx.rip = f as *const () as u64;
-        
+
         ctx.fxsave_area[25] = 0x8;
         ctx.fxsave_area[26] = 0xf;
         ctx.fxsave_area[27] = 0x1;
     }
+
+    /// Initialize context for a user-mode process
+    ///
+    /// # Arguments
+    /// * `entry_point` - Entry point address in user space
+    /// * `user_stack` - User stack pointer (top of stack)
+    /// * `cr3` - Page table physical address for this process
+    pub fn init_user_context(&mut self, entry_point: u64, user_stack: u64, cr3: u64) {
+        // Allocate kernel stack for this process (used during syscalls/interrupts)
+        let stack_size = Self::DEFAULT_STACK_BYTES / size_of::<u64>();
+        self.stack.resize(stack_size, 0);
+
+        let ctx = self.context.unwrap();
+        ctx.cr3 = cr3;
+        ctx.rflags = 0x202;  // IF=1, reserved bit 1=1
+        ctx.cs = USER_CS as u64;
+        ctx.ss = USER_SS as u64;
+        ctx.rsp = user_stack & !0xFu64;  // 16-byte aligned
+        ctx.rip = entry_point;
+
+        // Initialize FPU state
+        ctx.fxsave_area[25] = 0x8;
+        ctx.fxsave_area[26] = 0xf;
+        ctx.fxsave_area[27] = 0x1;
+    }
+
     pub fn context(&mut self) -> &mut ContextWrapper {
         return &mut self.context
     }

@@ -5,6 +5,25 @@
 use crate::error::{check_syscall, Result};
 use crate::raw::{syscall1, syscall2, syscall3, Fd, SyscallNum};
 
+/// Exit the process
+///
+/// # Arguments
+///
+/// * `status` - Exit status code (0 for success, non-zero for error)
+///
+/// # Note
+///
+/// This function never returns.
+pub fn exit(status: i32) -> ! {
+    unsafe {
+        syscall1(SyscallNum::Exit as usize, status as usize);
+    }
+    // Should never reach here, but loop forever just in case
+    loop {
+        core::hint::spin_loop();
+    }
+}
+
 /// File open flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpenFlags(u32);
