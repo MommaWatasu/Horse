@@ -209,12 +209,32 @@ extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
-    let proc = TIMER_MANAGER.lock().get_mut().unwrap().tick();
+    // Save user CR3 and switch to kernel CR3
+    // This is necessary because when interrupted from user mode, CR3 still points to user page table
+    let user_cr3: u64;
+    unsafe {
+        core::arch::asm!(
+            "mov {}, cr3",
+            "mov cr3, {}",
+            out(reg) user_cr3,
+            in(reg) paging::KERNEL_CR3,
+            options(nostack, preserves_flags)
+        );
+    }
+
+    let _proc = TIMER_MANAGER.lock().get_mut().unwrap().tick();
+    
     unsafe {
         notify_end_of_interrupt();
-        if proc {
-            PROCESS_MANAGER.lock().get_mut().unwrap().switch_process(false);
-        }
+    }
+    
+    // Restore user CR3 before returning
+    unsafe {
+        core::arch::asm!(
+            "mov cr3, {}",
+            in(reg) user_cr3,
+            options(nostack, preserves_flags)
+        );
     }
 }
 

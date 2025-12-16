@@ -6,3 +6,4 @@ target
 Cargo.lock
 horse-kernel
 boot.elf
+build

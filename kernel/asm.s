@@ -270,48 +270,114 @@ load_tss:
 ; Syscall interrupt handler (int 0x80)
 ; Arguments are passed in: RAX (syscall number), RDI, RSI, RDX, R10, R8, R9
 ; Return value in RAX
+;
+; Stack layout on entry (CPU pushes these when transitioning from Ring 3 -> Ring 0):
+;   [RSP+0]  = RIP (return address)
+;   [RSP+8]  = CS
+;   [RSP+16] = RFLAGS
+;   [RSP+24] = RSP (user stack)
+;   [RSP+32] = SS (user stack segment)
+;
 extern syscall_entry
+extern KERNEL_CR3
 global syscall_handler_asm
 syscall_handler_asm:
-  ; Save callee-saved registers
+  cli
+
+  ; First, save ALL registers we need before doing anything else
+  ; Save syscall number (RAX) first since we need RAX for CR3
+  push rax              ; syscall_num
+
+  ; Save user CR3
+  mov rax, cr3
+  push rax              ; user_cr3
+
+  ; Now switch to kernel page table
+  mov rax, [rel KERNEL_CR3]
+  mov cr3, rax
+
+  ; Save remaining syscall arguments and callee-saved registers
   push rbx
+  push rcx
+  push rdx
+  push rsi
+  push rdi
   push rbp
+  push r8
+  push r9
+  push r10
+  push r11
   push r12
   push r13
   push r14
   push r15
 
-  ; Build SyscallArgs struct on stack (must be 16-byte aligned)
+  ; Build SyscallArgs struct on stack
   ; struct SyscallArgs { syscall_num, arg1, arg2, arg3, arg4, arg5, arg6 }
-  sub rsp, 64            ; 7 * 8 = 56 bytes, rounded to 64 for alignment
-  mov [rsp + 0], rax     ; syscall_num
-  mov [rsp + 8], rdi     ; arg1
-  mov [rsp + 16], rsi    ; arg2
-  mov [rsp + 24], rdx    ; arg3
-  mov [rsp + 32], r10    ; arg4
-  mov [rsp + 40], r8     ; arg5
-  mov [rsp + 48], r9     ; arg6
+  ; 
+  ; Stack layout after all pushes (16 registers * 8 = 128 bytes):
+  ;   [RSP+0]=r15, [RSP+8]=r14, [RSP+16]=r13, [RSP+24]=r12
+  ;   [RSP+32]=r11, [RSP+40]=r10(arg4), [RSP+48]=r9(arg6), [RSP+56]=r8(arg5)
+  ;   [RSP+64]=rbp, [RSP+72]=rdi(arg1), [RSP+80]=rsi(arg2), [RSP+88]=rdx(arg3)
+  ;   [RSP+96]=rcx, [RSP+104]=rbx, [RSP+112]=user_cr3, [RSP+120]=syscall_num
+  ;   [RSP+128]=RIP, [RSP+136]=CS, [RSP+144]=RFLAGS, [RSP+152]=user_RSP, [RSP+160]=user_SS
 
-  ; Pass pointer to SyscallArgs as first argument
+  sub rsp, 56           ; Allocate SyscallArgs struct
+  
+  mov rax, [rsp + 56 + 120]  ; syscall_num
+  mov [rsp + 0], rax
+  mov rax, [rsp + 56 + 72]   ; arg1 (RDI)
+  mov [rsp + 8], rax
+  mov rax, [rsp + 56 + 80]   ; arg2 (RSI)
+  mov [rsp + 16], rax
+  mov rax, [rsp + 56 + 88]   ; arg3 (RDX)
+  mov [rsp + 24], rax
+  mov rax, [rsp + 56 + 40]   ; arg4 (R10)
+  mov [rsp + 32], rax
+  mov rax, [rsp + 56 + 56]   ; arg5 (R8)
+  mov [rsp + 40], rax
+  mov rax, [rsp + 56 + 48]   ; arg6 (R9)
+  mov [rsp + 48], rax
+
+  ; Call syscall handler
   mov rdi, rsp
   call syscall_entry
 
-  ; Return value is already in RAX, save it in RBX (callee-saved)
-  mov rbx, rax
+  ; Save return value
+  mov rbx, rax          ; Save return value in rbx temporarily
 
   ; Clean up SyscallArgs
-  add rsp, 64
+  add rsp, 56
 
-  ; Restore callee-saved registers
+  ; Restore all registers (except RAX which has return value)
   pop r15
   pop r14
   pop r13
   pop r12
+  pop r11
+  pop r10
+  pop r9
+  pop r8
   pop rbp
+  pop rdi
+  pop rsi
+  pop rdx
+  pop rcx
+  ; Skip rbx restore for now (it has return value)
+  add rsp, 8            ; skip saved rbx
 
-  ; Move return value to RAX (rbx will be popped next)
-  mov rax, rbx
-  pop rbx
+  ; Get user CR3 from stack
+  pop r11               ; user_cr3 -> r11
+  
+  ; Skip saved syscall_num
+  add rsp, 8
+
+  ; Move return value to RAX
+  mov rax, rbx          ; return value -> rax
+
+  ; Now RSP points to interrupt frame: RIP, CS, RFLAGS, RSP, SS
+  ; Switch to user CR3 right before iretq
+  mov cr3, r11
 
   iretq
 

@@ -15,6 +15,7 @@
 use alloc::vec;
 use crate::drivers::fs::init::FILESYSTEM_TABLE;
 use crate::console::Console;
+use crate::layer::LAYER_MANAGER;
 
 /// System call numbers (Linux-compatible)
 #[repr(usize)]
@@ -209,31 +210,42 @@ pub fn sys_write(fd: i32, buf: *const u8, count: usize) -> isize {
 
     // Handle stdout (fd 1) and stderr (fd 2)
     if fd == 1 || fd == 2 {
+        // Note: buf points to user space, which should be accessible since
+        // we copied PML4[0] (identity mapping) to user page tables
         let data = unsafe {
             core::slice::from_raw_parts(buf, count)
         };
 
         // Convert to string and print
         if let Ok(s) = core::str::from_utf8(data) {
-            // Write to console
-            let mut console = Console::instance();
-            if let Some(ref mut con) = *console {
-                con.put_string(s);
+            // Write to console (use block scope to release lock before draw)
+            {
+                let mut console = Console::instance();
+                if let Some(ref mut con) = *console {
+                    con.put_string(s);
+                }
             }
+            
+            // Update screen
+            LAYER_MANAGER.lock().as_mut().unwrap().draw();
             return count as isize;
         } else {
             // Write raw bytes as characters (convert each byte to a char string)
-            let mut console = Console::instance();
-            if let Some(ref mut con) = *console {
-                for &byte in data {
-                    // Create a temporary buffer for single character
-                    let mut buf = [0u8; 4];
-                    let c = byte as char;
-                    if let Some(s) = c.encode_utf8(&mut buf).get(..c.len_utf8()) {
-                        con.put_string(s);
+            {
+                let mut console = Console::instance();
+                if let Some(ref mut con) = *console {
+                    for &byte in data {
+                        // Create a temporary buffer for single character
+                        let mut buf = [0u8; 4];
+                        let c = byte as char;
+                        if let Some(s) = c.encode_utf8(&mut buf).get(..c.len_utf8()) {
+                            con.put_string(s);
+                        }
                     }
                 }
             }
+            // Update screen
+            LAYER_MANAGER.lock().as_mut().unwrap().draw();
             return count as isize;
         }
     }
@@ -283,6 +295,19 @@ pub extern "C" fn syscall_entry(args: *const SyscallArgs) -> isize {
         return SyscallError::InvalidArg as isize;
     }
 
-    let args_ref = unsafe { &*args };
-    syscall_handler(args_ref)
+    // Read fields individually using raw pointer arithmetic to handle any alignment
+    let args_copy = unsafe {
+        let base = args as *const usize;
+        SyscallArgs {
+            syscall_num: core::ptr::read_unaligned(base),
+            arg1: core::ptr::read_unaligned(base.add(1)),
+            arg2: core::ptr::read_unaligned(base.add(2)),
+            arg3: core::ptr::read_unaligned(base.add(3)),
+            arg4: core::ptr::read_unaligned(base.add(4)),
+            arg5: core::ptr::read_unaligned(base.add(5)),
+            arg6: core::ptr::read_unaligned(base.add(6)),
+        }
+    };
+    
+    syscall_handler(&args_copy)
 }
