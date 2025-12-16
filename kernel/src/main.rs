@@ -283,17 +283,23 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
 
     // Handle process switching if timer says we should
     if should_switch {
-        // Prepare switch while holding the lock, then drop it before switching
+        // Use try_lock to avoid deadlock if another context holds the lock
+        // (e.g., run_gallop is setting up a process)
+        // If we can't get the lock, skip process switching for this tick
         let switch_ptrs = {
-            let mut manager_lock = PROCESS_MANAGER.lock();
-            if let Some(manager) = manager_lock.get_mut() {
-                // Only switch if there are multiple processes
-                if manager.run_queue_len() > 1 {
-                    manager.prepare_switch()
+            if let Some(mut manager_lock) = PROCESS_MANAGER.try_lock() {
+                if let Some(manager) = manager_lock.get_mut() {
+                    // Only switch if there are multiple processes
+                    if manager.run_queue_len() > 1 {
+                        manager.prepare_switch()
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
             } else {
+                // Lock is held elsewhere, skip this tick
                 None
             }
         };
