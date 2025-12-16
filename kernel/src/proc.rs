@@ -170,6 +170,66 @@ impl ProcessManager {
     pub fn current_id(&self) -> Option<usize> {
         self.run_queue.front().map(|p| p.lock().id())
     }
+
+    /// Get the number of processes in the run queue
+    pub fn run_queue_len(&self) -> usize {
+        self.run_queue.len()
+    }
+
+    /// Prepare for context switch and return the context pointers
+    /// This rotates the run queue (moves current to back) but doesn't switch
+    /// Returns (next_context_ptr, current_context_ptr) for use with switch_context
+    pub fn prepare_switch(&mut self) -> Option<(u64, u64)> {
+        if self.run_queue.len() < 2 {
+            return None;
+        }
+
+        let current_proc = self.run_queue.pop_front().unwrap();
+        let current_proc_ptr = current_proc.lock().context().as_ptr();
+        self.run_queue.push_back(current_proc);
+
+        let next_proc = self.run_queue.front_mut().unwrap();
+        let next_proc_ptr = next_proc.lock().context().as_ptr();
+
+        Some((next_proc_ptr, current_proc_ptr))
+    }
+
+    /// Prepare to terminate current process and switch to next
+    /// Returns (next_context_ptr, current_context_ptr) or None if no other processes
+    pub fn prepare_terminate(&mut self, exit_status: i32) -> Option<(u64, u64)> {
+        if self.run_queue.is_empty() {
+            return None;
+        }
+
+        // Remove the current process from the run queue
+        let current_proc = self.run_queue.pop_front().unwrap();
+        let current_id = current_proc.lock().id();
+        let current_proc_ptr = current_proc.lock().context().as_ptr();
+
+        crate::info!("Process {} terminated with status {}", current_id, exit_status);
+
+        // If there are no more processes, return None
+        if self.run_queue.is_empty() {
+            crate::info!("No more processes in run queue");
+            *CURRENT_PROCESS_ID.lock() = 0;
+            return None;
+        }
+
+        // Get the next process context
+        let next_proc = self.run_queue.front_mut().unwrap();
+        let next_id = next_proc.lock().id();
+        let next_proc_ptr = next_proc.lock().context().as_ptr();
+        *CURRENT_PROCESS_ID.lock() = next_id;
+
+        crate::info!("Will switch to process {}", next_id);
+        Some((next_proc_ptr, current_proc_ptr))
+    }
+}
+
+/// Perform context switch after dropping the ProcessManager lock
+/// This is safe to call after prepare_switch or prepare_terminate
+pub unsafe fn do_switch_context(next_ctx: u64, current_ctx: u64) {
+    switch_context(next_ctx, current_ctx);
 }
 
 #[derive(Eq, PartialEq)]

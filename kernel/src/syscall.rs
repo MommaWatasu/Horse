@@ -16,7 +16,7 @@ use alloc::vec;
 use crate::drivers::fs::init::FILESYSTEM_TABLE;
 use crate::console::Console;
 use crate::layer::LAYER_MANAGER;
-use crate::proc::PROCESS_MANAGER;
+use crate::proc::{PROCESS_MANAGER, do_switch_context};
 
 /// System call numbers (Linux-compatible)
 #[repr(usize)]
@@ -300,10 +300,22 @@ pub fn sys_close(fd: i32) -> isize {
 pub fn sys_exit(status: i32) -> isize {
     crate::info!("sys_exit called with status: {}", status);
 
-    // Get the process manager and terminate the current process
-    let mut manager_lock = PROCESS_MANAGER.lock();
-    if let Some(manager) = manager_lock.get_mut() {
-        manager.terminate_current(status);
+    // Prepare to terminate and get switch pointers while holding the lock
+    // Then drop the lock before actually switching to avoid deadlock
+    let switch_ptrs = {
+        let mut manager_lock = PROCESS_MANAGER.lock();
+        if let Some(manager) = manager_lock.get_mut() {
+            manager.prepare_terminate(status)
+        } else {
+            None
+        }
+    };
+    // Lock is now dropped
+
+    // Perform the actual context switch if there's another process
+    if let Some((next_ctx, current_ctx)) = switch_ptrs {
+        crate::info!("Switching to next process...");
+        unsafe { do_switch_context(next_ctx, current_ctx); }
     }
 
     // If we return here, it means there are no more processes

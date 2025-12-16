@@ -177,10 +177,21 @@ fn run_gallop() {
 
         // Update current process ID
         *proc::CURRENT_PROCESS_ID.lock() = proc_id;
+    }
 
-        // Switch from kernel process to user process
-        // This saves the kernel's context and switches to the user process
-        manager.switch_process(false);
+    // Switch from kernel process to user process
+    // IMPORTANT: Lock must be dropped before calling switch_context because:
+    // 1. switch_context doesn't return until the user process exits
+    // 2. When user calls exit, sys_exit needs to acquire PROCESS_MANAGER lock
+    // 3. If we hold the lock here, it would cause a deadlock
+    let switch_ptrs = {
+        let mut manager_lock = PROCESS_MANAGER.lock();
+        let manager = manager_lock.get_mut().expect("ProcessManager not initialized");
+        manager.prepare_switch()
+    };
+    // Lock is now dropped, safe to switch
+    if let Some((next_ctx, current_ctx)) = switch_ptrs {
+        unsafe { proc::do_switch_context(next_ctx, current_ctx); }
     }
 
     // When we return here, it means the user process has exited
@@ -264,13 +275,40 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
         );
     }
 
-    let _proc = TIMER_MANAGER.lock().get_mut().unwrap().tick();
-    
+    let should_switch = TIMER_MANAGER.lock().get_mut().unwrap().tick();
+
     unsafe {
         notify_end_of_interrupt();
     }
-    
-    // Restore user CR3 before returning
+
+    // Handle process switching if timer says we should
+    if should_switch {
+        // Prepare switch while holding the lock, then drop it before switching
+        let switch_ptrs = {
+            let mut manager_lock = PROCESS_MANAGER.lock();
+            if let Some(manager) = manager_lock.get_mut() {
+                // Only switch if there are multiple processes
+                if manager.run_queue_len() > 1 {
+                    manager.prepare_switch()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+        // Lock is dropped here
+
+        // Perform context switch if needed
+        // Note: When switch happens, this function won't return normally
+        // Instead, control transfers to the next process
+        if let Some((next_ctx, current_ctx)) = switch_ptrs {
+            unsafe { proc::do_switch_context(next_ctx, current_ctx); }
+            // If we somehow return here (shouldn't happen), restore CR3
+        }
+    }
+
+    // Restore user CR3 before returning (only reached if no switch happened)
     unsafe {
         core::arch::asm!(
             "mov cr3, {}",
