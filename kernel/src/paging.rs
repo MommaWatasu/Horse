@@ -344,9 +344,16 @@ impl PageTableManager {
         let pml4 = phys_to_ptr::<PageTable>(phys);
 
         unsafe {
+            // Copy kernel mappings from kernel page table
+            let kernel_pml4 = addr_of!(KERNEL_PML4);
+
+            // Copy lower half identity mapping (PML4[0])
+            // This is needed because ProcessContext and other kernel data structures
+            // are in this region, and switch_context accesses them after CR3 switch
+            (*pml4).entries[0] = (*kernel_pml4).entries[0];
+
             // Copy higher half kernel mappings (PML4[511])
             // This ensures kernel code/data is accessible when switching to kernel mode
-            let kernel_pml4 = addr_of!(KERNEL_PML4);
             (*pml4).entries[KERNEL_PML4_INDEX] = (*kernel_pml4).entries[KERNEL_PML4_INDEX];
         }
 
