@@ -6,6 +6,7 @@
 
 mod acpi;
 mod ascii_font;
+pub mod debugcon;
 mod memory_allocator;
 pub mod paging;
 mod queue;
@@ -154,49 +155,31 @@ fn run_gallop() {
     info!("Program loaded: entry=0x{:x}, stack=0x{:x}, cr3=0x{:x}",
           program.entry_point, program.stack_pointer, program.cr3);
 
-    // Create a new process and initialize it with user context
+
+    // disable interrupts before manipulating process manager
+    disable();
+
     {
-        let mut manager_lock = PROCESS_MANAGER.lock();
-        let manager = manager_lock.get_mut().expect("ProcessManager not initialized");
-
         // Create a new process
-        let proc = manager.new_proc();
-        let proc_id = proc.lock().id();
-
-        // Initialize the process with user-mode context
-        proc.lock().init_user_context(
-            program.entry_point,
-            program.stack_pointer,
-            program.cr3,
-        );
-
-        // Wake up the process (add to run queue)
-        manager.wake_up(proc);
-
-        info!("User process {} created, switching to it...", proc_id);
-
-        // Update current process ID
-        *proc::CURRENT_PROCESS_ID.lock() = proc_id;
-    }
-
-    // Switch from kernel process to user process
-    // IMPORTANT: Lock must be dropped before calling switch_context because:
-    // 1. switch_context doesn't return until the user process exits
-    // 2. When user calls exit, sys_exit needs to acquire PROCESS_MANAGER lock
-    // 3. If we hold the lock here, it would cause a deadlock
-    let switch_ptrs = {
         let mut manager_lock = PROCESS_MANAGER.lock();
         let manager = manager_lock.get_mut().expect("ProcessManager not initialized");
-        manager.prepare_switch()
-    };
-    // Lock is now dropped, safe to switch
-    if let Some((next_ctx, current_ctx)) = switch_ptrs {
-        unsafe { proc::do_switch_context(next_ctx, current_ctx); }
+        let proc = manager.new_proc();
+
+        // Initialize the process with user-mode context (outside of manager lock)
+        {
+            proc.lock().init_user_context(
+                program.entry_point,
+                program.stack_pointer,
+                program.cr3,
+            );
+        }
+
+        // Wake up the process
+        manager_lock.get_mut().unwrap().wake_up(proc);
     }
 
-    // When we return here, it means the user process has exited
-    // and control has returned to the kernel
-    info!("User process finished, returned to kernel");
+    // re-enable interrupts
+    enable();
 }
 
 fn initialize(fb_config: *mut FrameBufferConfig) {
@@ -276,45 +259,26 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
     }
 
     let should_switch = TIMER_MANAGER.lock().get_mut().unwrap().tick();
+    
+    // Get context pointers while holding the lock, then release it before switch_context
+    // This is critical because switch_context doesn't return (it uses iretq),
+    // so any locks held would never be released, causing deadlock.
+    let switch_contexts = if should_switch {
+        PROCESS_MANAGER.lock().get_mut().unwrap().prepare_switch()
+    } else {
+        None
+    };
 
     unsafe {
         notify_end_of_interrupt();
-    }
-
-    // Handle process switching if timer says we should
-    if should_switch {
-        // Use try_lock to avoid deadlock if another context holds the lock
-        // (e.g., run_gallop is setting up a process)
-        // If we can't get the lock, skip process switching for this tick
-        let switch_ptrs = {
-            if let Some(mut manager_lock) = PROCESS_MANAGER.try_lock() {
-                if let Some(manager) = manager_lock.get_mut() {
-                    // Only switch if there are multiple processes
-                    if manager.run_queue_len() > 1 {
-                        manager.prepare_switch()
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                // Lock is held elsewhere, skip this tick
-                None
-            }
-        };
-        // Lock is dropped here
-
-        // Perform context switch if needed
-        // Note: When switch happens, this function won't return normally
-        // Instead, control transfers to the next process
-        if let Some((next_ctx, current_ctx)) = switch_ptrs {
-            unsafe { proc::do_switch_context(next_ctx, current_ctx); }
-            // If we somehow return here (shouldn't happen), restore CR3
+        
+        if let Some((next_ctx, current_ctx)) = switch_contexts {
+            // Lock is already released here, safe to call switch_context
+            proc::do_switch_context(next_ctx, current_ctx);
         }
     }
-
-    // Restore user CR3 before returning (only reached if no switch happened)
+    
+    // Restore user CR3 before returning
     unsafe {
         core::arch::asm!(
             "mov cr3, {}",
@@ -330,6 +294,32 @@ extern "x86-interrupt" fn handler_page_fault(
 ) {
     // Get the faulting address from CR2
     let faulting_address = paging::get_cr2();
+
+    // Output to debugcon for debugging
+    debugcon::write_str("\n=== PAGE FAULT ===");
+    debugcon::write_str("\nFaulting address: ");
+    debugcon::write_hex(faulting_address);
+    debugcon::write_str("\nError code: ");
+    debugcon::write_hex(error_code.bits());
+    debugcon::write_str("\n  Present: ");
+    debugcon::write_str(if error_code.contains(PageFaultErrorCode::PROTECTION_VIOLATION) { "true" } else { "false" });
+    debugcon::write_str("\n  Write: ");
+    debugcon::write_str(if error_code.contains(PageFaultErrorCode::CAUSED_BY_WRITE) { "true" } else { "false" });
+    debugcon::write_str("\n  User: ");
+    debugcon::write_str(if error_code.contains(PageFaultErrorCode::USER_MODE) { "true" } else { "false" });
+    debugcon::write_str("\n  Instruction fetch: ");
+    debugcon::write_str(if error_code.contains(PageFaultErrorCode::INSTRUCTION_FETCH) { "true" } else { "false" });
+    debugcon::write_str("\nRIP: ");
+    debugcon::write_hex(stack_frame.instruction_pointer.as_u64());
+    debugcon::write_str("\nRSP: ");
+    debugcon::write_hex(stack_frame.stack_pointer.as_u64());
+    debugcon::write_str("\nCS: ");
+    debugcon::write_hex(stack_frame.code_segment as u64);
+    debugcon::write_str("\nSS: ");
+    debugcon::write_hex(stack_frame.stack_segment as u64);
+    debugcon::write_str("\nRFLAGS: ");
+    debugcon::write_hex(stack_frame.cpu_flags);
+    debugcon::write_str("\n==================\n");
 
     error!(
         "PAGE FAULT!\n  Faulting address: 0x{:016x}\n  Error code: {:?}\n  Stack frame: {:#?}",
