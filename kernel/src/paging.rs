@@ -89,6 +89,11 @@ impl PageTableFlags {
     pub const fn intersection(self, other: Self) -> Self {
         Self(self.0 & other.0)
     }
+
+    /// Remove flags from self (self & !other)
+    pub const fn difference(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
+    }
 }
 
 impl core::ops::BitOr for PageTableFlags {
@@ -338,15 +343,52 @@ impl PageTableManager {
     /// Create a new user page table with kernel mappings
     /// Returns (physical_address, virtual_pointer)
     pub fn create_user_page_table(&self) -> Option<(u64, *mut PageTable)> {
-        use core::ptr::addr_of;
-
         let phys = self.allocate_page_table_phys()?;
         let pml4 = phys_to_ptr::<PageTable>(phys);
 
         unsafe {
+            // Copy kernel mappings from kernel page table
+            let kernel_pml4 = core::ptr::addr_of!(KERNEL_PML4);
+
+            // For PML4[0] (low addresses where user programs live), we need to create
+            // a COPY of the page table hierarchy, not just copy the pointer.
+            // This is because we may need to modify entries (e.g., split huge pages)
+            // without affecting the kernel's page tables.
+            let kernel_pml4_0 = (*kernel_pml4).entries[0];
+            if kernel_pml4_0.is_present() {
+                // Create a new PDPT for this user process
+                let user_pdpt_phys = self.allocate_page_table_phys()?;
+                let user_pdpt = phys_to_ptr::<PageTable>(user_pdpt_phys);
+                
+                // Copy entries from kernel's PDPT
+                let kernel_pdpt = phys_to_ptr::<PageTable>(kernel_pml4_0.addr());
+                for i in 0..PAGE_TABLE_ENTRIES {
+                    let kernel_pdpt_entry = (*kernel_pdpt).entries[i];
+                    if kernel_pdpt_entry.is_present() {
+                        // Create a new PD for this PDPT entry
+                        let user_pd_phys = self.allocate_page_table_phys()?;
+                        let user_pd = phys_to_ptr::<PageTable>(user_pd_phys);
+                        
+                        // Copy PD entries from kernel
+                        let kernel_pd = phys_to_ptr::<PageTable>(kernel_pdpt_entry.addr());
+                        core::ptr::copy_nonoverlapping(
+                            (*kernel_pd).entries.as_ptr(),
+                            (*user_pd).entries.as_mut_ptr(),
+                            PAGE_TABLE_ENTRIES,
+                        );
+                        
+                        // Set user PDPT entry to point to copied PD
+                        (*user_pdpt).entries[i].set(user_pd_phys, kernel_pdpt_entry.flags());
+                    }
+                }
+                
+                // Set user PML4[0] to point to new PDPT
+                (*pml4).entries[0].set(user_pdpt_phys, kernel_pml4_0.flags());
+            }
+
             // Copy higher half kernel mappings (PML4[511])
             // This ensures kernel code/data is accessible when switching to kernel mode
-            let kernel_pml4 = addr_of!(KERNEL_PML4);
+            // We can share this directly since user code won't modify kernel mappings
             (*pml4).entries[KERNEL_PML4_INDEX] = (*kernel_pml4).entries[KERNEL_PML4_INDEX];
         }
 
@@ -372,9 +414,17 @@ impl PageTableManager {
             let pdpt_ref = &mut *pdpt;
             let pd = self.get_or_create_table(&mut pdpt_ref.entries[vaddr.pdpt_index()], flags)?;
 
-            // Get or create PT
+            // Check if PD entry is a huge page - if so, we need to split it
             let pd_ref = &mut *pd;
-            let pt = self.get_or_create_table(&mut pd_ref.entries[vaddr.pd_index()], flags)?;
+            let pd_entry = &mut pd_ref.entries[vaddr.pd_index()];
+            
+            let pt = if pd_entry.is_present() && pd_entry.is_huge() {
+                // Split the 2MB huge page into 512 x 4KB pages
+                self.split_huge_page(pd_entry, flags)?
+            } else {
+                // Get or create PT normally
+                self.get_or_create_table(pd_entry, flags)?
+            };
 
             // Set the page table entry
             let pt_ref = &mut *pt;
@@ -382,6 +432,53 @@ impl PageTableManager {
         }
 
         Ok(())
+    }
+
+    /// Split a 2MB huge page into 512 x 4KB pages
+    /// Returns the virtual pointer to the new page table
+    unsafe fn split_huge_page(
+        &self,
+        pd_entry: &mut PageTableEntry,
+        flags: PageTableFlags,
+    ) -> Result<*mut PageTable, &'static str> {
+        // Get the base physical address of the huge page
+        let huge_page_phys = pd_entry.addr();
+        let old_flags = pd_entry.flags();
+        
+        // Allocate a new page table
+        let pt_phys = self.allocate_page_table_phys()
+            .ok_or("Failed to allocate page table for splitting huge page")?;
+        let pt = phys_to_ptr::<PageTable>(pt_phys);
+        
+        // Fill the page table with 512 entries mapping the same physical region
+        // Preserve the original flags but remove HUGE_PAGE and add USER_ACCESSIBLE if needed
+        let base_flags = if flags.contains(PageTableFlags::USER_ACCESSIBLE) {
+            old_flags.union(PageTableFlags::USER_ACCESSIBLE).difference(PageTableFlags::HUGE_PAGE)
+        } else {
+            old_flags.difference(PageTableFlags::HUGE_PAGE)
+        };
+        
+        for i in 0..PAGE_TABLE_ENTRIES {
+            let page_phys = huge_page_phys + (i * PAGE_SIZE_4K) as u64;
+            (*pt).entries[i].set(page_phys, base_flags);
+        }
+        
+        // Update the PD entry to point to the new page table
+        let table_flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE |
+            if flags.contains(PageTableFlags::USER_ACCESSIBLE) {
+                PageTableFlags::USER_ACCESSIBLE
+            } else {
+                PageTableFlags::empty()
+            };
+        pd_entry.set(pt_phys, table_flags);
+        
+        // Flush TLB for the entire 2MB region
+        let virt_base = huge_page_phys; // For identity mapping, virt == phys
+        for i in 0..PAGE_TABLE_ENTRIES {
+            invalidate_page(virt_base + (i * PAGE_SIZE_4K) as u64);
+        }
+        
+        Ok(pt)
     }
 
     /// Map a 2MB huge page
@@ -421,6 +518,15 @@ impl PageTableManager {
     ) -> Result<*mut PageTable, &'static str> {
         if entry.is_present() {
             // Table already exists - entry contains physical address
+            // If we need USER_ACCESSIBLE and it's not set, update the entry
+            let current_flags = entry.flags();
+            if flags.contains(PageTableFlags::USER_ACCESSIBLE) 
+                && !current_flags.contains(PageTableFlags::USER_ACCESSIBLE) 
+            {
+                // Add USER_ACCESSIBLE flag to existing entry
+                let new_flags = current_flags | PageTableFlags::USER_ACCESSIBLE;
+                entry.set(entry.addr(), new_flags);
+            }
             // Convert to virtual address for access
             let phys = entry.addr();
             Ok(phys_to_ptr::<PageTable>(phys))

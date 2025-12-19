@@ -16,6 +16,7 @@ use alloc::vec;
 use crate::drivers::fs::init::FILESYSTEM_TABLE;
 use crate::console::Console;
 use crate::layer::LAYER_MANAGER;
+use crate::proc::{PROCESS_MANAGER, do_switch_context};
 
 /// System call numbers (Linux-compatible)
 #[repr(usize)]
@@ -25,6 +26,7 @@ pub enum SyscallNumber {
     Write = 1,
     Open = 2,
     Close = 3,
+    Exit = 60,
 }
 
 impl TryFrom<usize> for SyscallNumber {
@@ -36,6 +38,7 @@ impl TryFrom<usize> for SyscallNumber {
             1 => Ok(SyscallNumber::Write),
             2 => Ok(SyscallNumber::Open),
             3 => Ok(SyscallNumber::Close),
+            60 => Ok(SyscallNumber::Exit),
             _ => Err(()),
         }
     }
@@ -90,6 +93,7 @@ pub fn syscall_handler(args: &SyscallArgs) -> isize {
             args.arg2 as u32,       // flags
         ),
         SyscallNumber::Close => sys_close(args.arg1 as i32),
+        SyscallNumber::Exit => sys_exit(args.arg1 as i32),
     }
 }
 
@@ -283,6 +287,41 @@ pub fn sys_close(fd: i32) -> isize {
     }
 
     SyscallError::IoError as isize
+}
+
+/// sys_exit - Terminate the current process
+///
+/// # Arguments
+/// * `status` - Exit status code (0 for success, non-zero for error)
+///
+/// # Returns
+/// * This function should not return to the calling process
+/// * Returns 0 if process termination was successful (for internal use)
+pub fn sys_exit(status: i32) -> isize {
+    crate::info!("sys_exit called with status: {}", status);
+
+    // Prepare to terminate and get switch pointers while holding the lock
+    // Then drop the lock before actually switching to avoid deadlock
+    let switch_ptrs = {
+        let mut manager_lock = PROCESS_MANAGER.lock();
+        if let Some(manager) = manager_lock.get_mut() {
+            manager.prepare_terminate(status)
+        } else {
+            None
+        }
+    };
+    // Lock is now dropped
+
+    // Perform the actual context switch if there's another process
+    if let Some((next_ctx, current_ctx)) = switch_ptrs {
+        crate::info!("Switching to next process...");
+        unsafe { do_switch_context(next_ctx, current_ctx); }
+    }
+
+    // If we return here, it means there are no more processes
+    // The kernel main loop will continue
+    crate::info!("All user processes terminated, returning to kernel");
+    0
 }
 
 /// Entry point for syscall from assembly

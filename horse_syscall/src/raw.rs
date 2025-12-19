@@ -29,6 +29,8 @@ pub enum SyscallNum {
     Open = 2,
     /// Close a file descriptor
     Close = 3,
+    /// Exit the process
+    Exit = 60,
 }
 
 /// Perform a system call with no arguments

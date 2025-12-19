@@ -6,6 +6,7 @@
 
 mod acpi;
 mod ascii_font;
+pub mod debugcon;
 mod memory_allocator;
 pub mod paging;
 mod queue;
@@ -101,7 +102,7 @@ fn welcome_message() {
     println!("Horse is the OS made by Momma Watasu. This OS is distributed under the MIT license.")
 }
 
-/// Load and execute the gallop user program from filesystem
+/// Load and execute the gallop user program from filesystem as a process
 fn run_gallop() {
     info!("Loading gallop user program...");
 
@@ -139,11 +140,46 @@ fn run_gallop() {
     // Truncate buffer to actual size
     elf_buffer.truncate(elf_size);
 
-    // Drop the filesystem lock before executing (exec never returns)
+    // Drop the filesystem lock
     drop(fs_table);
 
-    // Execute the ELF
-    exec::run_elf(&elf_buffer);
+    // Load the program (parse ELF and set up page tables)
+    let program = match exec::load_program(&elf_buffer) {
+        Ok(p) => p,
+        Err(e) => {
+            error!("Failed to load program: {:?}", e);
+            return;
+        }
+    };
+
+    info!("Program loaded: entry=0x{:x}, stack=0x{:x}, cr3=0x{:x}",
+          program.entry_point, program.stack_pointer, program.cr3);
+
+
+    // disable interrupts before manipulating process manager
+    disable();
+
+    {
+        // Create a new process
+        let mut manager_lock = PROCESS_MANAGER.lock();
+        let manager = manager_lock.get_mut().expect("ProcessManager not initialized");
+        let proc = manager.new_proc();
+
+        // Initialize the process with user-mode context (outside of manager lock)
+        {
+            proc.lock().init_user_context(
+                program.entry_point,
+                program.stack_pointer,
+                program.cr3,
+            );
+        }
+
+        // Wake up the process
+        manager_lock.get_mut().unwrap().wake_up(proc);
+    }
+
+    // re-enable interrupts
+    enable();
 }
 
 fn initialize(fb_config: *mut FrameBufferConfig) {
@@ -222,10 +258,24 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
         );
     }
 
-    let _proc = TIMER_MANAGER.lock().get_mut().unwrap().tick();
+    let should_switch = TIMER_MANAGER.lock().get_mut().unwrap().tick();
     
+    // Get context pointers while holding the lock, then release it before switch_context
+    // This is critical because switch_context doesn't return (it uses iretq),
+    // so any locks held would never be released, causing deadlock.
+    let switch_contexts = if should_switch {
+        PROCESS_MANAGER.lock().get_mut().unwrap().prepare_switch()
+    } else {
+        None
+    };
+
     unsafe {
         notify_end_of_interrupt();
+        
+        if let Some((next_ctx, current_ctx)) = switch_contexts {
+            // Lock is already released here, safe to call switch_context
+            proc::do_switch_context(next_ctx, current_ctx);
+        }
     }
     
     // Restore user CR3 before returning
@@ -244,6 +294,32 @@ extern "x86-interrupt" fn handler_page_fault(
 ) {
     // Get the faulting address from CR2
     let faulting_address = paging::get_cr2();
+
+    // Output to debugcon for debugging
+    debugcon::write_str("\n=== PAGE FAULT ===");
+    debugcon::write_str("\nFaulting address: ");
+    debugcon::write_hex(faulting_address);
+    debugcon::write_str("\nError code: ");
+    debugcon::write_hex(error_code.bits());
+    debugcon::write_str("\n  Present: ");
+    debugcon::write_str(if error_code.contains(PageFaultErrorCode::PROTECTION_VIOLATION) { "true" } else { "false" });
+    debugcon::write_str("\n  Write: ");
+    debugcon::write_str(if error_code.contains(PageFaultErrorCode::CAUSED_BY_WRITE) { "true" } else { "false" });
+    debugcon::write_str("\n  User: ");
+    debugcon::write_str(if error_code.contains(PageFaultErrorCode::USER_MODE) { "true" } else { "false" });
+    debugcon::write_str("\n  Instruction fetch: ");
+    debugcon::write_str(if error_code.contains(PageFaultErrorCode::INSTRUCTION_FETCH) { "true" } else { "false" });
+    debugcon::write_str("\nRIP: ");
+    debugcon::write_hex(stack_frame.instruction_pointer.as_u64());
+    debugcon::write_str("\nRSP: ");
+    debugcon::write_hex(stack_frame.stack_pointer.as_u64());
+    debugcon::write_str("\nCS: ");
+    debugcon::write_hex(stack_frame.code_segment as u64);
+    debugcon::write_str("\nSS: ");
+    debugcon::write_hex(stack_frame.stack_segment as u64);
+    debugcon::write_str("\nRFLAGS: ");
+    debugcon::write_hex(stack_frame.cpu_flags);
+    debugcon::write_str("\n==================\n");
 
     error!(
         "PAGE FAULT!\n  Faulting address: 0x{:016x}\n  Error code: {:?}\n  Stack frame: {:#?}",
