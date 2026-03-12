@@ -38,9 +38,14 @@ pub enum SyscallNum {
 pub unsafe fn syscall0(num: usize) -> isize {
     let ret: isize;
     asm!(
+        "push rbx",
         "int 0x80",
+        "pop rbx",
         inout("rax") num => ret,
-        options(nostack, preserves_flags)
+        // The kernel handler uses r11 to hold user_cr3 for the page-table switch,
+        // so r11 is clobbered and must not hold a live value across int 0x80.
+        lateout("r11") _,
+        options(preserves_flags)
     );
     ret
 }
@@ -50,10 +55,13 @@ pub unsafe fn syscall0(num: usize) -> isize {
 pub unsafe fn syscall1(num: usize, arg1: usize) -> isize {
     let ret: isize;
     asm!(
+        "push rbx",
         "int 0x80",
+        "pop rbx",
         inout("rax") num => ret,
         in("rdi") arg1,
-        options(nostack, preserves_flags)
+        lateout("r11") _,
+        options(preserves_flags)
     );
     ret
 }
@@ -63,11 +71,14 @@ pub unsafe fn syscall1(num: usize, arg1: usize) -> isize {
 pub unsafe fn syscall2(num: usize, arg1: usize, arg2: usize) -> isize {
     let ret: isize;
     asm!(
+        "push rbx",
         "int 0x80",
+        "pop rbx",
         inout("rax") num => ret,
         in("rdi") arg1,
         in("rsi") arg2,
-        options(nostack, preserves_flags)
+        lateout("r11") _,
+        options(preserves_flags)
     );
     ret
 }
@@ -77,12 +88,15 @@ pub unsafe fn syscall2(num: usize, arg1: usize, arg2: usize) -> isize {
 pub unsafe fn syscall3(num: usize, arg1: usize, arg2: usize, arg3: usize) -> isize {
     let ret: isize;
     asm!(
+        "push rbx",
         "int 0x80",
+        "pop rbx",
         inout("rax") num => ret,
         in("rdi") arg1,
         in("rsi") arg2,
         in("rdx") arg3,
-        options(nostack, preserves_flags)
+        lateout("r11") _,
+        options(preserves_flags)
     );
     ret
 }
@@ -92,13 +106,16 @@ pub unsafe fn syscall3(num: usize, arg1: usize, arg2: usize, arg3: usize) -> isi
 pub unsafe fn syscall4(num: usize, arg1: usize, arg2: usize, arg3: usize, arg4: usize) -> isize {
     let ret: isize;
     asm!(
+        "push rbx",
         "int 0x80",
+        "pop rbx",
         inout("rax") num => ret,
         in("rdi") arg1,
         in("rsi") arg2,
         in("rdx") arg3,
         in("r10") arg4,
-        options(nostack, preserves_flags)
+        lateout("r11") _,
+        options(preserves_flags)
     );
     ret
 }
@@ -115,14 +132,17 @@ pub unsafe fn syscall5(
 ) -> isize {
     let ret: isize;
     asm!(
+        "push rbx",
         "int 0x80",
+        "pop rbx",
         inout("rax") num => ret,
         in("rdi") arg1,
         in("rsi") arg2,
         in("rdx") arg3,
         in("r10") arg4,
         in("r8") arg5,
-        options(nostack, preserves_flags)
+        lateout("r11") _,
+        options(preserves_flags)
     );
     ret
 }
@@ -140,7 +160,9 @@ pub unsafe fn syscall6(
 ) -> isize {
     let ret: isize;
     asm!(
+        "push rbx",
         "int 0x80",
+        "pop rbx",
         inout("rax") num => ret,
         in("rdi") arg1,
         in("rsi") arg2,
@@ -148,7 +170,8 @@ pub unsafe fn syscall6(
         in("r10") arg4,
         in("r8") arg5,
         in("r9") arg6,
-        options(nostack, preserves_flags)
+        lateout("r11") _,
+        options(preserves_flags)
     );
     ret
 }

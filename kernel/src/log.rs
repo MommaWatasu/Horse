@@ -1,5 +1,6 @@
 use crate::LAYER_MANAGER;
 use core::fmt::Write;
+use x86_64::instructions::interrupts;
 
 static LOG_LEVEL_DISPLAY: [&str; 6] = ["OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
 pub static LOG_LEVEL: spin::Mutex<LogLevel> = spin::Mutex::new(LogLevel::Debug);
@@ -102,10 +103,15 @@ macro_rules! trace {
 }
 
 pub fn _print(args: core::fmt::Arguments) {
-    let mut locked_console = crate::console::Console::instance();
-    let console = locked_console.as_mut().unwrap();
-    console.write_fmt(args).unwrap();
-    LAYER_MANAGER.lock().as_mut().unwrap().draw();
+    // Disable interrupts while holding spinlocks to prevent the LAPIC timer from
+    // switching to a user process that also needs RAW_CONSOLE or LAYER_MANAGER,
+    // which would cause a deadlock on a single-core system.
+    interrupts::without_interrupts(|| {
+        let mut locked_console = crate::console::Console::instance();
+        let console = locked_console.as_mut().unwrap();
+        console.write_fmt(args).unwrap();
+        LAYER_MANAGER.lock().as_mut().unwrap().draw();
+    });
 }
 
 pub fn _log_level() -> LogLevel {

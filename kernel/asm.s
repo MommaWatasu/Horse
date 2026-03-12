@@ -323,7 +323,7 @@ syscall_handler_asm:
   ;   [RSP+128]=RIP, [RSP+136]=CS, [RSP+144]=RFLAGS, [RSP+152]=user_RSP, [RSP+160]=user_SS
 
   sub rsp, 56           ; Allocate SyscallArgs struct
-  
+
   mov rax, [rsp + 56 + 120]  ; syscall_num
   mov [rsp + 0], rax
   mov rax, [rsp + 56 + 72]   ; arg1 (RDI)
@@ -343,13 +343,11 @@ syscall_handler_asm:
   mov rdi, rsp
   call syscall_entry
 
-  ; Save return value
-  mov rbx, rax          ; Save return value in rbx temporarily
-
   ; Clean up SyscallArgs
+  ; RAX holds the return value; pop instructions do not modify RAX.
   add rsp, 56
 
-  ; Restore all registers (except RAX which has return value)
+  ; Restore all registers. RAX (return value) is untouched by pop.
   pop r15
   pop r14
   pop r13
@@ -363,17 +361,15 @@ syscall_handler_asm:
   pop rsi
   pop rdx
   pop rcx
-  ; Skip rbx restore for now (it has return value)
-  add rsp, 8            ; skip saved rbx
+  pop rbx               ; Properly restore user's rbx
 
-  ; Get user CR3 from stack
+  ; Get user CR3 from stack into r11 (r11 is caller-saved in SysV ABI)
   pop r11               ; user_cr3 -> r11
-  
+
   ; Skip saved syscall_num
   add rsp, 8
 
-  ; Move return value to RAX
-  mov rax, rbx          ; return value -> rax
+  ; RAX still contains the return value (unchanged throughout the pop sequence)
 
   ; Now RSP points to interrupt frame: RIP, CS, RFLAGS, RSP, SS
   ; Switch to user CR3 right before iretq

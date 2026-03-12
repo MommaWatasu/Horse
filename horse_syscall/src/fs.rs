@@ -3,7 +3,7 @@
 //! This module provides safe wrappers around file-related system calls.
 
 use crate::error::{check_syscall, Result};
-use crate::raw::{syscall1, syscall2, syscall3, Fd, SyscallNum};
+use crate::raw::{syscall1, syscall3, Fd, SyscallNum};
 
 /// Exit the process
 ///
@@ -92,22 +92,21 @@ impl core::ops::BitOrAssign for OpenFlags {
 /// let fd = open("/test.txt", OpenFlags::RDONLY)?;
 /// ```
 pub fn open(path: &str, flags: OpenFlags) -> Result<Fd> {
-    // We need a null-terminated string for the syscall
-    // Since we're in no_std, we'll use a stack buffer
     let path_bytes = path.as_bytes();
-    if path_bytes.len() >= 4096 {
+    if path_bytes.is_empty() || path_bytes.len() > 4096 {
         return Err(crate::error::Error::Inval);
     }
 
-    // Create null-terminated path on stack
-    let mut buf = [0u8; 4096];
-    buf[..path_bytes.len()].copy_from_slice(path_bytes);
-    // buf is already zero-initialized, so it's null-terminated
-
+    // Pass the original string bytes pointer and length directly to the kernel.
+    // For string literals, this pointer is in the program's identity-mapped .rodata
+    // section, which is readable from the kernel's identity-mapped page table.
+    // We avoid copying to a stack buffer, whose physical frames differ from the
+    // kernel's identity-mapped view of the same virtual address.
     let ret = unsafe {
-        syscall2(
+        syscall3(
             SyscallNum::Open as usize,
-            buf.as_ptr() as usize,
+            path_bytes.as_ptr() as usize,
+            path_bytes.len(),
             flags.bits() as usize,
         )
     };
@@ -121,9 +120,18 @@ pub fn open(path: &str, flags: OpenFlags) -> Result<Fd> {
 ///
 /// The path must be a valid null-terminated C string.
 pub unsafe fn open_cstr(path: *const u8, flags: OpenFlags) -> Result<Fd> {
-    let ret = syscall2(
+    // Compute length of null-terminated string
+    let mut len = 0usize;
+    while *path.add(len) != 0 {
+        len += 1;
+        if len > 4096 {
+            return Err(crate::error::Error::Inval);
+        }
+    }
+    let ret = syscall3(
         SyscallNum::Open as usize,
         path as usize,
+        len,
         flags.bits() as usize,
     );
     check_syscall(ret).map(|fd| fd as Fd)

@@ -193,7 +193,6 @@ impl FAT {
                 unsafe { entry = *entry_ptr; }
                 // Long File Name
                 if entry.attr == (FATFileAttribute::LongName as u8) {
-                    crate::debug!("Long File Name");
                     let lfn_entry = unsafe { *(entry_ptr as *const LFNEntry) };
                         if lfn_entry.is_end() {
                             lfn = String::new();
@@ -204,10 +203,8 @@ impl FAT {
                     continue
                 // Volumen ID
                 } else if entry.attr & 0x08 != 0 {
-                    crate::debug!("Volume Name");
                 // Directory
                 } else if entry.attr & 0x10 != 0 {
-                    crate::debug!("Directory");
                     if (lfn_flag && &lfn == name) || (!lfn_flag && Self::sfn_cmp(entry.name, &name)) {
                         if i == full_path.path.len()-1 {
                             return Ok(entry)
@@ -220,7 +217,6 @@ impl FAT {
                     }
                 // Regular File
                 } else {
-                    crate::debug!("Regular File");
                     if (lfn_flag && &lfn == name) || (!lfn_flag && Self::sfn_cmp(entry.name, &name)) {
                         if i == full_path.path.len()-1 {
                             return Ok(entry)

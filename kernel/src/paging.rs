@@ -25,7 +25,7 @@ const PAGE_DIRECTORY_COUNT: usize = 64;
 
 // Virtual address space layout (kernel code model compatible - top 2GB)
 pub const KERNEL_BASE: u64 = 0xFFFF_FFFF_8000_0000; // Higher half kernel (top 2GB)
-pub const USER_STACK_TOP: u64 = 0x0000_7FFF_FFFF_0000;
+pub const USER_STACK_TOP: u64 = 0x0000_0000_4000_0000; // 1GB - within kernel identity map (0-64GB)
 pub const USER_STACK_SIZE: usize = 64 * 1024; // 64 KB
 
 // PML4 index for higher half kernel (0xFFFFFFFF80000000 >> 39) & 0x1FF = 511

@@ -90,7 +90,8 @@ pub fn syscall_handler(args: &SyscallArgs) -> isize {
         ),
         SyscallNumber::Open => sys_open(
             args.arg1 as *const u8, // pathname
-            args.arg2 as u32,       // flags
+            args.arg2,              // len
+            args.arg3 as u32,       // flags
         ),
         SyscallNumber::Close => sys_close(args.arg1 as i32),
         SyscallNumber::Exit => sys_exit(args.arg1 as i32),
@@ -100,28 +101,22 @@ pub fn syscall_handler(args: &SyscallArgs) -> isize {
 /// sys_open - Open a file
 ///
 /// # Arguments
-/// * `pathname` - Pointer to null-terminated pathname string
+/// * `pathname` - Pointer to pathname string (not necessarily null-terminated)
+/// * `len` - Length of the pathname string in bytes
 /// * `flags` - Open flags (O_RDONLY, O_WRONLY, O_RDWR, O_CREAT)
 ///
 /// # Returns
 /// * File descriptor on success (>= 0)
 /// * Negative error code on failure
-pub fn sys_open(pathname: *const u8, flags: u32) -> isize {
-    if pathname.is_null() {
+pub fn sys_open(pathname: *const u8, len: usize, flags: u32) -> isize {
+    if pathname.is_null() || len == 0 || len > 4096 {
         return SyscallError::InvalidArg as isize;
     }
 
-    // Read the pathname from user space
+    // Read the pathname from user space using the provided length.
+    // The caller (horse_syscall) passes the original string pointer from
+    // identity-mapped .rodata, so the kernel can read it directly.
     let path_str = unsafe {
-        let mut len = 0;
-        let mut ptr = pathname;
-        while *ptr != 0 {
-            len += 1;
-            ptr = ptr.add(1);
-            if len > 4096 {
-                return SyscallError::InvalidArg as isize;
-            }
-        }
         let slice = core::slice::from_raw_parts(pathname, len);
         match core::str::from_utf8(slice) {
             Ok(s) => s,

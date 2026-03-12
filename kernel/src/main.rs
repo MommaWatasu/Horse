@@ -264,7 +264,11 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
     // This is critical because switch_context doesn't return (it uses iretq),
     // so any locks held would never be released, causing deadlock.
     let switch_contexts = if should_switch {
-        PROCESS_MANAGER.lock().get_mut().unwrap().prepare_switch()
+        // Use try_lock to avoid deadlock: sys_exit holds PROCESS_MANAGER while calling
+        // prepare_terminate, which does screen I/O. If the timer fires during that window
+        // and uses .lock() here, it spins forever. Skip this tick if the lock is busy.
+        PROCESS_MANAGER.try_lock()
+            .and_then(|mut guard| guard.get_mut().and_then(|m| m.prepare_switch()))
     } else {
         None
     };

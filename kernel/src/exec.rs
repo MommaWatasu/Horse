@@ -9,9 +9,9 @@ use crate::segment::{USER_CS, USER_SS};
 /// Default user stack size (64 KB)
 const USER_STACK_SIZE: usize = 64 * 1024;
 
-/// User stack base address (below kernel space)
-/// In a real OS, this would be determined by the process's virtual address space
-const USER_STACK_BASE: u64 = 0x0000_7fff_ffff_0000;
+/// User stack base address - within kernel identity map (0-64GB) so kernel can access via syscalls
+/// Must match USER_STACK_TOP in paging.rs
+const USER_STACK_BASE: u64 = 0x0000_0000_4000_0000; // 1GB
 
 // External assembly functions to jump to user mode
 extern "C" {

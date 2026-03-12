@@ -1,4 +1,5 @@
 use crate::{graphics::{Coord, RAW_GRAPHICS}, layer::LAYER_MANAGER, PixelColor, WindowWriter};
+use x86_64::instructions::interrupts;
 pub const MOUSE_CURSOR_HEIGHT: usize = 24;
 pub const MOUSE_CURSOR_WIDTH: usize = 15;
 pub const MOUSE_TRANSPARENT_COLOR: PixelColor = PixelColor(0, 0, 1);
@@ -135,12 +136,17 @@ impl MouseCursor {
         new_pos = new_pos.elem_max(Coord::from_tuple((0, 0)));
         self.position = new_pos;
 
-        let mut layer_manager_lock = LAYER_MANAGER.lock();
-        let layer_manager = match layer_manager_lock.as_mut() {
-            Some(lm) => lm,
-            None => return,
-        };
-        layer_manager.move_absolute(self.layer_id, new_pos).expect("failed to move mouse layer");
-        layer_manager.draw();
+        // Disable interrupts while holding LAYER_MANAGER to prevent the LAPIC timer
+        // from switching to a user process that also needs LAYER_MANAGER (e.g. sys_write),
+        // which would cause a deadlock on a single-core system.
+        interrupts::without_interrupts(|| {
+            let mut layer_manager_lock = LAYER_MANAGER.lock();
+            let layer_manager = match layer_manager_lock.as_mut() {
+                Some(lm) => lm,
+                None => return,
+            };
+            layer_manager.move_absolute(self.layer_id, new_pos).expect("failed to move mouse layer");
+            layer_manager.draw();
+        });
     }
 }

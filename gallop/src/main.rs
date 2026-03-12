@@ -18,11 +18,18 @@ pub extern "C" fn _start() -> ! {
     // Print Hello World using the write system call
     let message = b"Hello, World from Horse OS!\n";
     let _ = write(STDOUT, message);
-    // Successfully returned from syscall!
 
-    // Note: 'out' instruction is privileged and cannot be used in user mode
-    // Use write syscall instead for debug output
-    let _ = write(STDOUT, b"Syscall returned successfully!\n");
+    let fd = open("gallop", OpenFlags::RDONLY).expect("Failed to open file");
+    if fd == 3 {
+        let _ = write(STDOUT, b"Successfully opened 'gallop' with fd 3!\n");
+    }
+    let mut buf = [0u8; 4];
+    let n = read(fd, &mut buf).expect("Failed to read from gallop");
+    let _ = close(fd);
+
+    let _ = write(STDOUT, b"Read from 'gallop': ");
+    let _ = write(STDOUT, &buf[..n]);
+    let _ = write(STDOUT, b"\n");
 
     // Exit the process with status code 0 (success)
     exit(0);
