@@ -16,10 +16,10 @@ pub fn bytes2str(bytes: &[u8]) -> String {
 }
 
 pub fn sum_bytes<T>(data: &T, len: usize) -> u8 {
-    let data = unsafe { data as *const T as *const u8 };
-    let mut sum: u8 = 0;
+    let data = data as *const T as *const u8;
+    let sum: u8 = 0;
     for i in 0..len {
-        sum.wrapping_add(unsafe { *data.wrapping_add(i) });
+        let _ = sum.wrapping_add(unsafe { *data.wrapping_add(i) });
     }
     return sum;
 }
@@ -29,7 +29,7 @@ fn make_crc_table() -> [u32; 256] {
     let mut crc_table = [0; 256];
     for n in 0..256 {
         c = n;
-        for k in 0..8 {
+        for _k in 0..8 {
             if c & 1 == 1 {
                 c = CRC32_POLYNOMIAL ^ (c >> 1);
             } else {

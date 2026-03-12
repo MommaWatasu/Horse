@@ -729,7 +729,7 @@ pub unsafe fn set_cr3_inline(value: u64) {
 
 /// Get kernel PML4 address
 pub fn get_kernel_pml4() -> *mut PageTable {
-    unsafe { addr_of_mut!(KERNEL_PML4) }
+    addr_of_mut!(KERNEL_PML4)
 }
 
 // External assembly function for CR3

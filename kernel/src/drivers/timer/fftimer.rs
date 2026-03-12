@@ -2,10 +2,8 @@ use super::{hpet::*, DescriptionHeader, PM_TIMER_FREQ};
 use crate::{
     error,
     horse_lib::{bytes::bytes2str, io::inl},
-    println,
 };
 
-use alloc::string::String;
 use core::{mem::size_of, ptr::read_unaligned};
 
 //Frequency Fixed Timer
@@ -62,9 +60,6 @@ impl FFTimer {
                     while unsafe { inl(pm_tmr_blk) } >= start {}
                 }
                 while unsafe { inl(pm_tmr_blk) } < end {}
-            }
-            _ => {
-                error!("timer must be PM Timer or HPET");
             }
         }
     }

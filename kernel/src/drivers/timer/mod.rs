@@ -4,17 +4,12 @@ mod ioapic;
 mod manager;
 
 use fftimer::*;
-use hpet::*;
 use manager::*;
 
-use alloc::string::String;
-use core::{
-    mem::size_of,
-    ptr::{read, read_unaligned, write},
-};
+use core::ptr::{read, write};
 use spin::{Mutex, Once};
 
-use crate::{error, println, DescriptionHeader, InterruptVector};
+use crate::{DescriptionHeader, InterruptVector};
 
 const PM_TIMER_FREQ: u32 = 3579545;
 const COUNT_MAX: u32 = 1000000;

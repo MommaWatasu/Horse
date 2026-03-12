@@ -1,4 +1,4 @@
-use crate::{bit_getter, bit_setter, println, InterruptVector};
+use crate::bit_setter;
 
 use core::ptr::{read, write};
 

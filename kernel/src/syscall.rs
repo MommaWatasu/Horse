@@ -293,8 +293,6 @@ pub fn sys_close(fd: i32) -> isize {
 /// * This function should not return to the calling process
 /// * Returns 0 if process termination was successful (for internal use)
 pub fn sys_exit(status: i32) -> isize {
-    crate::info!("sys_exit called with status: {}", status);
-
     // Prepare to terminate and get switch pointers while holding the lock
     // Then drop the lock before actually switching to avoid deadlock
     let switch_ptrs = {
@@ -309,13 +307,11 @@ pub fn sys_exit(status: i32) -> isize {
 
     // Perform the actual context switch if there's another process
     if let Some((next_ctx, current_ctx)) = switch_ptrs {
-        crate::info!("Switching to next process...");
         unsafe { do_switch_context(next_ctx, current_ctx); }
     }
 
     // If we return here, it means there are no more processes
     // The kernel main loop will continue
-    crate::info!("All user processes terminated, returning to kernel");
     0
 }
 
@@ -328,20 +324,7 @@ pub extern "C" fn syscall_entry(args: *const SyscallArgs) -> isize {
     if args.is_null() {
         return SyscallError::InvalidArg as isize;
     }
-
-    // Read fields individually using raw pointer arithmetic to handle any alignment
-    let args_copy = unsafe {
-        let base = args as *const usize;
-        SyscallArgs {
-            syscall_num: core::ptr::read_unaligned(base),
-            arg1: core::ptr::read_unaligned(base.add(1)),
-            arg2: core::ptr::read_unaligned(base.add(2)),
-            arg3: core::ptr::read_unaligned(base.add(3)),
-            arg4: core::ptr::read_unaligned(base.add(4)),
-            arg5: core::ptr::read_unaligned(base.add(5)),
-            arg6: core::ptr::read_unaligned(base.add(6)),
-        }
-    };
-    
-    syscall_handler(&args_copy)
+    // SyscallArgs is #[repr(C)] with usize fields, built on an aligned stack in
+    // syscall_handler_asm (sub rsp, 56), so a direct dereference is safe.
+    syscall_handler(unsafe { &*args })
 }

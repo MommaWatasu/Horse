@@ -1,4 +1,4 @@
-use crate::{bit_getter, bit_setter, debug, info, status::StatusCode, status_log, trace};
+use crate::{bit_getter, bit_setter, debug, info, status::StatusCode, status_log};
 use core::fmt::Display;
 use x86_64::instructions::port::{Port, PortWriteOnly};
 
@@ -120,7 +120,7 @@ impl PciDevices {
         Ok(StatusCode::Success)
     }
 
-    pub fn iter(&self) -> PciDevicesIter {
+    pub fn iter(&self) -> PciDevicesIter<'_> {
         PciDevicesIter {
             devices: &self.devices[..self.count],
             index: 0,

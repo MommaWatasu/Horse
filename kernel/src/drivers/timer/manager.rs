@@ -1,5 +1,5 @@
 use super::FFTimer;
-use crate::{println, Message, INTERRUPTION_QUEUE};
+use crate::{Message, INTERRUPTION_QUEUE};
 
 use alloc::collections::BinaryHeap;
 use core::cmp::{Ord, Ordering};
@@ -47,7 +47,7 @@ impl TimerManager {
         return proc
     }
     pub fn wait_seconds(&self, sec: u64) {
-        for i in 0..sec {
+        for _i in 0..sec {
             self.fft.wait_milliseconds(1000);
         }
     }

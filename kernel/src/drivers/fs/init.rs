@@ -6,11 +6,7 @@ use spin::Mutex;
 
 use crate::{
     error,
-    debug,
-    horse_lib::{
-        bytes::bytes2str,
-        storage::Storage
-    }
+    horse_lib::bytes::bytes2str,
 };
 use super::{
     core::{FileSystem, STORAGE_CONTROLLERS},
@@ -46,7 +42,7 @@ pub fn initialize_storage(id: usize) {
     }
 }
 
-fn initialize_gpt(gpt: GPT, id: usize) {
+fn initialize_gpt(_gpt: GPT, _id: usize) {
 }
 
 fn initialize_partition(id: usize) -> Option<Box<dyn FileSystem>> {

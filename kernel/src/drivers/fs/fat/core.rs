@@ -1,6 +1,5 @@
 use alloc::{
     format,
-    slice,
     vec,
     string::String,
 };

@@ -8,10 +8,9 @@ use super::{
     fs::core::STORAGE_CONTROLLERS,
     pci::{switch_echi2xhci, PciDevices},
     usb::xhci::{initialize_xhci, Controller},
-    video::qemu::setup_qemu_card,
 };
 use crate::{
-    graphics::{BG_COLOR, RAW_GRAPHICS}, info, warn
+    info, warn
 };
 
 pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {

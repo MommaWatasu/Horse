@@ -1,4 +1,3 @@
-use crate::println;
 use core::slice::from_raw_parts;
 
 pub struct EDID {

@@ -1,5 +1,4 @@
 #![feature(alloc_error_handler)]
-#![feature(vec_into_raw_parts)]//into_raw_part
 #![no_std]
 #![no_main]
 

@@ -1,5 +1,5 @@
 use super::{ioapic::*, DescriptionHeader};
-use crate::{bit_getter, bit_setter, error, info, println};
+use crate::{bit_getter, bit_setter, error, info};
 
 use core::ptr::{read, read_unaligned, write, write_unaligned};
 use spin::Mutex;

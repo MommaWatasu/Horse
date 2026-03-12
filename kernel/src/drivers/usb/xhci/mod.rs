@@ -12,7 +12,7 @@ use crate::{
     status::{PortConfigPhase, Result, StatusCode},
     status_log, trace,
     volatile::Volatile,
-    warn, InterruptVector, XHC,
+    warn, InterruptVector,
 };
 use core::ptr::{addr_of_mut, null, null_mut};
 use devmgr::DeviceManager;

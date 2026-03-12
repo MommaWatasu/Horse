@@ -416,8 +416,8 @@ impl Storage for IdeController {
         if lba * 512 + nbytes as u32 > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
             return 2;
         }
-        let mut err = 0;
         let numsects: u8 = ((nbytes + 512) / 512 - 1).try_into().unwrap();
+        let err;
         if device.ata_type == InterfaceType::IdeAta as u16 {
             err = self.ide_access(Directions::Write as u8, 0, lba, numsects, buf.as_ptr() as u64);
         } else {
@@ -478,7 +478,7 @@ pub fn initialize_ide(dev: &Device) -> IdeController {
             controller.ide_write(i, Register::AtaRegHddevsel as u16, 0xa0 | (j << 4));
             sleep(1);
 
-            status = controller.ide_read(i, Register::AtaRegCommandStatus as u16);
+            let _ = controller.ide_read(i, Register::AtaRegCommandStatus as u16);
 
             // Send Identification Command
             controller.ide_write(
@@ -488,7 +488,7 @@ pub fn initialize_ide(dev: &Device) -> IdeController {
             );
             sleep(1);
 
-            status = controller.ide_read(i, Register::AtaRegCommandStatus as u16);
+            let _ = controller.ide_read(i, Register::AtaRegCommandStatus as u16);
 
             // Polling
             if controller.ide_read(i, Register::AtaRegCommandStatus as u16) == 0 {

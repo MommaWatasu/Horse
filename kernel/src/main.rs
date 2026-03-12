@@ -71,7 +71,7 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::drivers::fs::core::{FILE_DESCRIPTOR_TABLE, FileSystem};
+use crate::drivers::fs::core::FILE_DESCRIPTOR_TABLE;
 use crate::drivers::fs::init::FILESYSTEM_TABLE;
 use alloc::vec;
 

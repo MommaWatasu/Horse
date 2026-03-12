@@ -32,7 +32,7 @@ impl FileBuffer {
     }
 }
 
-pub fn open_root(bt: &BootServices, handler: Handle) -> FileSystem {
+pub fn open_root(bt: &BootServices, handler: Handle) -> FileSystem<'_> {
     let fs = bt.get_image_file_system(handler).expect("can't open filesystem protocol");
     fs
 }
