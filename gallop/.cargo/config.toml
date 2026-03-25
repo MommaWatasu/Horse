@@ -4,6 +4,7 @@ target = "x86_64-horse-user.json"
 [unstable]
 build-std = ["core"]
 build-std-features = ["compiler-builtins-mem"]
+json-target-spec = true
 
 [target.x86_64-horse-user]
 runner = "echo 'Built ELF:'"
