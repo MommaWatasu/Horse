@@ -295,6 +295,11 @@ pub static PAGE_TABLE_MANAGER: Mutex<PageTableManager> = Mutex::new(PageTableMan
 #[no_mangle]
 pub static mut KERNEL_CR3: u64 = 0;
 
+// User CR3 value saved at syscall entry before switching to kernel page table.
+// Updated by syscall_handler_asm on every syscall.
+#[no_mangle]
+pub static mut USER_CR3: u64 = 0;
+
 /// Page table manager for creating and managing page tables
 pub struct PageTableManager {
     initialized: bool,

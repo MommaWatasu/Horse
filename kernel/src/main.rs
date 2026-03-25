@@ -73,6 +73,8 @@ use x86_64::{
 
 use crate::drivers::fs::core::FILE_DESCRIPTOR_TABLE;
 use crate::drivers::fs::init::FILESYSTEM_TABLE;
+use crate::drivers::dev::stdin::StdinDevice;
+use crate::drivers::dev::stdout::{StdoutDevice, StderrDevice};
 use alloc::vec;
 
 #[derive(Clone, Copy, Debug)]
@@ -107,27 +109,20 @@ fn run_gallop() {
     info!("Loading gallop user program...");
 
     // Access filesystem - we need at least one filesystem to be available
-    let fs_table = unsafe { FILESYSTEM_TABLE.lock() };
-    if fs_table.is_empty() {
-        error!("No filesystem available to load gallop");
-        return;
-    }
-
-    // Try to open the gallop file from the root of the filesystem
-    let fs = &fs_table[0];
-    let fd = fs.open("/gallop", 0);
-    if fd < 0 {
-        error!("Failed to open gallop: fd={}", fd);
-        return;
-    }
-
     // Read the ELF file into a buffer
     // Allocate a buffer large enough for the ELF (gallop is ~9KB)
     const MAX_ELF_SIZE: usize = 64 * 1024; // 64KB max
     let mut elf_buffer = vec![0u8; MAX_ELF_SIZE];
 
-    let bytes_read = fs.read(fd, &mut elf_buffer, MAX_ELF_SIZE);
-    fs.close(fd);
+    let gallop_path = crate::horse_lib::fd::Path::new(alloc::string::String::from("gallop"));
+    let bytes_read = {
+        let fs_table = unsafe { FILESYSTEM_TABLE.lock() };
+        if fs_table.is_empty() {
+            error!("No filesystem available to load gallop");
+            return;
+        }
+        fs_table[0].read_file(&gallop_path, &mut elf_buffer, MAX_ELF_SIZE)
+    };
 
     if bytes_read <= 0 {
         error!("Failed to read gallop: bytes_read={}", bytes_read);
@@ -139,9 +134,6 @@ fn run_gallop() {
 
     // Truncate buffer to actual size
     elf_buffer.truncate(elf_size);
-
-    // Drop the filesystem lock
-    drop(fs_table);
 
     // Load the program (parse ELF and set up page tables)
     let program = match exec::load_program(&elf_buffer) {
@@ -362,6 +354,9 @@ extern "sysv64" fn kernel_main_virt(
     initialize_filesystem();
 
     FILE_DESCRIPTOR_TABLE.lock().initialize();
+    FILE_DESCRIPTOR_TABLE.lock().add(Arc::new(StdinDevice));   // fd 0
+    FILE_DESCRIPTOR_TABLE.lock().add(Arc::new(StdoutDevice));  // fd 1
+    FILE_DESCRIPTOR_TABLE.lock().add(Arc::new(StderrDevice));  // fd 2
 
     //set the IDT entry
     IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);

@@ -280,6 +280,7 @@ load_tss:
 ;
 extern syscall_entry
 extern KERNEL_CR3
+extern USER_CR3
 global syscall_handler_asm
 syscall_handler_asm:
   cli
@@ -291,6 +292,7 @@ syscall_handler_asm:
   ; Save user CR3
   mov rax, cr3
   push rax              ; user_cr3
+  mov [rel USER_CR3], rax   ; save user CR3 for syscall handlers
 
   ; Now switch to kernel page table
   mov rax, [rel KERNEL_CR3]

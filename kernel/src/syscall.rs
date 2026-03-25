@@ -12,11 +12,90 @@
 //! - R9:  arg6
 //! - Return value in RAX
 
-use alloc::vec;
+use alloc::{sync::Arc, vec};
+use crate::drivers::fs::core::FILE_DESCRIPTOR_TABLE;
 use crate::drivers::fs::init::FILESYSTEM_TABLE;
-use crate::console::Console;
-use crate::layer::LAYER_MANAGER;
+use crate::drivers::fs::regular::RegularFile;
+use crate::drivers::dev::null::NullDevice;
+use crate::drivers::dev::zero::ZeroDevice;
+use crate::drivers::dev::stdin::StdinDevice;
+use crate::drivers::dev::stdout::{StdoutDevice, StderrDevice};
+use crate::horse_lib::fd::Path;
+use crate::paging::{PAGE_TABLE_MANAGER, PAGE_SIZE_4K, phys_to_ptr, PageTable};
 use crate::proc::{PROCESS_MANAGER, do_switch_context};
+
+// ── user memory helpers ──────────────────────────────────────────────────────
+//
+// During a syscall the CPU runs with KERNEL_CR3 (identity map VA=PA for 0-64GB).
+// User stack pages are allocated at *arbitrary* physical addresses by the frame
+// manager and are mapped into the user page table only – they are NOT accessible
+// through the kernel's identity map at the pointer value the user passes.
+//
+// These helpers translate each page of a user VA range to its physical address
+// using the saved USER_CR3, then access the physical frame directly via the
+// kernel's identity map (VA == PA for low addresses).
+
+/// Copy `len` bytes from `kernel_src` to the user-space buffer at `user_dst`.
+/// Uses USER_CR3 to translate each page of the destination.
+unsafe fn copy_to_user(user_dst: *mut u8, kernel_src: *const u8, len: usize) {
+    let user_cr3 = crate::paging::USER_CR3;
+    let pml4 = phys_to_ptr::<PageTable>(user_cr3) as *const PageTable;
+    let manager = PAGE_TABLE_MANAGER.lock();
+    let mut remaining = len;
+    let mut src_off = 0usize;
+    let mut dst_va = user_dst as u64;
+
+    while remaining > 0 {
+        let pa = match manager.translate(pml4, dst_va) {
+            Some(pa) => pa,
+            None => break, // unmapped page – stop silently
+        };
+        // how many bytes fit in this page from the current offset
+        let page_offset = (dst_va & (PAGE_SIZE_4K as u64 - 1)) as usize;
+        let chunk = (PAGE_SIZE_4K - page_offset).min(remaining);
+
+        // write to the physical frame via the kernel identity map (VA == PA)
+        core::ptr::copy_nonoverlapping(
+            kernel_src.add(src_off),
+            pa as *mut u8,
+            chunk,
+        );
+
+        remaining -= chunk;
+        src_off   += chunk;
+        dst_va    += chunk as u64;
+    }
+}
+
+/// Copy `len` bytes from the user-space buffer at `user_src` to `kernel_dst`.
+/// Uses USER_CR3 to translate each page of the source.
+unsafe fn copy_from_user(kernel_dst: *mut u8, user_src: *const u8, len: usize) {
+    let user_cr3 = crate::paging::USER_CR3;
+    let pml4 = phys_to_ptr::<PageTable>(user_cr3) as *const PageTable;
+    let manager = PAGE_TABLE_MANAGER.lock();
+    let mut remaining = len;
+    let mut dst_off = 0usize;
+    let mut src_va = user_src as u64;
+
+    while remaining > 0 {
+        let pa = match manager.translate(pml4, src_va) {
+            Some(pa) => pa,
+            None => break,
+        };
+        let page_offset = (src_va & (PAGE_SIZE_4K as u64 - 1)) as usize;
+        let chunk = (PAGE_SIZE_4K - page_offset).min(remaining);
+
+        core::ptr::copy_nonoverlapping(
+            pa as *const u8,
+            kernel_dst.add(dst_off),
+            chunk,
+        );
+
+        remaining -= chunk;
+        dst_off   += chunk;
+        src_va    += chunk as u64;
+    }
+}
 
 /// System call numbers (Linux-compatible)
 #[repr(usize)]
@@ -98,12 +177,9 @@ pub fn syscall_handler(args: &SyscallArgs) -> isize {
     }
 }
 
-/// sys_open - Open a file
+/// sys_open - Open a file or device
 ///
-/// # Arguments
-/// * `pathname` - Pointer to pathname string (not necessarily null-terminated)
-/// * `len` - Length of the pathname string in bytes
-/// * `flags` - Open flags (O_RDONLY, O_WRONLY, O_RDWR, O_CREAT)
+/// Routes /dev/* paths to the appropriate device, all others to FAT32.
 ///
 /// # Returns
 /// * File descriptor on success (>= 0)
@@ -113,9 +189,6 @@ pub fn sys_open(pathname: *const u8, len: usize, flags: u32) -> isize {
         return SyscallError::InvalidArg as isize;
     }
 
-    // Read the pathname from user space using the provided length.
-    // The caller (horse_syscall) passes the original string pointer from
-    // identity-mapped .rodata, so the kernel can read it directly.
     let path_str = unsafe {
         let slice = core::slice::from_raw_parts(pathname, len);
         match core::str::from_utf8(slice) {
@@ -124,26 +197,42 @@ pub fn sys_open(pathname: *const u8, len: usize, flags: u32) -> isize {
         }
     };
 
-    // Use the filesystem to open the file
-    // Safety: FILESYSTEM_TABLE is initialized once at boot
-    let fs_table = unsafe { FILESYSTEM_TABLE.lock() };
-    if !fs_table.is_empty() {
-        let fd = fs_table[0].open(path_str, flags);
+    // Route /dev/* to device files
+    if let Some(dev_name) = path_str.strip_prefix("/dev/") {
+        let fd_entry: Arc<dyn crate::horse_lib::fd::FileDescriptor> = match dev_name {
+            "null"   => Arc::new(NullDevice),
+            "zero"   => Arc::new(ZeroDevice),
+            "stdin"  => Arc::new(StdinDevice),
+            "stdout" => Arc::new(StdoutDevice),
+            "stderr" => Arc::new(StderrDevice),
+            _ => return SyscallError::NoEnt as isize,
+        };
+        let fd = FILE_DESCRIPTOR_TABLE.lock().add(fd_entry);
         if fd < 0 {
-            return SyscallError::NoEnt as isize;
+            return SyscallError::IoError as isize;
         }
         return fd as isize;
     }
 
-    SyscallError::IoError as isize
+    // Regular file: verify existence then register
+    let path = Path::new(alloc::string::String::from(path_str));
+    let exists = {
+        let fs_table = unsafe { FILESYSTEM_TABLE.lock() };
+        !fs_table.is_empty() && fs_table[0].exists(&path)
+    };
+    if !exists {
+        return SyscallError::NoEnt as isize;
+    }
+
+    let file = Arc::new(RegularFile::new(flags, path_str));
+    let fd = FILE_DESCRIPTOR_TABLE.lock().add(file);
+    if fd < 0 {
+        return SyscallError::IoError as isize;
+    }
+    fd as isize
 }
 
 /// sys_read - Read from a file descriptor
-///
-/// # Arguments
-/// * `fd` - File descriptor
-/// * `buf` - Buffer to read into
-/// * `count` - Number of bytes to read
 ///
 /// # Returns
 /// * Number of bytes read on success (>= 0)
@@ -152,47 +241,26 @@ pub fn sys_read(fd: i32, buf: *mut u8, count: usize) -> isize {
     if buf.is_null() || count == 0 {
         return SyscallError::InvalidArg as isize;
     }
-
-    // Validate file descriptor
     if fd < 0 {
         return SyscallError::InvalidFd as isize;
     }
 
-    // Handle stdin (fd 0)
-    if fd == 0 {
-        // For now, stdin reading is not implemented
-        // Could integrate with keyboard driver in the future
-        return 0;
+    let fd_entry = match FILE_DESCRIPTOR_TABLE.lock().get(fd) {
+        Some(e) => e,
+        None => return SyscallError::InvalidFd as isize,
+    };
+
+    let mut tmp = vec![0u8; count];
+    let bytes_read = fd_entry.read(&mut tmp);
+    if bytes_read > 0 {
+        // Use page-table-aware copy so that user stack buffers (which live at
+        // arbitrary physical addresses) are written correctly.
+        unsafe { copy_to_user(buf, tmp.as_ptr(), bytes_read as usize); }
     }
-
-    // For regular files, use filesystem
-    // Safety: FILESYSTEM_TABLE is initialized once at boot
-    let fs_table = unsafe { FILESYSTEM_TABLE.lock() };
-    if !fs_table.is_empty() {
-        let mut temp_buf = vec![0u8; count];
-        let bytes_read = fs_table[0].read(fd, &mut temp_buf, count);
-
-        if bytes_read < 0 {
-            return SyscallError::IoError as isize;
-        }
-
-        // Copy to user buffer
-        unsafe {
-            core::ptr::copy_nonoverlapping(temp_buf.as_ptr(), buf, bytes_read as usize);
-        }
-
-        return bytes_read;
-    }
-
-    SyscallError::IoError as isize
+    bytes_read
 }
 
 /// sys_write - Write to a file descriptor
-///
-/// # Arguments
-/// * `fd` - File descriptor
-/// * `buf` - Buffer to write from
-/// * `count` - Number of bytes to write
 ///
 /// # Returns
 /// * Number of bytes written on success (>= 0)
@@ -201,100 +269,41 @@ pub fn sys_write(fd: i32, buf: *const u8, count: usize) -> isize {
     if buf.is_null() || count == 0 {
         return SyscallError::InvalidArg as isize;
     }
-
-    // Validate file descriptor
     if fd < 0 {
         return SyscallError::InvalidFd as isize;
     }
 
-    // Handle stdout (fd 1) and stderr (fd 2)
-    if fd == 1 || fd == 2 {
-        // Note: buf points to user space, which should be accessible since
-        // we copied PML4[0] (identity mapping) to user page tables
-        let data = unsafe {
-            core::slice::from_raw_parts(buf, count)
-        };
+    let fd_entry = match FILE_DESCRIPTOR_TABLE.lock().get(fd) {
+        Some(e) => e,
+        None => return SyscallError::InvalidFd as isize,
+    };
 
-        // Convert to string and print
-        if let Ok(s) = core::str::from_utf8(data) {
-            // Write to console (use block scope to release lock before draw)
-            {
-                let mut console = Console::instance();
-                if let Some(ref mut con) = *console {
-                    con.put_string(s);
-                }
-            }
-            
-            // Update screen
-            LAYER_MANAGER.lock().as_mut().unwrap().draw();
-            return count as isize;
-        } else {
-            // Write raw bytes as characters (convert each byte to a char string)
-            {
-                let mut console = Console::instance();
-                if let Some(ref mut con) = *console {
-                    for &byte in data {
-                        // Create a temporary buffer for single character
-                        let mut buf = [0u8; 4];
-                        let c = byte as char;
-                        if let Some(s) = c.encode_utf8(&mut buf).get(..c.len_utf8()) {
-                            con.put_string(s);
-                        }
-                    }
-                }
-            }
-            // Update screen
-            LAYER_MANAGER.lock().as_mut().unwrap().draw();
-            return count as isize;
-        }
-    }
-
-    // For regular files, write is not yet implemented in FAT
-    // Return error for now
-    SyscallError::IoError as isize
+    // Copy user buffer to kernel memory first, because the user buffer may be
+    // on the stack (arbitrary physical address, not accessible via identity map).
+    let mut tmp = vec![0u8; count];
+    unsafe { copy_from_user(tmp.as_mut_ptr(), buf, count); }
+    fd_entry.write(&tmp)
 }
 
 /// sys_close - Close a file descriptor
-///
-/// # Arguments
-/// * `fd` - File descriptor to close
 ///
 /// # Returns
 /// * 0 on success
 /// * Negative error code on failure
 pub fn sys_close(fd: i32) -> isize {
-    // Validate file descriptor
     if fd < 0 {
         return SyscallError::InvalidFd as isize;
     }
-
-    // Don't close stdin, stdout, stderr
-    if fd <= 2 {
-        return 0;
+    let valid = FILE_DESCRIPTOR_TABLE.lock().get(fd).is_some();
+    if !valid {
+        return SyscallError::InvalidFd as isize;
     }
-
-    // Use filesystem to close
-    // Safety: FILESYSTEM_TABLE is initialized once at boot
-    let fs_table = unsafe { FILESYSTEM_TABLE.lock() };
-    if !fs_table.is_empty() {
-        fs_table[0].close(fd);
-        return 0;
-    }
-
-    SyscallError::IoError as isize
+    FILE_DESCRIPTOR_TABLE.lock().remove(fd);
+    0
 }
 
 /// sys_exit - Terminate the current process
-///
-/// # Arguments
-/// * `status` - Exit status code (0 for success, non-zero for error)
-///
-/// # Returns
-/// * This function should not return to the calling process
-/// * Returns 0 if process termination was successful (for internal use)
 pub fn sys_exit(status: i32) -> isize {
-    // Prepare to terminate and get switch pointers while holding the lock
-    // Then drop the lock before actually switching to avoid deadlock
     let switch_ptrs = {
         let mut manager_lock = PROCESS_MANAGER.lock();
         if let Some(manager) = manager_lock.get_mut() {
@@ -303,28 +312,19 @@ pub fn sys_exit(status: i32) -> isize {
             None
         }
     };
-    // Lock is now dropped
 
-    // Perform the actual context switch if there's another process
     if let Some((next_ctx, current_ctx)) = switch_ptrs {
         unsafe { do_switch_context(next_ctx, current_ctx); }
     }
 
-    // If we return here, it means there are no more processes
-    // The kernel main loop will continue
     0
 }
 
 /// Entry point for syscall from assembly
-///
-/// This function is called from the assembly interrupt handler (syscall_handler_asm)
-/// with a pointer to the SyscallArgs structure on the stack.
 #[no_mangle]
 pub extern "C" fn syscall_entry(args: *const SyscallArgs) -> isize {
     if args.is_null() {
         return SyscallError::InvalidArg as isize;
     }
-    // SyscallArgs is #[repr(C)] with usize fields, built on an aligned stack in
-    // syscall_handler_asm (sub rsp, 56), so a direct dereference is safe.
     syscall_handler(unsafe { &*args })
 }

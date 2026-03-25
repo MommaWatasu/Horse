@@ -8,12 +8,9 @@ use core::mem::size_of;
 use crate::{
     drivers::fs::core::{
         FileSystem,
-        STORAGE_CONTROLLERS, FILE_DESCRIPTOR_TABLE
+        STORAGE_CONTROLLERS,
     },
-    horse_lib::{fd::{
-        File,
-        Path
-    }, bytes::bytes2str}
+    horse_lib::{fd::Path, bytes::bytes2str}
 };
 
 const END_OF_CLUSTER_CHAIN: u32 = 0x0fffffff;
@@ -69,7 +66,7 @@ pub struct DirectoryEntry {
 
 impl DirectoryEntry {
     pub fn first_cluster(&self) -> u32 {
-        return self.fst_clus_lo as u32 | ((self.fst_clus_hi as u32) << 16) 
+        return self.fst_clus_lo as u32 | ((self.fst_clus_hi as u32) << 16)
     }
     pub fn file_size(&self) -> u32 { self.file_size }
 }
@@ -151,7 +148,7 @@ impl FAT {
         }
         return next
     }
-    
+
     fn sfn_cmp(sfn: [u8; 11], name: &str) -> bool {
         let mut name83 = [0x20; 11];
 
@@ -232,18 +229,13 @@ impl FAT {
 }
 
 impl FileSystem for FAT {
-    fn open(&self, path: &str, flags: u32) -> i32 {
-        let file = File::new(flags, path);
-        return FILE_DESCRIPTOR_TABLE.lock().add(file)
+    fn exists(&self, path: &Path) -> bool {
+        self.find_file(path).is_ok()
     }
-    fn close(&self, fd: i32) {
-        FILE_DESCRIPTOR_TABLE.lock().remove(fd);
-    }
-    fn read(&self, fd: i32, buf: &mut [u8], nbytes: usize) -> isize {
-        let file = FILE_DESCRIPTOR_TABLE.lock().get(fd);
-        let entry = match self.find_file(&file.path) {
+    fn read_file(&self, path: &Path, buf: &mut [u8], nbytes: usize) -> isize {
+        let entry = match self.find_file(path) {
             Ok(e) => e,
-            Err(_) => return -1, // File not found
+            Err(_) => return -1,
         };
         if entry.attr & 0x08 != 0 || entry.attr & 0x10 != 0 {
             return -1
