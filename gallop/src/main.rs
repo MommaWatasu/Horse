@@ -167,6 +167,92 @@ fn test_fd_reuse() {
     let _ = close(fd2);
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum PixelFormat {
+    Rgb = 0,
+    Bgr,
+    Bitmask,
+    BltOnly,
+    InvalidFormat
+}
+
+impl From<u8> for PixelFormat {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Rgb,
+            1 => Self::Bgr,
+            2 => Self::Bitmask,
+            3 => Self::BltOnly,
+            _ => Self::InvalidFormat
+        }
+    }
+}
+
+fn convert_metadata(metadata: &[u8]) -> (u32, u32, u32, PixelFormat) {
+    let mut buf: [u8; 4] = [0; 4];
+    buf.copy_from_slice(&metadata[0..4]);
+    let width = u32::from_le_bytes(buf);
+    buf.copy_from_slice(&metadata[4..8]);
+    let height = u32::from_le_bytes(buf);
+    buf.copy_from_slice(&metadata[8..12]);
+    let stride = u32::from_le_bytes(buf);
+    let format = PixelFormat::from(metadata[12]);
+    return (width, height, stride, format)
+}
+
+fn test_fb() {
+    println!("---frame buffer device---");
+
+    let fd = open("/dev/fb", OpenFlags::RDWR).expect("open 1");
+
+    // read test
+    let mut buf = [0u8; 13];
+    let n = read(fd, &mut buf).expect("read fb metadata");
+    println!("read frame buffer metadata: {} bytes", n);
+    let (width, height, stride, format) = convert_metadata(&buf);
+    println!("width: {}, height: {}, stride: {}, format: {:?}", width, height, stride, format);
+    pass!("read /dev/fb");
+
+    // write test: paint first 512 pixels with a bright color to verify visually.
+    // 512 pixels * 4 bytes/pixel = 2048 bytes (safe on stack).
+    // Magenta (R=255, G=0, B=255) is visible regardless of format byte order.
+    const PIXELS: usize = 800 * 30;
+    let mut pixel_buf = [0u8; PIXELS * 4];
+    for i in 0..PIXELS {
+        let base = i * 4;
+        match format {
+            PixelFormat::Rgb => {
+                pixel_buf[base]     = 0xFF; // R
+                pixel_buf[base + 1] = 0x00; // G
+                pixel_buf[base + 2] = 0xFF; // B
+                // [base+3] padding stays 0
+            }
+            PixelFormat::Bgr => {
+                pixel_buf[base]     = 0xFF; // B
+                pixel_buf[base + 1] = 0x00; // G
+                pixel_buf[base + 2] = 0xFF; // R
+                // [base+3] padding stays 0
+            }
+            _ => {
+                pixel_buf[base]     = 0xFF;
+                pixel_buf[base + 1] = 0xFF;
+                pixel_buf[base + 2] = 0xFF;
+                // [base+3] padding stays 0
+            }
+        }
+    }
+    for _ in 0..1000 {
+        match write(fd, &pixel_buf) {
+            Ok(n) => {
+            }
+            Err(e) => {
+            }
+        }
+    }
+
+    let _ = close(fd);
+}
+
 // ── entry point ──────────────────────────────────────────────────────────────
 
 #[no_mangle]
@@ -182,6 +268,7 @@ pub extern "C" fn _start() -> ! {
     test_stderr();
     test_nonexistent();
     test_fd_reuse();
+    test_fb();
 
     println!("========================================");
     let pass = unsafe { PASS_COUNT };

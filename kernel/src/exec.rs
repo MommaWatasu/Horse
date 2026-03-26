@@ -15,7 +15,7 @@ const USER_STACK_BASE: u64 = 0x0000_0000_4000_0000; // 1GB
 
 // External assembly functions to jump to user mode
 extern "C" {
-    fn jump_to_user_mode(entry: u64, user_stack: u64, user_cs: u64, user_ss: u64) -> !;
+    //fn jump_to_user_mode(entry: u64, user_stack: u64, user_cs: u64, user_ss: u64) -> !;
     fn jump_to_user_mode_with_cr3(entry: u64, user_stack: u64, user_cs: u64, user_ss: u64, cr3: u64) -> !;
 }
 

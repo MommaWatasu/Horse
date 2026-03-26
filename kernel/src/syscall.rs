@@ -20,6 +20,7 @@ use crate::drivers::dev::null::NullDevice;
 use crate::drivers::dev::zero::ZeroDevice;
 use crate::drivers::dev::stdin::StdinDevice;
 use crate::drivers::dev::stdout::{StdoutDevice, StderrDevice};
+use crate::drivers::dev::fb::FrameBufferDevice;
 use crate::horse_lib::fd::Path;
 use crate::paging::{PAGE_TABLE_MANAGER, PAGE_SIZE_4K, phys_to_ptr, PageTable};
 use crate::proc::{PROCESS_MANAGER, do_switch_context};
@@ -205,6 +206,7 @@ pub fn sys_open(pathname: *const u8, len: usize, flags: u32) -> isize {
             "stdin"  => Arc::new(StdinDevice),
             "stdout" => Arc::new(StdoutDevice),
             "stderr" => Arc::new(StderrDevice),
+            "fb"     => Arc::new(FrameBufferDevice),
             _ => return SyscallError::NoEnt as isize,
         };
         let fd = FILE_DESCRIPTOR_TABLE.lock().add(fd_entry);
