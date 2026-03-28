@@ -12,7 +12,8 @@
 //! - R9:  arg6
 //! - Return value in RAX
 
-use alloc::{sync::Arc, vec};
+use alloc::{sync::Arc, vec, string::String, vec::Vec,};
+use spin::Mutex;
 use crate::drivers::fs::core::FILE_DESCRIPTOR_TABLE;
 use crate::drivers::fs::init::FILESYSTEM_TABLE;
 use crate::drivers::fs::regular::RegularFile;
@@ -24,6 +25,9 @@ use crate::drivers::dev::fb::FrameBufferDevice;
 use crate::horse_lib::fd::Path;
 use crate::paging::{PAGE_TABLE_MANAGER, PAGE_SIZE_4K, phys_to_ptr, PageTable};
 use crate::proc::{PROCESS_MANAGER, do_switch_context};
+use crate::horse_lib::ringbuffer::*;
+use crate::socket::*;
+use crate::sync::WaitQueue;
 
 // ── user memory helpers ──────────────────────────────────────────────────────
 //
@@ -106,6 +110,10 @@ pub enum SyscallNumber {
     Write = 1,
     Open = 2,
     Close = 3,
+    Socket = 41,
+    Connect = 42,
+    AAccept = 43,
+    Bind = 49,
     Exit = 60,
 }
 
@@ -118,6 +126,10 @@ impl TryFrom<usize> for SyscallNumber {
             1 => Ok(SyscallNumber::Write),
             2 => Ok(SyscallNumber::Open),
             3 => Ok(SyscallNumber::Close),
+            41 => Ok(SyscallNumber::Socket),
+            42 => Ok(SyscallNumber::Connect),
+            43 => Ok(SyscallNumber::AAccept),
+            49 => Ok(SyscallNumber::Bind),
             60 => Ok(SyscallNumber::Exit),
             _ => Err(()),
         }
@@ -129,10 +141,17 @@ impl TryFrom<usize> for SyscallNumber {
 #[derive(Debug, Clone, Copy)]
 pub enum SyscallError {
     InvalidSyscall = -1,
-    InvalidFd = -9,      // EBADF
-    InvalidArg = -22,    // EINVAL
-    NoEnt = -2,          // ENOENT
-    IoError = -5,        // EIO
+    NoEntry = -2,          // ENOENT
+    IoError = -5,          // EIO
+    InvalidFd = -9,        // EBADF
+    InvalidArg = -22,      // EINVAL
+    NotSocket = -88,       // ENOTSOCK
+    OpNotSupp =   -95,     // EOPNOTSUPP
+    AddrInUse = -98,       // EADDRINUSE
+    AddrNotAvail = -99,    // EADDRNOTAVAIL
+    IsConn = -106,         // EISCONN
+    NotConn = -107,        // ENOTCONN
+    ConnRefused = -111,    // ECONNREFUSED
 }
 
 /// Syscall arguments structure
@@ -174,6 +193,22 @@ pub fn syscall_handler(args: &SyscallArgs) -> isize {
             args.arg3 as u32,       // flags
         ),
         SyscallNumber::Close => sys_close(args.arg1 as i32),
+        SyscallNumber::Socket => sys_socket(
+            args.arg1 as i32,
+            args.arg2 as i32,
+            args.arg3 as i32
+        ),
+        SyscallNumber::Connect => sys_connect(
+            args.arg1 as i32,
+            unsafe { &*(args.arg2 as *const SocketAddrUn) }
+        ),
+        SyscallNumber::AAccept => sys_accept(
+            args.arg1 as i32
+        ),
+        SyscallNumber::Bind => sys_bind(
+            args.arg1 as i32,
+           unsafe { &*(args.arg2 as *const SocketAddrUn) }
+        ),
         SyscallNumber::Exit => sys_exit(args.arg1 as i32),
     }
 }
@@ -207,7 +242,7 @@ pub fn sys_open(pathname: *const u8, len: usize, flags: u32) -> isize {
             "stdout" => Arc::new(StdoutDevice),
             "stderr" => Arc::new(StderrDevice),
             "fb"     => Arc::new(FrameBufferDevice),
-            _ => return SyscallError::NoEnt as isize,
+            _ => return SyscallError::NoEntry as isize,
         };
         let fd = FILE_DESCRIPTOR_TABLE.lock().add(fd_entry);
         if fd < 0 {
@@ -223,7 +258,7 @@ pub fn sys_open(pathname: *const u8, len: usize, flags: u32) -> isize {
         !fs_table.is_empty() && fs_table[0].exists(&path)
     };
     if !exists {
-        return SyscallError::NoEnt as isize;
+        return SyscallError::NoEntry as isize;
     }
 
     let file = Arc::new(RegularFile::new(flags, path_str));
@@ -247,9 +282,15 @@ pub fn sys_read(fd: i32, buf: *mut u8, count: usize) -> isize {
         return SyscallError::InvalidFd as isize;
     }
 
-    let fd_entry = match FILE_DESCRIPTOR_TABLE.lock().get(fd) {
-        Some(e) => e,
-        None => return SyscallError::InvalidFd as isize,
+    let fd_entry = {
+        let file_descriptor_table = FILE_DESCRIPTOR_TABLE.lock();
+        match file_descriptor_table.get(fd) {
+            Some(e) => e,
+            None => match file_descriptor_table.get_socket(fd) {
+                Some(e) => e,
+                None => return SyscallError::InvalidFd as isize
+            },
+        }
     };
 
     let mut tmp = vec![0u8; count];
@@ -275,9 +316,15 @@ pub fn sys_write(fd: i32, buf: *const u8, count: usize) -> isize {
         return SyscallError::InvalidFd as isize;
     }
 
-    let fd_entry = match FILE_DESCRIPTOR_TABLE.lock().get(fd) {
-        Some(e) => e,
-        None => return SyscallError::InvalidFd as isize,
+    let fd_entry = {
+        let file_descriptor_table = FILE_DESCRIPTOR_TABLE.lock();
+        match file_descriptor_table.get(fd) {
+            Some(e) => e,
+            None => match file_descriptor_table.get_socket(fd) {
+                Some(e) => e,
+                None => return SyscallError::InvalidFd as isize
+            },
+        }
     };
 
     // Copy user buffer to kernel memory first, because the user buffer may be
@@ -302,6 +349,107 @@ pub fn sys_close(fd: i32) -> isize {
     }
     FILE_DESCRIPTOR_TABLE.lock().remove(fd);
     0
+}
+
+pub fn sys_socket(domain: i32, socket_type: i32, _protocol: i32) -> isize {
+    let socket = Socket::new(domain, socket_type);
+    let fd = FILE_DESCRIPTOR_TABLE.lock().add_socket(Arc::new(socket));
+    if fd < 0 {
+        return SyscallError::InvalidFd as isize;
+    }
+    fd as isize
+}
+
+pub fn sys_bind(fd: i32, addr: &SocketAddrUn) -> isize {
+    // read path name until null character
+    let path_len = addr.sun_path.iter().position(|&b| b == 0).unwrap_or(108);
+    let path = core::str::from_utf8(&addr.sun_path[..path_len]).unwrap();
+
+    let mut socket = match FILE_DESCRIPTOR_TABLE.lock().get_socket(fd) {
+        Some(socket) => socket,
+        None => {
+            return SyscallError::NotSocket as isize;
+        }
+    };
+
+    if unsafe { GLOBAL_SOCKET_TABLE.lock().get(path).is_some() } {
+        return SyscallError::AddrInUse as isize;
+    }
+
+    unsafe {
+        GLOBAL_SOCKET_TABLE.lock().insert(String::from(path), socket.clone());
+    }
+
+    Arc::<Socket>::get_mut(&mut socket).expect("failed to get mut ref of socket").set_state(SocketState::Bound(String::from(path)));
+
+    0
+}
+
+pub fn sys_connect(fd: i32, addr: &SocketAddrUn) -> isize {
+    // read path name until null character
+    let path_len = addr.sun_path.iter().position(|&b| b == 0).unwrap_or(108);
+    let path = core::str::from_utf8(&addr.sun_path[..path_len]).unwrap();
+
+    let mut client_socket = FILE_DESCRIPTOR_TABLE.lock().get_socket(fd).expect("failed to get client socket");
+
+    let mut server_socket = {
+        match unsafe { GLOBAL_SOCKET_TABLE.lock().get(path) } {
+            None => {
+                return SyscallError::ConnRefused as isize
+            },
+            Some(socket) => socket
+        }
+    };
+
+    if *server_socket.state.lock() != SocketState::Listening {
+        return SyscallError::InvalidArg as isize
+    }
+
+    let a2b = Arc::new(Mutex::new(RingBuffer::new(SOCKET_RING_BUFFER_SIZE)));
+    let b2a = Arc::new(Mutex::new(RingBuffer::new(SOCKET_RING_BUFFER_SIZE)));
+
+    let server_wait_queue = Arc::new(Mutex::new(WaitQueue::new()));
+    let client_wait_queue = Arc::new(Mutex::new(WaitQueue::new()));
+
+    let server_conn = Socket {
+        state: Mutex::new(SocketState::Connected),
+        accept_queue: Mutex::new(Vec::new()),
+        wait_queue: Arc::new(Mutex::new(WaitQueue::new())),
+        read_buf: Some(b2a.clone()),
+        write_buf: Some(a2b.clone()),
+        peer_wait_queue: Some(client_wait_queue.clone())
+    };
+    Arc::<Socket>::get_mut(&mut server_socket).expect("failed to get mut ref of server socket").accept_queue.lock().push(server_conn);
+
+    {
+        let client_socket_mut = Arc::<Socket>::get_mut(&mut client_socket).expect("failed to get mut ref of client socket");
+        client_socket_mut.set_buffer(a2b, b2a);
+        client_socket_mut.set_state(SocketState::Connected);
+        client_socket_mut.peer_wait_queue = Some(server_wait_queue);
+    }
+
+    0
+}
+
+pub fn sys_accept(fd: i32) -> isize {
+    let socket = match FILE_DESCRIPTOR_TABLE.lock().get_socket(fd) {
+        Some(s) => s,
+        None => return SyscallError::NotSocket as isize
+    };
+
+    if *socket.state.lock() != SocketState::Listening {
+        return SyscallError::InvalidArg as isize;
+    }
+
+    loop {
+        if let Some(connected) = socket.accept_queue.lock().pop() {
+            let new_fd = FILE_DESCRIPTOR_TABLE.lock()
+                .add_socket(Arc::new(connected));
+            return new_fd as isize
+        }
+
+        socket.wait_queue.lock().wait();
+    }
 }
 
 /// sys_exit - Terminate the current process

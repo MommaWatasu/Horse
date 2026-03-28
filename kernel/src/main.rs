@@ -27,6 +27,8 @@ pub mod log;
 pub mod memory_manager;
 pub mod mouse;
 pub mod proc;
+pub mod socket;
+pub mod sync;
 pub mod status;
 pub mod volatile;
 pub mod window;

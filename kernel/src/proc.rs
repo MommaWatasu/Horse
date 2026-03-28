@@ -194,19 +194,15 @@ impl ProcessManager {
         Some((next_proc_ptr, current_proc_ptr))
     }
 
-    /// Prepare to terminate current process and switch to next
-    /// Returns (next_context_ptr, current_context_ptr) or None if no other processes
-    pub fn prepare_terminate(&mut self, exit_status: i32) -> Option<(u64, u64)> {
+    pub fn prepare_sleep(&mut self) -> Option<(u64, u64)> {
         if self.run_queue.is_empty() {
             return None;
         }
 
         // Remove the current process from the run queue
         let current_proc = self.run_queue.pop_front().unwrap();
-        let current_id = current_proc.lock().id();
+        self.pending_queue.push(current_proc.clone());
         let current_proc_ptr = current_proc.lock().context().as_ptr();
-
-        crate::info!("Process {} terminated with status {}", current_id, exit_status);
 
         // If there are no more processes, return None
         if self.run_queue.is_empty() {
@@ -221,7 +217,33 @@ impl ProcessManager {
         let next_proc_ptr = next_proc.lock().context().as_ptr();
         *CURRENT_PROCESS_ID.lock() = next_id;
 
-        crate::info!("Will switch to process {}", next_id);
+        Some((next_proc_ptr, current_proc_ptr))
+    }
+
+    /// Prepare to terminate current process and switch to next
+    /// Returns (next_context_ptr, current_context_ptr) or None if no other processes
+    pub fn prepare_terminate(&mut self, _status: i32) -> Option<(u64, u64)> {
+        if self.run_queue.is_empty() {
+            return None;
+        }
+
+        // Remove the current process from the run queue
+        let current_proc = self.run_queue.pop_front().unwrap();
+        let current_proc_ptr = current_proc.lock().context().as_ptr();
+
+        // If there are no more processes, return None
+        if self.run_queue.is_empty() {
+            crate::info!("No more processes in run queue");
+            *CURRENT_PROCESS_ID.lock() = 0;
+            return None;
+        }
+
+        // Get the next process context
+        let next_proc = self.run_queue.front_mut().unwrap();
+        let next_id = next_proc.lock().id();
+        let next_proc_ptr = next_proc.lock().context().as_ptr();
+        *CURRENT_PROCESS_ID.lock() = next_id;
+
         Some((next_proc_ptr, current_proc_ptr))
     }
 }
