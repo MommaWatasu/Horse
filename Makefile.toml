@@ -11,6 +11,9 @@ cp ./horse-kernel ../dev-tools
 cd ../gallop
 cargo build --release
 cp ./target/x86_64-horse-user/release/gallop ../dev-tools/
+cd ../shoji
+cargo build --release
+cp ./target/x86_64-horse-user/release/shoji ../dev-tools/
 cd ../
 ''']
 
@@ -24,6 +27,7 @@ MOUNT_POINT=mnt
 EFI_FILE=./dev-tools/horse-bootloader.efi
 ANOTHER_FILE=kernel/horse-kernel
 GALLOP_FILE=./dev-tools/gallop
+SHOJI_FILE=./dev-tools/shoji
 
 if [ ! -f $EFI_FILE ]
 then
@@ -44,10 +48,10 @@ if [ "$ANOTHER_FILE" != "" ]
 then
     sudo cp $ANOTHER_FILE $MOUNT_POINT/
 fi
-if [ -f "$GALLOP_FILE" ]
-then
-    sudo cp $GALLOP_FILE $MOUNT_POINT/
-fi
+
+sudo cp $GALLOP_FILE $MOUNT_POINT/
+sudo cp $SHOJI_FILE $MOUNT_POINT/
+
 sleep 0.5
 sudo umount $MOUNT_POINT
 ''']
