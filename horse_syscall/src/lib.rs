@@ -34,6 +34,7 @@ pub mod error;
 pub mod fs;
 pub mod io;
 pub mod raw;
+pub mod socket;
 
 /// Prelude module - import everything you need with `use horse_syscall::prelude::*`
 pub mod prelude {
@@ -41,6 +42,7 @@ pub mod prelude {
     pub use crate::fs::{close, exit, open, read, write, OpenFlags};
     pub use crate::io::{print, println, STDERR, STDIN, STDOUT};
     pub use crate::raw::{syscall0, syscall1, syscall2, syscall3, syscall4, syscall5, syscall6};
+    pub use crate::socket::{accept, bind, connect, listen, socket, SocketAddrUn, AF_UNIX, SOCK_DGRAM, SOCK_STREAM};
 }
 
 pub use error::{Error, Result};

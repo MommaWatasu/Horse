@@ -29,6 +29,16 @@ pub enum SyscallNum {
     Open = 2,
     /// Close a file descriptor
     Close = 3,
+    /// Create a socket
+    Socket = 41,
+    /// Connect a socket to an address
+    Connect = 42,
+    /// Accept a connection on a socket
+    Accept = 43,
+    /// Bind a socket to an address
+    Bind = 49,
+    /// Listen for connections on a socket
+    Listen = 50,
     /// Exit the process
     Exit = 60,
 }

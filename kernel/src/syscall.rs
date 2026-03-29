@@ -114,6 +114,7 @@ pub enum SyscallNumber {
     Connect = 42,
     AAccept = 43,
     Bind = 49,
+    Listen = 50,
     Exit = 60,
 }
 
@@ -130,6 +131,7 @@ impl TryFrom<usize> for SyscallNumber {
             42 => Ok(SyscallNumber::Connect),
             43 => Ok(SyscallNumber::AAccept),
             49 => Ok(SyscallNumber::Bind),
+            50 => Ok(SyscallNumber::Listen),
             60 => Ok(SyscallNumber::Exit),
             _ => Err(()),
         }
@@ -208,6 +210,10 @@ pub fn syscall_handler(args: &SyscallArgs) -> isize {
         SyscallNumber::Bind => sys_bind(
             args.arg1 as i32,
            unsafe { &*(args.arg2 as *const SocketAddrUn) }
+        ),
+        SyscallNumber::Listen => sys_listen(
+            args.arg1 as i32,
+            args.arg2 as i32,
         ),
         SyscallNumber::Exit => sys_exit(args.arg1 as i32),
     }
@@ -385,6 +391,25 @@ pub fn sys_bind(fd: i32, addr: &SocketAddrUn) -> isize {
     0
 }
 
+pub fn sys_listen(fd: i32, _backlog: i32) -> isize {
+    let mut socket = match FILE_DESCRIPTOR_TABLE.lock().get_socket(fd) {
+        Some(s) => s,
+        None => return SyscallError::NotSocket as isize,
+    };
+
+    match *socket.state.lock() {
+        SocketState::Bound(_) => {}
+        SocketState::Listening => return 0,
+        _ => return SyscallError::InvalidArg as isize,
+    }
+
+    Arc::<Socket>::get_mut(&mut socket)
+        .expect("failed to get mut ref of socket")
+        .set_state(SocketState::Listening);
+
+    0
+}
+
 pub fn sys_connect(fd: i32, addr: &SocketAddrUn) -> isize {
     // read path name until null character
     let path_len = addr.sun_path.iter().position(|&b| b == 0).unwrap_or(108);
@@ -419,7 +444,9 @@ pub fn sys_connect(fd: i32, addr: &SocketAddrUn) -> isize {
         write_buf: Some(a2b.clone()),
         peer_wait_queue: Some(client_wait_queue.clone())
     };
-    Arc::<Socket>::get_mut(&mut server_socket).expect("failed to get mut ref of server socket").accept_queue.lock().push(server_conn);
+    let server_socket_mut = Arc::<Socket>::get_mut(&mut server_socket).expect("failed to get mut ref of server socket");
+    server_socket_mut.accept_queue.lock().push(server_conn);
+    server_socket_mut.wait_queue.lock().wake();
 
     {
         let client_socket_mut = Arc::<Socket>::get_mut(&mut client_socket).expect("failed to get mut ref of client socket");

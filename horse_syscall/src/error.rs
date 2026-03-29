@@ -32,6 +32,12 @@ pub enum Error {
     MFile = -24,
     /// Function not implemented
     NoSys = -38,
+    /// Not a socket
+    NotSock = -88,
+    /// Address already in use
+    AddrInUse = -98,
+    /// Connection refused
+    ConnRefused = -111,
     /// Unknown error
     Unknown = -255,
 }
@@ -53,6 +59,9 @@ impl Error {
             -22 => Error::Inval,
             -24 => Error::MFile,
             -38 => Error::NoSys,
+            -88 => Error::NotSock,
+            -98 => Error::AddrInUse,
+            -111 => Error::ConnRefused,
             _ => Error::Unknown,
         }
     }
@@ -79,6 +88,9 @@ impl fmt::Display for Error {
             Error::Inval => write!(f, "Invalid argument"),
             Error::MFile => write!(f, "Too many open files"),
             Error::NoSys => write!(f, "Function not implemented"),
+            Error::NotSock => write!(f, "Not a socket"),
+            Error::AddrInUse => write!(f, "Address already in use"),
+            Error::ConnRefused => write!(f, "Connection refused"),
             Error::Unknown => write!(f, "Unknown error"),
         }
     }
