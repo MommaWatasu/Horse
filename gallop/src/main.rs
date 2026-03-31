@@ -276,6 +276,11 @@ pub extern "C" fn _start() -> ! {
     println!("Result: {} passed, {} failed", pass, fail);
     println!("========================================");
 
+    match spawn("shoji") {
+        Ok(pid) => println!("shoji spawned (pid={})", pid),
+        Err(e) => eprintln!("failed to spawn shoji: {:?}", e),
+    }
+
     exit(if fail == 0 { 0 } else { 1 });
 }
 

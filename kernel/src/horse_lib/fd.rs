@@ -41,16 +41,24 @@ pub struct FDTable {
 impl FDTable {
     const MAX_FD: usize = 1024;
     pub const DEFAULT_TABLE: Self = Self {
-        max_fds: 0,
+        max_fds: Self::MAX_FD,
         fd_array: Vec::new(),
         socket_array: Vec::new(),
         empty_idx: 0,
     };
     pub fn initialize(&mut self) {
         self.max_fds = Self::MAX_FD;
-        self.empty_idx = 0;
         self.fd_array = vec![None; Self::MAX_FD];
-        self.socket_array = vec![None; Self::MAX_FD]
+        self.socket_array = vec![None; Self::MAX_FD];
+        self.empty_idx = 0;
+    }
+    pub fn new() -> Self {
+        Self {
+            max_fds: Self::MAX_FD,
+            fd_array: vec![None; Self::MAX_FD],
+            socket_array: vec![None; Self::MAX_FD],
+            empty_idx: 0
+        }
     }
     fn update_idx(&mut self) {
         for i in self.empty_idx + 1..self.max_fds {

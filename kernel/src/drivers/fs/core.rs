@@ -6,7 +6,7 @@ use spin::Mutex;
 
 use crate::{
     horse_lib::{
-        fd::{FDTable, Path},
+        fd::Path,
         storage::Storage,
     },
     drivers::ata::{
@@ -22,7 +22,6 @@ pub enum DiskType {
 
 pub trait StorageController: Storage + Send + Sync {}
 pub static STORAGE_CONTROLLERS: Mutex<Vec<Box<dyn StorageController>>> = Mutex::new(Vec::new());
-pub static FILE_DESCRIPTOR_TABLE: Mutex<FDTable> = Mutex::new(FDTable::DEFAULT_TABLE);
 
 pub trait FileSystem: Send + Sync {
     fn exists(&self, path: &Path) -> bool;

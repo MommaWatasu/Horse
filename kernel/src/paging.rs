@@ -825,8 +825,13 @@ pub unsafe fn initialize() {
 
 /// Set up user space page tables for a process
 /// Returns the physical address of the PML4 table (for CR3)
+///
+/// `program_virt` is the virtual base address the ELF was linked at.
+/// `program_phys` is the physical base address where the ELF was loaded
+/// (may differ from `program_virt` when two processes share the same link address).
 pub fn setup_user_page_table(
-    program_start: u64,
+    program_virt: u64,
+    program_phys: u64,
     program_size: usize,
     stack_top: u64,
     stack_size: usize,
@@ -838,12 +843,12 @@ pub fn setup_user_page_table(
     let (pml4_phys, pml4) = manager.create_user_page_table()
         .ok_or("Failed to create user page table")?;
 
-    // Map program area with user read/write/execute permissions
-    // For simplicity, we use identity mapping for the program
+    // Map program area: virtual load address → private physical frames.
     let program_pages = (program_size + PAGE_SIZE_4K - 1) / PAGE_SIZE_4K;
     for i in 0..program_pages {
-        let addr = program_start + (i * PAGE_SIZE_4K) as u64;
-        manager.map_4k(pml4, addr, addr, PageTableFlags::USER_RW)?;
+        let virt = program_virt + (i * PAGE_SIZE_4K) as u64;
+        let phys = program_phys + (i * PAGE_SIZE_4K) as u64;
+        manager.map_4k(pml4, virt, phys, PageTableFlags::USER_RW)?;
     }
 
     // Allocate and map user stack

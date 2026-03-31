@@ -8,8 +8,16 @@ use spin::{
     Mutex,
     Once
 };
+use crate::drivers::dev::{
+    stdin::StdinDevice,
+    stdout::{
+        StderrDevice,
+        StdoutDevice
+    }
+};
 
 use crate::{drivers::timer::TIMER_MANAGER, segment::{KERNEL_CS, KERNEL_SS, USER_CS, USER_SS}};
+use crate::horse_lib::fd::*;
 
 const DEFAULT_CONTEXT: ContextWrapper = ContextWrapper(ProcessContext { cr3: 0, rip: 0, rflags: 0, reserved1: 0, cs: 0, ss: 0, fs: 0, gs: 0, rax: 0, rbx: 0, rcx: 0, rdx: 0, rdi: 0, rsi: 0, rsp: 0, rbp: 0, r8: 0, r9: 0, r10: 0, r11: 0, r12: 0, r13: 0, r14: 0, r15: 0, fxsave_area: [0; 512] });
 pub static PROCESS_MANAGER: Mutex<Once<ProcessManager>> = Mutex::new(Once::new());
@@ -80,15 +88,29 @@ impl ProcessManager {
         let mut manager = Self {
             latest_id: 0,
             run_queue: VecDeque::new(),
-            pending_queue: Vec::new(),
+            pending_queue: Vec::new()
         };
-        manager.new_proc();
+        //kernel process
+        let mut fd_table = FDTable::new();
+        fd_table.add(Arc::new(StdinDevice));  // fd 0
+        fd_table.add(Arc::new(StdoutDevice)); // fd 1
+        fd_table.add(Arc::new(StderrDevice)); // fd 2
+        manager.new_proc(&fd_table);
         manager.id_wake_up(1);
         return manager
     }
-    pub fn new_proc(&mut self) -> Arc<Mutex<Process>> {
+    pub fn new_proc(&mut self, parent_fd_table: &FDTable) -> Arc<Mutex<Process>> {
         self.latest_id += 1;
+
+        let mut child_fd_table = FDTable::new();
+        for fd in [0, 1, 2] {
+            if let Some(file) = parent_fd_table.get(fd) {
+                child_fd_table.add(file.clone());
+            }
+        }
+
         let proc = Arc::new(Mutex::new(Process::new(self.latest_id)));
+        proc.lock().fd_table = child_fd_table;
         self.pending_queue.push(proc.clone());
         return proc
     }
@@ -167,8 +189,12 @@ impl ProcessManager {
     }
 
     /// Get the ID of the current running process
-    pub fn current_id(&self) -> Option<usize> {
-        self.run_queue.front().map(|p| p.lock().id())
+    pub fn current_id(&self) -> usize {
+        self.run_queue.front().expect("failed to get current process").lock().id()
+    }
+
+    pub fn current_proc(&self) -> Arc<Mutex<Process>> {
+        (*self.run_queue.front().expect("failed to get current process")).clone()
     }
 
     /// Get the number of processes in the run queue
@@ -254,11 +280,11 @@ pub unsafe fn do_switch_context(next_ctx: u64, current_ctx: u64) {
     switch_context(next_ctx, current_ctx);
 }
 
-#[derive(Eq, PartialEq)]
 pub struct Process {
     id: usize,
     stack: Vec<u64>,
-    context: ContextWrapper
+    context: ContextWrapper,
+    pub fd_table: FDTable
 }
 
 impl Process {
@@ -267,7 +293,8 @@ impl Process {
         return Self {
             id,
             stack: Vec::new(),
-            context: DEFAULT_CONTEXT
+            context: DEFAULT_CONTEXT,
+            fd_table: FDTable::DEFAULT_TABLE
         }
     }
     pub fn id(&self) -> usize { self.id }

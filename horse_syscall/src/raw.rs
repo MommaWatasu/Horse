@@ -41,6 +41,8 @@ pub enum SyscallNum {
     Listen = 50,
     /// Exit the process
     Exit = 60,
+    /// Spawn a new process from an ELF binary
+    Spawn = 900,
 }
 
 /// Perform a system call with no arguments

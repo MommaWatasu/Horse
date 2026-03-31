@@ -73,10 +73,8 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::drivers::fs::core::FILE_DESCRIPTOR_TABLE;
+
 use crate::drivers::fs::init::FILESYSTEM_TABLE;
-use crate::drivers::dev::stdin::StdinDevice;
-use crate::drivers::dev::stdout::{StdoutDevice, StderrDevice};
 use alloc::vec;
 
 #[derive(Clone, Copy, Debug)]
@@ -138,7 +136,7 @@ fn run_gallop() {
     elf_buffer.truncate(elf_size);
 
     // Load the program (parse ELF and set up page tables)
-    let program = match exec::load_program(&elf_buffer) {
+    let program = match exec::load_program(&elf_buffer[..]) {
         Ok(p) => p,
         Err(e) => {
             error!("Failed to load program: {:?}", e);
@@ -154,19 +152,23 @@ fn run_gallop() {
     disable();
 
     {
+        // Build a parent fd_table with stdin/stdout/stderr for the child to inherit
+        let mut parent_fds = crate::horse_lib::fd::FDTable::new();
+        parent_fds.add(Arc::new(crate::drivers::dev::stdin::StdinDevice));
+        parent_fds.add(Arc::new(crate::drivers::dev::stdout::StdoutDevice));
+        parent_fds.add(Arc::new(crate::drivers::dev::stdout::StderrDevice));
+
         // Create a new process
         let mut manager_lock = PROCESS_MANAGER.lock();
         let manager = manager_lock.get_mut().expect("ProcessManager not initialized");
-        let proc = manager.new_proc();
+        let proc = manager.new_proc(&parent_fds);
 
-        // Initialize the process with user-mode context (outside of manager lock)
-        {
-            proc.lock().init_user_context(
-                program.entry_point,
-                program.stack_pointer,
-                program.cr3,
-            );
-        }
+        // Initialize the process with user-mode context
+        proc.lock().init_user_context(
+            program.entry_point,
+            program.stack_pointer,
+            program.cr3,
+        );
 
         // Wake up the process
         manager_lock.get_mut().unwrap().wake_up(proc);
@@ -231,6 +233,129 @@ fn initialize(fb_config: *mut FrameBufferConfig) {
     layer_manager.draw();
 }
 
+// ── exception helpers ────────────────────────────────────────────────────────
+
+fn print_exception(name: &str, frame: &InterruptStackFrame) {
+    debugcon_println!("\n=== {} ===", name);
+    debugcon_println!("RIP:    {:#018x}", frame.instruction_pointer.as_u64());
+    debugcon_println!("RSP:    {:#018x}", frame.stack_pointer.as_u64());
+    debugcon_println!("RFLAGS: {:#018x}", frame.cpu_flags);
+    debugcon_println!("CS:     {:#018x}", frame.code_segment as u64);
+    debugcon_println!("SS:     {:#018x}", frame.stack_segment as u64);
+    debugcon_println!("==================");
+}
+
+fn print_exception_with_code(name: &str, frame: &InterruptStackFrame, code: u64) {
+    debugcon_println!("\n=== {} ===", name);
+    debugcon_println!("Error code: {:#018x}", code);
+    debugcon_println!("RIP:    {:#018x}", frame.instruction_pointer.as_u64());
+    debugcon_println!("RSP:    {:#018x}", frame.stack_pointer.as_u64());
+    debugcon_println!("RFLAGS: {:#018x}", frame.cpu_flags);
+    debugcon_println!("CS:     {:#018x}", frame.code_segment as u64);
+    debugcon_println!("SS:     {:#018x}", frame.stack_segment as u64);
+    debugcon_println!("==================");
+}
+
+// ── CPU exception handlers ───────────────────────────────────────────────────
+
+extern "x86-interrupt" fn handler_divide_error(frame: InterruptStackFrame) {
+    print_exception("DIVIDE ERROR (#DE, vec 0)", &frame);
+    error!("DIVIDE ERROR at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_overflow(frame: InterruptStackFrame) {
+    print_exception("OVERFLOW (#OF, vec 4)", &frame);
+    error!("OVERFLOW at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_bound_range_exceeded(frame: InterruptStackFrame) {
+    print_exception("BOUND RANGE EXCEEDED (#BR, vec 5)", &frame);
+    error!("BOUND RANGE EXCEEDED at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_invalid_opcode(frame: InterruptStackFrame) {
+    print_exception("INVALID OPCODE (#UD, vec 6)", &frame);
+    error!("INVALID OPCODE at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_device_not_available(frame: InterruptStackFrame) {
+    print_exception("DEVICE NOT AVAILABLE (#NM, vec 7)", &frame);
+    error!("DEVICE NOT AVAILABLE at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_double_fault(frame: InterruptStackFrame, code: u64) -> ! {
+    print_exception_with_code("DOUBLE FAULT (#DF, vec 8)", &frame, code);
+    error!("DOUBLE FAULT at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_invalid_tss(frame: InterruptStackFrame, code: u64) {
+    print_exception_with_code("INVALID TSS (#TS, vec 10)", &frame, code);
+    error!("INVALID TSS at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_segment_not_present(frame: InterruptStackFrame, code: u64) {
+    print_exception_with_code("SEGMENT NOT PRESENT (#NP, vec 11)", &frame, code);
+    error!("SEGMENT NOT PRESENT at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_stack_segment_fault(frame: InterruptStackFrame, code: u64) {
+    print_exception_with_code("STACK-SEGMENT FAULT (#SS, vec 12)", &frame, code);
+    error!("STACK-SEGMENT FAULT at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_general_protection_fault(frame: InterruptStackFrame, code: u64) {
+    print_exception_with_code("GENERAL PROTECTION FAULT (#GP, vec 13)", &frame, code);
+    error!("GENERAL PROTECTION FAULT at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_x87_floating_point(frame: InterruptStackFrame) {
+    print_exception("x87 FLOATING POINT (#MF, vec 16)", &frame);
+    error!("x87 FLOATING POINT at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_alignment_check(frame: InterruptStackFrame, code: u64) {
+    print_exception_with_code("ALIGNMENT CHECK (#AC, vec 17)", &frame, code);
+    error!("ALIGNMENT CHECK at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_simd_floating_point(frame: InterruptStackFrame) {
+    print_exception("SIMD FLOATING POINT (#XF, vec 19)", &frame);
+    error!("SIMD FLOATING POINT at RIP: {:#x}", frame.instruction_pointer.as_u64());
+    loop {}
+}
+
+extern "x86-interrupt" fn handler_page_fault(
+    stack_frame: InterruptStackFrame,
+    error_code: PageFaultErrorCode,
+) {
+    let faulting_address = paging::get_cr2();
+    print_exception_with_code("PAGE FAULT (#PF, vec 14)", &stack_frame, error_code.bits());
+    debugcon_println!("  Faulting address: {:#018x}", faulting_address);
+    debugcon_println!("  Present:           {}", error_code.contains(PageFaultErrorCode::PROTECTION_VIOLATION));
+    debugcon_println!("  Write:             {}", error_code.contains(PageFaultErrorCode::CAUSED_BY_WRITE));
+    debugcon_println!("  User:              {}", error_code.contains(PageFaultErrorCode::USER_MODE));
+    debugcon_println!("  Instruction fetch: {}", error_code.contains(PageFaultErrorCode::INSTRUCTION_FETCH));
+
+    error!("PAGE FAULT at RIP: {:#x}, faulting addr: {:#x}, code: {:#x}",
+        stack_frame.instruction_pointer.as_u64(), faulting_address, error_code.bits());
+
+    paging::handle_page_fault(error_code.bits());
+}
+
+// ── device / timer interrupt handlers ────────────────────────────────────────
+
 extern "x86-interrupt" fn handler_xhci(_: InterruptStackFrame) {
     INTERRUPTION_QUEUE.lock().push(Message::InterruptXHCI);
     unsafe {
@@ -286,48 +411,6 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
     }
 }
 
-extern "x86-interrupt" fn handler_page_fault(
-    stack_frame: InterruptStackFrame,
-    error_code: PageFaultErrorCode,
-) {
-    // Get the faulting address from CR2
-    let faulting_address = paging::get_cr2();
-
-    // Output to debugcon for debugging
-    debugcon::write_str("\n=== PAGE FAULT ===");
-    debugcon::write_str("\nFaulting address: ");
-    debugcon::write_hex(faulting_address);
-    debugcon::write_str("\nError code: ");
-    debugcon::write_hex(error_code.bits());
-    debugcon::write_str("\n  Present: ");
-    debugcon::write_str(if error_code.contains(PageFaultErrorCode::PROTECTION_VIOLATION) { "true" } else { "false" });
-    debugcon::write_str("\n  Write: ");
-    debugcon::write_str(if error_code.contains(PageFaultErrorCode::CAUSED_BY_WRITE) { "true" } else { "false" });
-    debugcon::write_str("\n  User: ");
-    debugcon::write_str(if error_code.contains(PageFaultErrorCode::USER_MODE) { "true" } else { "false" });
-    debugcon::write_str("\n  Instruction fetch: ");
-    debugcon::write_str(if error_code.contains(PageFaultErrorCode::INSTRUCTION_FETCH) { "true" } else { "false" });
-    debugcon::write_str("\nRIP: ");
-    debugcon::write_hex(stack_frame.instruction_pointer.as_u64());
-    debugcon::write_str("\nRSP: ");
-    debugcon::write_hex(stack_frame.stack_pointer.as_u64());
-    debugcon::write_str("\nCS: ");
-    debugcon::write_hex(stack_frame.code_segment as u64);
-    debugcon::write_str("\nSS: ");
-    debugcon::write_hex(stack_frame.stack_segment as u64);
-    debugcon::write_str("\nRFLAGS: ");
-    debugcon::write_hex(stack_frame.cpu_flags);
-    debugcon::write_str("\n==================\n");
-
-    error!(
-        "PAGE FAULT!\n  Faulting address: 0x{:016x}\n  Error code: {:?}\n  Stack frame: {:#?}",
-        faulting_address, error_code, stack_frame
-    );
-
-    // Call the paging module's page fault handler
-    paging::handle_page_fault(error_code.bits());
-}
-
 #[no_mangle]
 extern "sysv64" fn kernel_main_virt(
     st: SystemTable<Runtime>,
@@ -355,16 +438,23 @@ extern "sysv64" fn kernel_main_virt(
     let mut xhc = initialize_pci_devices(&pci_devices).unwrap();
     initialize_filesystem();
 
-    FILE_DESCRIPTOR_TABLE.lock().initialize();
-    FILE_DESCRIPTOR_TABLE.lock().add(Arc::new(StdinDevice));   // fd 0
-    FILE_DESCRIPTOR_TABLE.lock().add(Arc::new(StdoutDevice));  // fd 1
-    FILE_DESCRIPTOR_TABLE.lock().add(Arc::new(StderrDevice));  // fd 2
-
     //set the IDT entry
+    IDT.lock().divide_error.set_handler_fn(handler_divide_error);
+    IDT.lock().overflow.set_handler_fn(handler_overflow);
+    IDT.lock().bound_range_exceeded.set_handler_fn(handler_bound_range_exceeded);
+    IDT.lock().invalid_opcode.set_handler_fn(handler_invalid_opcode);
+    IDT.lock().device_not_available.set_handler_fn(handler_device_not_available);
+    IDT.lock().double_fault.set_handler_fn(handler_double_fault);
+    IDT.lock().invalid_tss.set_handler_fn(handler_invalid_tss);
+    IDT.lock().segment_not_present.set_handler_fn(handler_segment_not_present);
+    IDT.lock().stack_segment_fault.set_handler_fn(handler_stack_segment_fault);
+    IDT.lock().general_protection_fault.set_handler_fn(handler_general_protection_fault);
+    IDT.lock().x87_floating_point.set_handler_fn(handler_x87_floating_point);
+    IDT.lock().alignment_check.set_handler_fn(handler_alignment_check);
+    IDT.lock().simd_floating_point.set_handler_fn(handler_simd_floating_point);
+    IDT.lock().page_fault.set_handler_fn(handler_page_fault);
     IDT.lock()[InterruptVector::Xhci as usize].set_handler_fn(handler_xhci);
     IDT.lock()[InterruptVector::LAPICTimer as usize].set_handler_fn(handler_lapic_timer);
-    // Set up page fault handler
-    IDT.lock().page_fault.set_handler_fn(handler_page_fault);
     // Set up syscall handler (int 0x80)
     // DPL must be 3 to allow user mode (Ring 3) to invoke int 0x80
     let syscall_handler_addr = interrupt::syscall_handler_asm as *const () as u64;

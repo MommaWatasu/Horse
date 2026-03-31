@@ -14,7 +14,6 @@
 
 use alloc::{sync::Arc, vec, string::String, vec::Vec,};
 use spin::Mutex;
-use crate::drivers::fs::core::FILE_DESCRIPTOR_TABLE;
 use crate::drivers::fs::init::FILESYSTEM_TABLE;
 use crate::drivers::fs::regular::RegularFile;
 use crate::drivers::dev::null::NullDevice;
@@ -22,7 +21,7 @@ use crate::drivers::dev::zero::ZeroDevice;
 use crate::drivers::dev::stdin::StdinDevice;
 use crate::drivers::dev::stdout::{StdoutDevice, StderrDevice};
 use crate::drivers::dev::fb::FrameBufferDevice;
-use crate::horse_lib::fd::Path;
+use crate::horse_lib::fd::{Path, FDTable};
 use crate::paging::{PAGE_TABLE_MANAGER, PAGE_SIZE_4K, phys_to_ptr, PageTable};
 use crate::proc::{PROCESS_MANAGER, do_switch_context};
 use crate::horse_lib::ringbuffer::*;
@@ -116,6 +115,8 @@ pub enum SyscallNumber {
     Bind = 49,
     Listen = 50,
     Exit = 60,
+    // Following Syscalls are unique to HorseOS
+    Spawn = 900
 }
 
 impl TryFrom<usize> for SyscallNumber {
@@ -133,6 +134,7 @@ impl TryFrom<usize> for SyscallNumber {
             49 => Ok(SyscallNumber::Bind),
             50 => Ok(SyscallNumber::Listen),
             60 => Ok(SyscallNumber::Exit),
+            900 => Ok(SyscallNumber::Spawn),
             _ => Err(()),
         }
     }
@@ -216,6 +218,10 @@ pub fn syscall_handler(args: &SyscallArgs) -> isize {
             args.arg2 as i32,
         ),
         SyscallNumber::Exit => sys_exit(args.arg1 as i32),
+        SyscallNumber::Spawn => sys_spawn(
+            args.arg1 as *const u8, // path
+            args.arg2,              // path_len
+        ),
     }
 }
 
@@ -231,12 +237,13 @@ pub fn sys_open(pathname: *const u8, len: usize, flags: u32) -> isize {
         return SyscallError::InvalidArg as isize;
     }
 
-    let path_str = unsafe {
-        let slice = core::slice::from_raw_parts(pathname, len);
-        match core::str::from_utf8(slice) {
-            Ok(s) => s,
-            Err(_) => return SyscallError::InvalidArg as isize,
-        }
+    // Copy the path from user space via USER_CR3 translation, so this works
+    // regardless of whether the user's .rodata is identity-mapped or not.
+    let mut path_buf = alloc::vec![0u8; len];
+    unsafe { copy_from_user(path_buf.as_mut_ptr(), pathname, len); }
+    let path_str = match core::str::from_utf8(&path_buf[..]) {
+        Ok(s) => s,
+        Err(_) => return SyscallError::InvalidArg as isize,
     };
 
     // Route /dev/* to device files
@@ -250,7 +257,12 @@ pub fn sys_open(pathname: *const u8, len: usize, flags: u32) -> isize {
             "fb"     => Arc::new(FrameBufferDevice),
             _ => return SyscallError::NoEntry as isize,
         };
-        let fd = FILE_DESCRIPTOR_TABLE.lock().add(fd_entry);
+        let fd = {
+            let proc_manager = PROCESS_MANAGER.lock();
+            let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+            let mut proc_guard = proc.lock();
+            proc_guard.fd_table.add(fd_entry)
+        };
         if fd < 0 {
             return SyscallError::IoError as isize;
         }
@@ -268,7 +280,12 @@ pub fn sys_open(pathname: *const u8, len: usize, flags: u32) -> isize {
     }
 
     let file = Arc::new(RegularFile::new(flags, path_str));
-    let fd = FILE_DESCRIPTOR_TABLE.lock().add(file);
+    let fd = {
+            let proc_manager = PROCESS_MANAGER.lock();
+            let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+            let mut proc_guard = proc.lock();
+            proc_guard.fd_table.add(file)
+        };
     if fd < 0 {
         return SyscallError::IoError as isize;
     }
@@ -288,22 +305,24 @@ pub fn sys_read(fd: i32, buf: *mut u8, count: usize) -> isize {
         return SyscallError::InvalidFd as isize;
     }
 
+    // Clone the Arc out of the process fd_table, then drop all spin locks
+    // before calling read() which may block.
     let fd_entry = {
-        let file_descriptor_table = FILE_DESCRIPTOR_TABLE.lock();
-        match file_descriptor_table.get(fd) {
+        let proc_manager = PROCESS_MANAGER.lock();
+        let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+        let proc_guard = proc.lock();
+        match proc_guard.fd_table.get(fd) {
             Some(e) => e,
-            None => match file_descriptor_table.get_socket(fd) {
+            None => match proc_guard.fd_table.get_socket(fd) {
                 Some(e) => e,
-                None => return SyscallError::InvalidFd as isize
+                None => return SyscallError::InvalidFd as isize,
             },
         }
-    };
+    }; // proc_guard, proc, and proc_manager locks all dropped here
 
     let mut tmp = vec![0u8; count];
     let bytes_read = fd_entry.read(&mut tmp);
     if bytes_read > 0 {
-        // Use page-table-aware copy so that user stack buffers (which live at
-        // arbitrary physical addresses) are written correctly.
         unsafe { copy_to_user(buf, tmp.as_ptr(), bytes_read as usize); }
     }
     bytes_read
@@ -323,10 +342,12 @@ pub fn sys_write(fd: i32, buf: *const u8, count: usize) -> isize {
     }
 
     let fd_entry = {
-        let file_descriptor_table = FILE_DESCRIPTOR_TABLE.lock();
-        match file_descriptor_table.get(fd) {
+        let proc_manager = PROCESS_MANAGER.lock();
+        let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+        let proc_guard = proc.lock();
+        match proc_guard.fd_table.get(fd) {
             Some(e) => e,
-            None => match file_descriptor_table.get_socket(fd) {
+            None => match proc_guard.fd_table.get_socket(fd) {
                 Some(e) => e,
                 None => return SyscallError::InvalidFd as isize
             },
@@ -349,17 +370,32 @@ pub fn sys_close(fd: i32) -> isize {
     if fd < 0 {
         return SyscallError::InvalidFd as isize;
     }
-    let valid = FILE_DESCRIPTOR_TABLE.lock().get(fd).is_some();
+    let valid = {
+        let proc_manager = PROCESS_MANAGER.lock();
+        let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+        let proc_guard = proc.lock();
+        proc_guard.fd_table.get(fd).is_some()
+    };
     if !valid {
         return SyscallError::InvalidFd as isize;
     }
-    FILE_DESCRIPTOR_TABLE.lock().remove(fd);
+    {
+        let proc_manager = PROCESS_MANAGER.lock();
+        let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+        let mut proc_guard = proc.lock();
+        proc_guard.fd_table.remove(fd);
+    }
     0
 }
 
 pub fn sys_socket(domain: i32, socket_type: i32, _protocol: i32) -> isize {
     let socket = Socket::new(domain, socket_type);
-    let fd = FILE_DESCRIPTOR_TABLE.lock().add_socket(Arc::new(socket));
+    let fd = {
+        let proc_manager = PROCESS_MANAGER.lock();
+        let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+        let mut proc_guard = proc.lock();
+        proc_guard.fd_table.add_socket(Arc::new(socket))
+    };
     if fd < 0 {
         return SyscallError::InvalidFd as isize;
     }
@@ -371,10 +407,13 @@ pub fn sys_bind(fd: i32, addr: &SocketAddrUn) -> isize {
     let path_len = addr.sun_path.iter().position(|&b| b == 0).unwrap_or(108);
     let path = core::str::from_utf8(&addr.sun_path[..path_len]).unwrap();
 
-    let mut socket = match FILE_DESCRIPTOR_TABLE.lock().get_socket(fd) {
-        Some(socket) => socket,
-        None => {
-            return SyscallError::NotSocket as isize;
+    let mut socket = {
+        let proc_manager = PROCESS_MANAGER.lock();
+        let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+        let proc_guard = proc.lock();
+        match proc_guard.fd_table.get_socket(fd) {
+            Some(s) => s,
+            None => return SyscallError::NotSocket as isize,
         }
     };
 
@@ -392,9 +431,14 @@ pub fn sys_bind(fd: i32, addr: &SocketAddrUn) -> isize {
 }
 
 pub fn sys_listen(fd: i32, _backlog: i32) -> isize {
-    let mut socket = match FILE_DESCRIPTOR_TABLE.lock().get_socket(fd) {
-        Some(s) => s,
-        None => return SyscallError::NotSocket as isize,
+    let mut socket = {
+        let proc_manager = PROCESS_MANAGER.lock();
+        let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+        let proc_guard = proc.lock();
+        match proc_guard.fd_table.get_socket(fd) {
+            Some(s) => s,
+            None => return SyscallError::NotSocket as isize,
+        }
     };
 
     match *socket.state.lock() {
@@ -415,7 +459,12 @@ pub fn sys_connect(fd: i32, addr: &SocketAddrUn) -> isize {
     let path_len = addr.sun_path.iter().position(|&b| b == 0).unwrap_or(108);
     let path = core::str::from_utf8(&addr.sun_path[..path_len]).unwrap();
 
-    let mut client_socket = FILE_DESCRIPTOR_TABLE.lock().get_socket(fd).expect("failed to get client socket");
+    let mut client_socket = {
+        let proc_manager = PROCESS_MANAGER.lock();
+        let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+        let proc_guard = proc.lock();
+        proc_guard.fd_table.get_socket(fd).expect("failed to get client socket")
+    };
 
     let mut server_socket = {
         match unsafe { GLOBAL_SOCKET_TABLE.lock().get(path) } {
@@ -459,9 +508,14 @@ pub fn sys_connect(fd: i32, addr: &SocketAddrUn) -> isize {
 }
 
 pub fn sys_accept(fd: i32) -> isize {
-    let socket = match FILE_DESCRIPTOR_TABLE.lock().get_socket(fd) {
-        Some(s) => s,
-        None => return SyscallError::NotSocket as isize
+    let socket = {
+        let proc_manager = PROCESS_MANAGER.lock();
+        let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+        let proc_guard = proc.lock();
+        match proc_guard.fd_table.get_socket(fd) {
+            Some(s) => s,
+            None => return SyscallError::NotSocket as isize,
+        }
     };
 
     if *socket.state.lock() != SocketState::Listening {
@@ -470,9 +524,13 @@ pub fn sys_accept(fd: i32) -> isize {
 
     loop {
         if let Some(connected) = socket.accept_queue.lock().pop() {
-            let new_fd = FILE_DESCRIPTOR_TABLE.lock()
-                .add_socket(Arc::new(connected));
-            return new_fd as isize
+            let new_fd = {
+                let proc_manager = PROCESS_MANAGER.lock();
+                let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+                let mut proc_guard = proc.lock();
+                proc_guard.fd_table.add_socket(Arc::new(connected))
+            };
+            return new_fd as isize;
         }
 
         socket.wait_queue.lock().wait();
@@ -495,6 +553,87 @@ pub fn sys_exit(status: i32) -> isize {
     }
 
     0
+}
+
+/// sys_spawn - Load and execute an ELF binary as a new process
+///
+/// Inherits stdin (fd 0), stdout (fd 1), and stderr (fd 2) from the calling process.
+///
+/// # Arguments
+/// * `path_ptr` — pointer to the path string in user space
+/// * `path_len` — byte length of the path string
+///
+/// # Returns
+/// * New process ID on success (> 0)
+/// * Negative error code on failure
+pub fn sys_spawn(path_ptr: *const u8, path_len: usize) -> isize {
+    if path_ptr.is_null() || path_len == 0 || path_len > 4096 {
+        return SyscallError::InvalidArg as isize;
+    }
+
+    // Copy path string from user space
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copy_from_user(path_buf.as_mut_ptr(), path_ptr, path_len); }
+    let path_str = match core::str::from_utf8(&path_buf[..]) {
+        Ok(s) => s,
+        Err(_) => return SyscallError::InvalidArg as isize,
+    };
+
+    // Read ELF binary from filesystem
+    const MAX_ELF_SIZE: usize = 64 * 1024;
+    let mut elf_buffer = vec![0u8; MAX_ELF_SIZE];
+    let path = Path::new(alloc::string::String::from(path_str));
+    let bytes_read = {
+        let fs_table = unsafe { FILESYSTEM_TABLE.lock() };
+        if fs_table.is_empty() {
+            return SyscallError::IoError as isize;
+        }
+        fs_table[0].read_file(&path, &mut elf_buffer, MAX_ELF_SIZE)
+    };
+
+    if bytes_read <= 0 {
+        return SyscallError::NoEntry as isize;
+    }
+    elf_buffer.truncate(bytes_read as usize);
+
+    // Parse and load the ELF into memory
+    let program = match crate::exec::load_program(&elf_buffer[..]) {
+        Ok(p) => p,
+        Err(_) => return SyscallError::IoError as isize,
+    };
+
+    // Clone stdin/stdout/stderr Arcs from the calling process
+    let (fd0, fd1, fd2) = {
+        let proc_manager = PROCESS_MANAGER.lock();
+        let proc = proc_manager.get().expect("failed to get process manager").current_proc();
+        let proc_guard = proc.lock();
+        (
+            proc_guard.fd_table.get(0),
+            proc_guard.fd_table.get(1),
+            proc_guard.fd_table.get(2),
+        )
+    };
+
+    let mut parent_fds = FDTable::new();
+    if let Some(f) = fd0 { parent_fds.add(f); }
+    if let Some(f) = fd1 { parent_fds.add(f); }
+    if let Some(f) = fd2 { parent_fds.add(f); }
+
+    // Create the child process, initialize its context, and put it on the run queue
+    let new_id = {
+        let mut proc_manager = PROCESS_MANAGER.lock();
+        let manager = proc_manager.get_mut().expect("failed to get process manager");
+        let proc = manager.new_proc(&parent_fds);
+        let new_id = {
+            let mut p = proc.lock();
+            p.init_user_context(program.entry_point, program.stack_pointer, program.cr3);
+            p.id()
+        };
+        manager.wake_up(proc);
+        new_id
+    };
+
+    new_id as isize
 }
 
 /// Entry point for syscall from assembly

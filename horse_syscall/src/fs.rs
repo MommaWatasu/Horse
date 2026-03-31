@@ -3,7 +3,7 @@
 //! This module provides safe wrappers around file-related system calls.
 
 use crate::error::{check_syscall, Result};
-use crate::raw::{syscall1, syscall3, Fd, SyscallNum};
+use crate::raw::{syscall1, syscall2, syscall3, Fd, SyscallNum};
 
 /// Exit the process
 ///
@@ -97,11 +97,6 @@ pub fn open(path: &str, flags: OpenFlags) -> Result<Fd> {
         return Err(crate::error::Error::Inval);
     }
 
-    // Pass the original string bytes pointer and length directly to the kernel.
-    // For string literals, this pointer is in the program's identity-mapped .rodata
-    // section, which is readable from the kernel's identity-mapped page table.
-    // We avoid copying to a stack buffer, whose physical frames differ from the
-    // kernel's identity-mapped view of the same virtual address.
     let ret = unsafe {
         syscall3(
             SyscallNum::Open as usize,
@@ -221,6 +216,33 @@ pub fn write(fd: Fd, buf: &[u8]) -> Result<usize> {
 pub fn close(fd: Fd) -> Result<()> {
     let ret = unsafe { syscall1(SyscallNum::Close as usize, fd as usize) };
     check_syscall(ret).map(|_| ())
+}
+
+/// Spawn a new process from an ELF binary on the filesystem
+///
+/// Inherits stdin (fd 0), stdout (fd 1), and stderr (fd 2) from the calling process.
+///
+/// # Arguments
+///
+/// * `path` - Path to the ELF binary on the filesystem
+///
+/// # Returns
+///
+/// * `Ok(pid)` - New process ID on success
+/// * `Err(e)` - Error on failure
+pub fn spawn(path: &str) -> Result<usize> {
+    let path_bytes = path.as_bytes();
+    if path_bytes.is_empty() || path_bytes.len() > 4096 {
+        return Err(crate::error::Error::Inval);
+    }
+    let ret = unsafe {
+        syscall2(
+            SyscallNum::Spawn as usize,
+            path_bytes.as_ptr() as usize,
+            path_bytes.len(),
+        )
+    };
+    check_syscall(ret)
 }
 
 /// A file handle that automatically closes when dropped

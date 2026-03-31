@@ -3,7 +3,8 @@
 //! This module provides functionality to load and execute user-space programs.
 
 use crate::elf::{parse_elf, load_segments, calculate_memory_size, ElfError};
-use crate::paging::setup_user_page_table;
+use crate::memory_manager::frame_manager_instance;
+use crate::paging::{setup_user_page_table, phys_to_virt, PAGE_SIZE_4K};
 use crate::segment::{USER_CS, USER_SS};
 
 /// Default user stack size (64 KB)
@@ -76,24 +77,35 @@ pub fn load_program(elf_data: &[u8]) -> Result<LoadedProgram, ExecError> {
 
     // Calculate memory needed
     let program_size = calculate_memory_size(&elf_info);
-
-    // Load the program at its specified virtual address
     let load_base = elf_info.load_base;
 
-    // Load segments (this writes to physical memory via identity mapping)
+    // Allocate fresh physical frames for this process so it gets its own
+    // private copy of the program code/data, independent of any other process
+    // that happens to use the same virtual base address.
+    let pages = (program_size + PAGE_SIZE_4K - 1) / PAGE_SIZE_4K;
+    let frame = frame_manager_instance()
+        .allocate(pages)
+        .map_err(|_| ExecError::MemoryAllocationFailed)?;
+    let alloc_phys = frame.phys_addr() as u64;
+
+    // Zero the region, then copy ELF segments into it via the kernel's
+    // higher-half virtual address (not the identity map at load_base).
     unsafe {
-        load_segments(elf_data, &elf_info, load_base as *mut u8);
+        let kva = phys_to_virt(alloc_phys) as *mut u8;
+        core::ptr::write_bytes(kva, 0, pages * PAGE_SIZE_4K);
+        load_segments(elf_data, &elf_info, kva);
     }
 
-    crate::debug!("Program loaded at 0x{:x}, size={} bytes", load_base, program_size);
+    crate::debug!("Program loaded: virt=0x{:x}, phys=0x{:x}, size={} bytes",
+        load_base, alloc_phys, program_size);
 
-    // Set up user page tables
+    // Set up user page tables: map load_base (virtual) → alloc_phys (physical)
     let stack_top = USER_STACK_BASE;
     let stack_base = stack_top - USER_STACK_SIZE as u64;
 
-    // Create user page table with program and stack mappings
     let cr3 = setup_user_page_table(
         load_base,
+        alloc_phys,
         program_size,
         stack_top,
         USER_STACK_SIZE,
