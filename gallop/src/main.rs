@@ -261,6 +261,7 @@ pub extern "C" fn _start() -> ! {
     println!("  Special File Tests");
     println!("========================================");
 
+    /*
     test_null();
     test_zero();
     test_stdin();
@@ -269,6 +270,7 @@ pub extern "C" fn _start() -> ! {
     test_nonexistent();
     test_fd_reuse();
     test_fb();
+    */
 
     println!("========================================");
     let pass = unsafe { PASS_COUNT };

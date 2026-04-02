@@ -539,17 +539,17 @@ pub fn sys_accept(fd: i32) -> isize {
 
 /// sys_exit - Terminate the current process
 pub fn sys_exit(status: i32) -> isize {
-    let switch_ptrs = {
+    let (_current_proc_keeper, switch_ptrs) = {
         let mut manager_lock = PROCESS_MANAGER.lock();
         if let Some(manager) = manager_lock.get_mut() {
             manager.prepare_terminate(status)
         } else {
-            None
+            (None, None)
         }
     };
 
-    if let Some((next_ctx, current_ctx)) = switch_ptrs {
-        unsafe { do_switch_context(next_ctx, current_ctx); }
+    if let Some((next_ctx, current_ctx, next_kstack_top)) = switch_ptrs {
+        unsafe { do_switch_context(next_ctx, current_ctx, next_kstack_top); }
     }
 
     0

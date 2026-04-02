@@ -214,6 +214,12 @@ pub fn initialize() {
     }
 }
 
+/// Update TSS.rsp0 — the kernel stack used when transitioning from Ring 3 to Ring 0.
+/// Must be called before every context switch to set the next process's kernel stack.
+pub unsafe fn set_tss_rsp0(rsp0: u64) {
+    TSS.rsp0 = rsp0;
+}
+
 //assembly function in asm.s
 extern "C" {
     fn load_gdt(limit: u16, offset: usize);

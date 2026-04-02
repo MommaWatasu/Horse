@@ -22,8 +22,6 @@ use crate::horse_lib::fd::*;
 const DEFAULT_CONTEXT: ContextWrapper = ContextWrapper(ProcessContext { cr3: 0, rip: 0, rflags: 0, reserved1: 0, cs: 0, ss: 0, fs: 0, gs: 0, rax: 0, rbx: 0, rcx: 0, rdx: 0, rdi: 0, rsi: 0, rsp: 0, rbp: 0, r8: 0, r9: 0, r10: 0, r11: 0, r12: 0, r13: 0, r14: 0, r15: 0, fxsave_area: [0; 512] });
 pub static PROCESS_MANAGER: Mutex<Once<ProcessManager>> = Mutex::new(Once::new());
 
-/// Current running process ID (0 means no user process)
-pub static CURRENT_PROCESS_ID: Mutex<usize> = Mutex::new(0);
 
 extern "C" {
     pub fn switch_context(next_ctx: u64, current_ctx: u64);
@@ -152,8 +150,15 @@ impl ProcessManager {
             self.run_queue.push_back(current_proc)
         }
         let next_proc = self.run_queue.front_mut().unwrap();
+        let mut next_lock = next_proc.lock();
+        let next_kstack_top = next_lock.kernel_stack_top();
+        let next_proc_ptr = next_lock.context().as_ptr();
+        drop(next_lock);
 
-        unsafe { switch_context(next_proc.lock().context().as_ptr(), current_proc_ptr) }
+        unsafe {
+            crate::segment::set_tss_rsp0(next_kstack_top);
+            switch_context(next_proc_ptr, current_proc_ptr);
+        }
     }
 
     /// Terminate the current process and switch to the next one
@@ -172,18 +177,23 @@ impl ProcessManager {
         // If there are no more processes, return
         if self.run_queue.is_empty() {
             crate::info!("No more processes in run queue");
-            *CURRENT_PROCESS_ID.lock() = 0;
             return Some(_exit_status);
         }
 
         // Switch to the next process
         let current_proc_ptr = current_proc.lock().context().as_ptr();
         let next_proc = self.run_queue.front_mut().unwrap();
-        let next_id = next_proc.lock().id();
-        *CURRENT_PROCESS_ID.lock() = next_id;
+        let mut next_lock = next_proc.lock();
+        let next_id = next_lock.id();
+        let next_kstack_top = next_lock.kernel_stack_top();
+        let next_proc_ptr = next_lock.context().as_ptr();
+        drop(next_lock);
 
         crate::info!("Switching to process {}", next_id);
-        unsafe { switch_context(next_proc.lock().context().as_ptr(), current_proc_ptr) }
+        unsafe {
+            crate::segment::set_tss_rsp0(next_kstack_top);
+            switch_context(next_proc_ptr, current_proc_ptr);
+        }
 
         Some(_exit_status)
     }
@@ -205,7 +215,7 @@ impl ProcessManager {
     /// Prepare for context switch and return the context pointers
     /// This rotates the run queue (moves current to back) but doesn't switch
     /// Returns (next_context_ptr, current_context_ptr) for use with switch_context
-    pub fn prepare_switch(&mut self) -> Option<(u64, u64)> {
+    pub fn prepare_switch(&mut self) -> Option<(u64, u64, u64)> {
         if self.run_queue.len() < 2 {
             return None;
         }
@@ -215,12 +225,15 @@ impl ProcessManager {
         self.run_queue.push_back(current_proc);
 
         let next_proc = self.run_queue.front_mut().unwrap();
-        let next_proc_ptr = next_proc.lock().context().as_ptr();
+        let mut next_lock = next_proc.lock();
+        let next_kstack_top = next_lock.kernel_stack_top();
+        let next_proc_ptr = next_lock.context().as_ptr();
+        drop(next_lock);
 
-        Some((next_proc_ptr, current_proc_ptr))
+        Some((next_proc_ptr, current_proc_ptr, next_kstack_top))
     }
 
-    pub fn prepare_sleep(&mut self) -> Option<(u64, u64)> {
+    pub fn prepare_sleep(&mut self) -> Option<(u64, u64, u64)> {
         if self.run_queue.is_empty() {
             return None;
         }
@@ -233,24 +246,24 @@ impl ProcessManager {
         // If there are no more processes, return None
         if self.run_queue.is_empty() {
             crate::info!("No more processes in run queue");
-            *CURRENT_PROCESS_ID.lock() = 0;
             return None;
         }
 
         // Get the next process context
         let next_proc = self.run_queue.front_mut().unwrap();
-        let next_id = next_proc.lock().id();
-        let next_proc_ptr = next_proc.lock().context().as_ptr();
-        *CURRENT_PROCESS_ID.lock() = next_id;
+        let mut next_lock = next_proc.lock();
+        let next_kstack_top = next_lock.kernel_stack_top();
+        let next_proc_ptr = next_lock.context().as_ptr();
+        drop(next_lock);
 
-        Some((next_proc_ptr, current_proc_ptr))
+        Some((next_proc_ptr, current_proc_ptr, next_kstack_top))
     }
 
     /// Prepare to terminate current process and switch to next
     /// Returns (next_context_ptr, current_context_ptr) or None if no other processes
-    pub fn prepare_terminate(&mut self, _status: i32) -> Option<(u64, u64)> {
+    pub fn prepare_terminate(&mut self, _status: i32) -> (Option<Arc<Mutex<Process>>>, Option<(u64, u64, u64)>) {
         if self.run_queue.is_empty() {
-            return None;
+            return (None, None);
         }
 
         // Remove the current process from the run queue
@@ -260,29 +273,34 @@ impl ProcessManager {
         // If there are no more processes, return None
         if self.run_queue.is_empty() {
             crate::info!("No more processes in run queue");
-            *CURRENT_PROCESS_ID.lock() = 0;
-            return None;
+            return (None, None);
         }
 
         // Get the next process context
         let next_proc = self.run_queue.front_mut().unwrap();
-        let next_id = next_proc.lock().id();
-        let next_proc_ptr = next_proc.lock().context().as_ptr();
-        *CURRENT_PROCESS_ID.lock() = next_id;
+        let mut next_lock = next_proc.lock();
+        let next_kstack_top = next_lock.kernel_stack_top();
+        let next_proc_ptr = next_lock.context().as_ptr();
+        drop(next_lock);
 
-        Some((next_proc_ptr, current_proc_ptr))
+        (Some(current_proc), Some((next_proc_ptr, current_proc_ptr, next_kstack_top)))
     }
 }
 
 /// Perform context switch after dropping the ProcessManager lock
 /// This is safe to call after prepare_switch or prepare_terminate
-pub unsafe fn do_switch_context(next_ctx: u64, current_ctx: u64) {
+/// `next_kstack_top` is written to TSS.rsp0 so the next process gets its own kernel stack
+pub unsafe fn do_switch_context(next_ctx: u64, current_ctx: u64, next_kstack_top: u64) {
+    crate::segment::set_tss_rsp0(next_kstack_top);
     switch_context(next_ctx, current_ctx);
 }
+
+const KERNEL_STACK_PER_PROC: usize = 64 * 1024; // 64KB per-process kernel stack
 
 pub struct Process {
     id: usize,
     stack: Vec<u64>,
+    kernel_stack: Vec<u8>,
     context: ContextWrapper,
     pub fd_table: FDTable
 }
@@ -290,12 +308,17 @@ pub struct Process {
 impl Process {
     const DEFAULT_STACK_BYTES: usize = 4096;
     pub fn new(id: usize) -> Self {
-        return Self {
+        let kernel_stack = alloc::vec![0u8; KERNEL_STACK_PER_PROC];
+        Self {
             id,
             stack: Vec::new(),
+            kernel_stack,
             context: DEFAULT_CONTEXT,
             fd_table: FDTable::DEFAULT_TABLE
         }
+    }
+    pub fn kernel_stack_top(&self) -> u64 {
+        self.kernel_stack.as_ptr() as u64 + self.kernel_stack.len() as u64
     }
     pub fn id(&self) -> usize { self.id }
     pub fn init_context(&mut self, f: fn()) {

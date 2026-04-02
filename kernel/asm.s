@@ -171,12 +171,16 @@ switch_context:  ; fn switch_context(next_ctx, current_ctx);
   pushfq
   pop qword [rsi + 0x10] ; RFLAGS
 
+  xor rax, rax
   mov ax, cs
   mov [rsi + 0x20], rax
+  xor rbx, rbx
   mov bx, ss
   mov [rsi + 0x28], rbx
+  xor rcx, rcx
   mov cx, fs
   mov [rsi + 0x30], rcx
+  xor rdx, rdx
   mov dx, gs
   mov [rsi + 0x38], rdx
 

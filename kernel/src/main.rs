@@ -395,9 +395,9 @@ extern "x86-interrupt" fn handler_lapic_timer(_: InterruptStackFrame) {
     unsafe {
         notify_end_of_interrupt();
         
-        if let Some((next_ctx, current_ctx)) = switch_contexts {
+        if let Some((next_ctx, current_ctx, next_kstack_top)) = switch_contexts {
             // Lock is already released here, safe to call switch_context
-            proc::do_switch_context(next_ctx, current_ctx);
+            proc::do_switch_context(next_ctx, current_ctx, next_kstack_top);
         }
     }
     
