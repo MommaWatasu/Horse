@@ -1,0 +1,11 @@
+[package]
+name = "horse_abi"
+version = "0.1.0"
+edition = "2021"
+description = "Shared ABI types between kernel and user-space for Horse OS"
+
+[lib]
+name = "horse_abi"
+crate-type = ["rlib"]
+
+[dependencies]

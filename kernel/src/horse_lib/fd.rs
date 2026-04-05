@@ -1,20 +1,25 @@
+use crate::socket::*;
+use crate::syscall::SyscallError;
 use alloc::{
     string::{String, ToString},
-    vec::Vec,
-    vec,
     sync::Arc,
+    vec,
+    vec::Vec,
 };
-use crate::socket::*;
+use horse_abi::ioctl::IoctlRequest;
 
 pub trait FileDescriptor: Send + Sync {
     fn read(&self, buf: &mut [u8]) -> isize;
     fn write(&self, buf: &[u8]) -> isize;
     fn close(&self);
+    fn ioctl(&self, _req: IoctlRequest, _arg: u64) -> isize {
+        SyscallError::InvalidArg as isize
+    }
 }
 
 #[derive(Clone, PartialEq)]
 pub struct Path {
-    pub path: Vec<String>
+    pub path: Vec<String>,
 }
 
 impl Path {
@@ -57,7 +62,7 @@ impl FDTable {
             max_fds: Self::MAX_FD,
             fd_array: vec![None; Self::MAX_FD],
             socket_array: vec![None; Self::MAX_FD],
-            empty_idx: 0
+            empty_idx: 0,
         }
     }
     fn update_idx(&mut self) {

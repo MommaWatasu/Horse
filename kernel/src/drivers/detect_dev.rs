@@ -1,17 +1,13 @@
+use crate::read_bar32;
 use alloc::boxed::Box;
 
 use super::{
-    ata::{
-        pata::initialize_ide,
-        vata::VataController
-    },
+    ata::{pata::initialize_ide, vata::VataController},
     fs::core::STORAGE_CONTROLLERS,
     pci::{switch_echi2xhci, PciDevices},
     usb::xhci::{initialize_xhci, Controller},
 };
-use crate::{
-    info, warn
-};
+use crate::{graphics, info, warn};
 
 pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
     let mut xhc = None;
@@ -20,7 +16,9 @@ pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
             // Mass Storage Controller
             0x01 => match dev.class_code.sub {
                 0x01 => {
-                    STORAGE_CONTROLLERS.lock().push(Box::new(initialize_ide(&dev)));
+                    STORAGE_CONTROLLERS
+                        .lock()
+                        .push(Box::new(initialize_ide(&dev)));
                 }
                 _ => {
                     info!(
@@ -28,7 +26,6 @@ pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
                         dev.class_code
                     );
                 }
-
             },
             // Network Controller
             0x02 => {
@@ -40,16 +37,12 @@ pub fn initialize_pci_devices(pci_devices: &PciDevices) -> Option<Controller> {
             // Display Controller
             0x03 => match dev.get_vendor_id() {
                 0x1234 => {
-/*
-                    let resolution = setup_qemu_card(&dev);
-                    let mut graphics_lock = RAW_GRAPHICS.lock();
-                    let graphics = match graphics_lock.as_mut() {
+                    let mut graphics_lock = graphics::RAW_GRAPHICS.lock();
+                    let gfx = match graphics_lock.as_mut() {
                         Some(g) => g,
                         None => continue,
                     };
-                    unsafe { graphics.change_resolution(resolution) };
-                    graphics.clear(&BG_COLOR);
-*/
+                    gfx.bga_mmio_base = Some(read_bar32(&dev, 2).unwrap());
                 }
                 _ => {
                     info!(

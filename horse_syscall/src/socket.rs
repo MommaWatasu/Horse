@@ -6,40 +6,7 @@
 use crate::error::{check_syscall, Result};
 use crate::raw::{syscall1, syscall2, syscall3, Fd, SyscallNum};
 
-/// Unix domain socket address
-#[derive(Clone, Copy)]
-#[repr(C)]
-pub struct SocketAddrUn {
-    /// Address family (AF_UNIX = 1)
-    pub sun_family: u16,
-    /// Socket path (null-terminated, max 108 bytes)
-    pub sun_path: [u8; 108],
-}
-
-impl SocketAddrUn {
-    /// Create a new Unix domain socket address from a path string
-    ///
-    /// Returns `None` if the path is too long (> 107 bytes).
-    pub fn new(path: &str) -> Option<Self> {
-        let bytes = path.as_bytes();
-        if bytes.len() > 107 {
-            return None;
-        }
-        let mut addr = Self {
-            sun_family: 1, // AF_UNIX
-            sun_path: [0u8; 108],
-        };
-        addr.sun_path[..bytes.len()].copy_from_slice(bytes);
-        Some(addr)
-    }
-}
-
-/// Address families
-pub const AF_UNIX: i32 = 1;
-
-/// Socket types
-pub const SOCK_STREAM: i32 = 1;
-pub const SOCK_DGRAM: i32 = 2;
+pub use horse_abi::socket::{SocketAddrUn, AF_UNIX, SOCK_DGRAM, SOCK_STREAM};
 
 /// Create a new socket
 ///

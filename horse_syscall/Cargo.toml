@@ -11,6 +11,7 @@ name = "horse_syscall"
 crate-type = ["rlib"]
 
 [dependencies]
+horse_abi = { path = "../horse_abi" }
 
 [features]
 default = []

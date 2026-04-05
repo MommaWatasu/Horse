@@ -36,18 +36,38 @@ pub fn setup_qemu_card(dev: &Device) -> (usize, usize) {
         }
         // disable VBE extensions
         bga_write_register(mmio_base, BGARegisters::VbeDisplIndexEnable as u32, 0x00);
+        bga_write_register(mmio_base, BGARegisters::VbeDisplIndexXres as u32, max_res.0);
+        bga_write_register(mmio_base, BGARegisters::VbeDisplIndexYres as u32, max_res.1);
+        // enable VBE extensions
+        bga_write_register(mmio_base, BGARegisters::VbeDisplIndexEnable as u32, 0x01);
+        return (max_res.0 as usize, max_res.1 as usize);
+    }
+}
+
+pub fn change_qemu_resolution(resolution: (usize, usize)) {
+    let mmio_base = {
+        let graphics_lock = crate::graphics::RAW_GRAPHICS.lock();
+        let gfx = match graphics_lock.as_ref() {
+            Some(g) => g,
+            None => return,
+        };
+        match gfx.bga_mmio_base {
+            Some(base) => base,
+            None => return,
+        }
+    };
+    unsafe {
+        bga_write_register(mmio_base, BGARegisters::VbeDisplIndexEnable as u32, 0x00);
         bga_write_register(
             mmio_base,
             BGARegisters::VbeDisplIndexXres as u32,
-            max_res.0,
+            resolution.0 as u16,
         );
         bga_write_register(
             mmio_base,
             BGARegisters::VbeDisplIndexYres as u32,
-            max_res.1,
+            resolution.1 as u16,
         );
-        // enable VBE extensions
         bga_write_register(mmio_base, BGARegisters::VbeDisplIndexEnable as u32, 0x01);
-        return (max_res.0 as usize, max_res.1 as usize);
     }
 }

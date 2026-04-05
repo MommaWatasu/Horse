@@ -17,33 +17,7 @@
 
 use core::arch::asm;
 
-/// System call numbers (Linux-compatible)
-#[repr(usize)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SyscallNum {
-    /// Read from a file descriptor
-    Read = 0,
-    /// Write to a file descriptor
-    Write = 1,
-    /// Open a file
-    Open = 2,
-    /// Close a file descriptor
-    Close = 3,
-    /// Create a socket
-    Socket = 41,
-    /// Connect a socket to an address
-    Connect = 42,
-    /// Accept a connection on a socket
-    Accept = 43,
-    /// Bind a socket to an address
-    Bind = 49,
-    /// Listen for connections on a socket
-    Listen = 50,
-    /// Exit the process
-    Exit = 60,
-    /// Spawn a new process from an ELF binary
-    Spawn = 900,
-}
+pub use horse_abi::syscall::SyscallNum;
 
 /// Perform a system call with no arguments
 #[inline(always)]

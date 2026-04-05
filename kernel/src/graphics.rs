@@ -3,13 +3,9 @@ use crate::{
     framebuffer::{FrameBuffer, FrameBufferConfig},
     println,
 };
-use core::{
-    ops::{Add, AddAssign, Sub},
-};
-use spin::{
-    Mutex
-};
+use core::ops::{Add, AddAssign, Sub};
 use libloader::{PixelFormat, TSFrameBuffer};
+use spin::Mutex;
 
 // static singleton pointer
 pub static RAW_GRAPHICS: Mutex<Option<Graphics>> = Mutex::new(None);
@@ -121,6 +117,7 @@ pub struct Graphics {
     pub fb: FrameBuffer,
     rotated: bool,
     double_scaled: bool,
+    pub bga_mmio_base: Option<u32>, // only for qemu
 }
 
 impl Graphics {
@@ -130,6 +127,7 @@ impl Graphics {
             // Hardcode for GPD Pocket resolution
             rotated: fb_config.resolution == (1200, 1920),
             double_scaled: fb_config.resolution == (1200, 1920),
+            bga_mmio_base: None,
         }
     }
 

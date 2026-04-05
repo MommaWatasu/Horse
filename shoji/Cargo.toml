@@ -12,5 +12,5 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
-opt-level = "z"      # Optimize for size
-lto = true           # Link-time optimization
+opt-level = "z" # Optimize for size
+lto = true      # Link-time optimization

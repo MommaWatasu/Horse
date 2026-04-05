@@ -11,6 +11,8 @@ use crate::horse_lib::{
 };
 use crate::sync::WaitQueue;
 
+pub use horse_abi::socket::SocketAddrUn;
+
 pub const SOCKET_RING_BUFFER_SIZE: usize = 64 * 1024;
 pub static mut GLOBAL_SOCKET_TABLE: Mutex<SocketTable> = Mutex::new(SocketTable::new());
 
@@ -77,12 +79,6 @@ pub enum SocketState {
     Bound(String),
     Listening,
     Connected
-}
-
-pub struct SocketAddrUn {
-    pub sun_family: u16,
-    // 108 is the MAX UNIX path size
-     pub sun_path: [u8; 108]
 }
 
 pub struct SocketTable {

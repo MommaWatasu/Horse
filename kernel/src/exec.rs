@@ -2,13 +2,13 @@
 //!
 //! This module provides functionality to load and execute user-space programs.
 
-use crate::elf::{parse_elf, load_segments, calculate_memory_size, ElfError};
+use crate::elf::{calculate_memory_size, load_segments, parse_elf, ElfError};
 use crate::memory_manager::frame_manager_instance;
-use crate::paging::{setup_user_page_table, phys_to_virt, PAGE_SIZE_4K};
+use crate::paging::{phys_to_virt, setup_user_page_table, PAGE_SIZE_4K};
 use crate::segment::{USER_CS, USER_SS};
 
 /// Default user stack size (64 KB)
-const USER_STACK_SIZE: usize = 64 * 1024;
+const USER_STACK_SIZE: usize = 8 * 1024 * 1024;
 
 /// User stack base address - within kernel identity map (0-64GB) so kernel can access via syscalls
 /// Must match USER_STACK_TOP in paging.rs
@@ -17,7 +17,13 @@ const USER_STACK_BASE: u64 = 0x0000_0000_4000_0000; // 1GB
 // External assembly functions to jump to user mode
 extern "C" {
     //fn jump_to_user_mode(entry: u64, user_stack: u64, user_cs: u64, user_ss: u64) -> !;
-    fn jump_to_user_mode_with_cr3(entry: u64, user_stack: u64, user_cs: u64, user_ss: u64, cr3: u64) -> !;
+    fn jump_to_user_mode_with_cr3(
+        entry: u64,
+        user_stack: u64,
+        user_cs: u64,
+        user_ss: u64,
+        cr3: u64,
+    ) -> !;
 }
 
 /// Error type for program execution
@@ -72,8 +78,12 @@ pub fn load_program(elf_data: &[u8]) -> Result<LoadedProgram, ExecError> {
     // Parse ELF
     let elf_info = parse_elf(elf_data)?;
 
-    crate::debug!("ELF parsed: entry=0x{:x}, load_base=0x{:x}, load_end=0x{:x}",
-        elf_info.entry_point, elf_info.load_base, elf_info.load_end);
+    crate::debug!(
+        "ELF parsed: entry=0x{:x}, load_base=0x{:x}, load_end=0x{:x}",
+        elf_info.entry_point,
+        elf_info.load_base,
+        elf_info.load_end
+    );
 
     // Calculate memory needed
     let program_size = calculate_memory_size(&elf_info);
@@ -96,8 +106,12 @@ pub fn load_program(elf_data: &[u8]) -> Result<LoadedProgram, ExecError> {
         load_segments(elf_data, &elf_info, kva);
     }
 
-    crate::debug!("Program loaded: virt=0x{:x}, phys=0x{:x}, size={} bytes",
-        load_base, alloc_phys, program_size);
+    crate::debug!(
+        "Program loaded: virt=0x{:x}, phys=0x{:x}, size={} bytes",
+        load_base,
+        alloc_phys,
+        program_size
+    );
 
     // Set up user page tables: map load_base (virtual) → alloc_phys (physical)
     let stack_top = USER_STACK_BASE;
@@ -109,7 +123,8 @@ pub fn load_program(elf_data: &[u8]) -> Result<LoadedProgram, ExecError> {
         program_size,
         stack_top,
         USER_STACK_SIZE,
-    ).map_err(|_| ExecError::MemoryAllocationFailed)?;
+    )
+    .map_err(|_| ExecError::MemoryAllocationFailed)?;
 
     crate::debug!("User page table created at CR3=0x{:x}", cr3);
 
@@ -117,8 +132,12 @@ pub fn load_program(elf_data: &[u8]) -> Result<LoadedProgram, ExecError> {
     // Align to 16 bytes as required by System V AMD64 ABI
     let stack_pointer = stack_top & !0xF;
 
-    crate::debug!("User stack: base=0x{:x}, top=0x{:x}, sp=0x{:x}",
-        stack_base, stack_top, stack_pointer);
+    crate::debug!(
+        "User stack: base=0x{:x}, top=0x{:x}, sp=0x{:x}",
+        stack_base,
+        stack_top,
+        stack_pointer
+    );
 
     Ok(LoadedProgram {
         entry_point: elf_info.entry_point,
@@ -168,9 +187,7 @@ pub unsafe fn execute_program(program: &LoadedProgram) -> ! {
 /// * `elf_data` - The raw ELF file data
 pub fn exec(elf_data: &[u8]) -> Result<!, ExecError> {
     let program = load_program(elf_data)?;
-    unsafe {
-        execute_program(&program)
-    }
+    unsafe { execute_program(&program) }
 }
 
 /// Simple execution function for testing

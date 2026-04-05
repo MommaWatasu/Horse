@@ -63,13 +63,9 @@ use alloc::sync::Arc;
 use core::{arch::asm, ops::DerefMut, panic::PanicInfo};
 use spin::{once::Once, Mutex};
 use uefi::table::{Runtime, SystemTable};
-use x86_64::{
-    instructions::interrupts::{
-        disable, //cli
-        enable,  //sti
-    },
-    structures::idt::{InterruptStackFrame, PageFaultErrorCode},
-    PrivilegeLevel, VirtAddr,
+use x86_64::instructions::interrupts::{
+    disable, //cli
+    enable,  //sti
 };
 
 use crate::drivers::fs::init::FILESYSTEM_TABLE;
@@ -192,18 +188,18 @@ fn initialize(fb_config: *mut FrameBufferConfig) {
     let bgwriter = Arc::get_mut(&mut bgwindow).unwrap().writer();
     Console::initialize(bgwriter, resolution, &FG_COLOR, &BG_COLOR);
 
-    let mut mouse_window = Arc::new(Window::new(
-        MOUSE_CURSOR_WIDTH,
-        MOUSE_CURSOR_HEIGHT,
-        fb_config_ref.format,
-    ));
-    Arc::get_mut(&mut mouse_window)
-        .unwrap()
-        .set_transparent_color(Some(MOUSE_TRANSPARENT_COLOR));
-    draw_mouse_cursor(
-        Arc::get_mut(&mut mouse_window).unwrap().writer(),
-        Coord::new(0, 0),
-    );
+    //let mut mouse_window = Arc::new(Window::new(
+    //    MOUSE_CURSOR_WIDTH,
+    //    MOUSE_CURSOR_HEIGHT,
+    //    fb_config_ref.format,
+    //));
+    //Arc::get_mut(&mut mouse_window)
+    //    .unwrap()
+    //    .set_transparent_color(Some(MOUSE_TRANSPARENT_COLOR));
+    //draw_mouse_cursor(
+    //    Arc::get_mut(&mut mouse_window).unwrap().writer(),
+    //    Coord::new(0, 0),
+    //);
 
     // initialize layer manager
     let mut layer_manager_lock = LAYER_MANAGER.lock();
@@ -218,20 +214,21 @@ fn initialize(fb_config: *mut FrameBufferConfig) {
         .move_absolute(Coord::new(0, 0))
         .id();
 
-    let mouse_layer_id = layer_manager
-        .new_layer()
-        .lock()
-        .set_window(mouse_window)
-        .move_absolute(Coord::new(resolution.0 / 2, resolution.1 / 2))
-        .id();
+    //let mouse_layer_id = layer_manager
+    //    .new_layer()
+    //    .lock()
+    //    .set_window(mouse_window)
+    //    .move_absolute(Coord::new(resolution.0 / 2, resolution.1 / 2))
+    //    .id();
 
-    MOUSE_CURSOR.lock().set_layer_id(mouse_layer_id);
+    //MOUSE_CURSOR.lock().set_layer_id(mouse_layer_id);
     layer_manager
         .up_down(bglayer_id, LayerHeight::Height(0))
         .expect("failed to set bg layer height");
-    layer_manager
-        .up_down(mouse_layer_id, LayerHeight::Height(1))
-        .expect("failed to set mouse layer height");
+    // disable mouse render by kernel
+    //layer_manager
+    //    .up_down(mouse_layer_id, LayerHeight::Height(1))
+    //    .expect("failed to set mouse layer height");
     layer_manager.draw();
 }
 
