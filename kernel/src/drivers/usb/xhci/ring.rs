@@ -19,7 +19,10 @@ pub struct Ring {
 impl Ring {
     pub fn with_capacity(buf_size: usize) -> Result<Self, StatusCode> {
         let buf: &mut [GenericTrb] = unsafe {
-            USB_ALLOC.lock().get_mut().unwrap()
+            USB_ALLOC
+                .lock()
+                .get_mut()
+                .unwrap()
                 .alloc_slice_ext::<GenericTrb>(buf_size, 64, Some(64 * 1024))
                 .unwrap()
                 .as_mut()
@@ -82,7 +85,10 @@ pub struct EventRing {
 impl EventRing {
     pub fn with_capacity(buf_size: usize) -> Result<Self, StatusCode> {
         let buf: &mut [GenericTrb] = unsafe {
-            USB_ALLOC.lock().get_mut().unwrap()
+            USB_ALLOC
+                .lock()
+                .get_mut()
+                .unwrap()
                 .alloc_slice_ext::<GenericTrb>(buf_size, 64, Some(64 * 1024))
                 .unwrap()
                 .as_mut()
@@ -92,7 +98,10 @@ impl EventRing {
         }
         let buf = buf as *const [GenericTrb];
         let table: &mut [EventRingSegmentTableEntry] = unsafe {
-            USB_ALLOC.lock().get_mut().unwrap()
+            USB_ALLOC
+                .lock()
+                .get_mut()
+                .unwrap()
                 .alloc_slice_ext::<EventRingSegmentTableEntry>(1, 64, Some(64 * 1024))
                 .unwrap()
                 .as_mut()

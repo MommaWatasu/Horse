@@ -1,8 +1,8 @@
-use alloc::vec;
 use crate::{
-    horse_lib::fd::{FileDescriptor, Path},
     drivers::fs::init::FILESYSTEM_TABLE,
+    horse_lib::fd::{FileDescriptor, Path},
 };
+use alloc::vec;
 
 pub struct RegularFile {
     pub f_mode: u32,

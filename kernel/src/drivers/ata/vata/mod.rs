@@ -1,4 +1,4 @@
-use crate::{horse_lib::storage::Storage, memory_manager::*, drivers::fs::core::StorageController};
+use crate::{drivers::fs::core::StorageController, horse_lib::storage::Storage, memory_manager::*};
 
 use alloc::{vec, vec::Vec};
 
@@ -20,9 +20,9 @@ impl Storage for VataController {
         let idx_end = idx + nbytes;
         if idx_end > self.data.len() {
             buf.copy_from_slice(&self.data[idx..idx_end]);
-            return 0
+            return 0;
         } else {
-            return 1
+            return 1;
         }
     }
     fn write(&mut self, buf: &[u8], lba: u32, nbytes: usize) -> u8 {
@@ -36,6 +36,5 @@ impl Storage for VataController {
         }
     }
 }
-
 
 impl StorageController for VataController {}

@@ -1,4 +1,8 @@
-use crate::{graphics::{Coord, RAW_GRAPHICS}, layer::LAYER_MANAGER, PixelColor, WindowWriter};
+use crate::{
+    graphics::{Coord, RAW_GRAPHICS},
+    layer::LAYER_MANAGER,
+    PixelColor, WindowWriter,
+};
 use x86_64::instructions::interrupts;
 pub const MOUSE_CURSOR_HEIGHT: usize = 24;
 pub const MOUSE_CURSOR_WIDTH: usize = 15;
@@ -145,7 +149,9 @@ impl MouseCursor {
                 Some(lm) => lm,
                 None => return,
             };
-            layer_manager.move_absolute(self.layer_id, new_pos).expect("failed to move mouse layer");
+            layer_manager
+                .move_absolute(self.layer_id, new_pos)
+                .expect("failed to move mouse layer");
             layer_manager.draw();
         });
     }

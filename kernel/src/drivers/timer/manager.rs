@@ -19,7 +19,8 @@ impl TimerManager {
         };
     }
     pub fn add_timer(&mut self, timeout: u64, value: i32, periodic: bool) {
-        self.timers.push(Timer::new(self.tick, timeout, value, periodic));
+        self.timers
+            .push(Timer::new(self.tick, timeout, value, periodic));
     }
     pub fn tick(&mut self) -> bool {
         let mut proc = false;
@@ -44,7 +45,7 @@ impl TimerManager {
                 break;
             }
         }
-        return proc
+        return proc;
     }
     pub fn wait_seconds(&self, sec: u64) {
         for _i in 0..sec {
@@ -74,7 +75,7 @@ impl Timer {
             absolute_timeout: (tick as u128) + (timeout as u128),
             timeout: tick.wrapping_add(timeout),
             value,
-            periodic: relational_timeout
+            periodic: relational_timeout,
         };
     }
 }

@@ -66,13 +66,7 @@ pub fn bind(fd: Fd, addr: &SocketAddrUn) -> Result<()> {
 /// * `Ok(())` - Success
 /// * `Err(e)` - Error on failure
 pub fn listen(fd: Fd, backlog: i32) -> Result<()> {
-    let ret = unsafe {
-        syscall2(
-            SyscallNum::Listen as usize,
-            fd as usize,
-            backlog as usize,
-        )
-    };
+    let ret = unsafe { syscall2(SyscallNum::Listen as usize, fd as usize, backlog as usize) };
     check_syscall(ret).map(|_| ())
 }
 

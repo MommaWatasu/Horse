@@ -1,14 +1,7 @@
-use alloc::{
-    string::String,
-    vec::Vec,
-    sync::Arc,
-};
+use alloc::{string::String, sync::Arc, vec::Vec};
 use spin::Mutex;
 
-use crate::horse_lib::{
-    fd::FileDescriptor,
-    ringbuffer::*,
-};
+use crate::horse_lib::{fd::FileDescriptor, ringbuffer::*};
 use crate::sync::WaitQueue;
 
 pub use horse_abi::socket::SocketAddrUn;
@@ -22,7 +15,7 @@ pub struct Socket {
     pub wait_queue: Arc<Mutex<WaitQueue>>,
     pub read_buf: Option<Arc<Mutex<RingBuffer>>>,
     pub write_buf: Option<Arc<Mutex<RingBuffer>>>,
-    pub peer_wait_queue: Option<Arc<Mutex<WaitQueue>>>
+    pub peer_wait_queue: Option<Arc<Mutex<WaitQueue>>>,
 }
 
 impl Socket {
@@ -72,13 +65,12 @@ impl FileDescriptor for Socket {
     fn close(&self) {}
 }
 
-
 #[derive(PartialEq, Eq)]
 pub enum SocketState {
     Created,
     Bound(String),
     Listening,
-    Connected
+    Connected,
 }
 
 pub struct SocketTable {
@@ -88,7 +80,7 @@ pub struct SocketTable {
 impl SocketTable {
     pub const fn new() -> Self {
         Self {
-            entries: Vec::new()
+            entries: Vec::new(),
         }
     }
 

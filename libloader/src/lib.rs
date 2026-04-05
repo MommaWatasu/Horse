@@ -1,14 +1,7 @@
 #![no_std]
 
-use uefi::table::boot::{
-    MemoryDescriptor,
-    MemoryMapSize,
-    MemoryType
-};
-use core::{
-    iter::Iterator,
-    slice::from_raw_parts
-};
+use core::{iter::Iterator, slice::from_raw_parts};
+use uefi::table::boot::{MemoryDescriptor, MemoryMapSize, MemoryType};
 
 //MemoryMap
 #[repr(C)]
@@ -26,12 +19,12 @@ impl MemoryMap {
             buf: ptr as *mut MemoryDescriptor,
             buf_size: mmap_size.map_size,
             entry_size: mmap_size.entry_size,
-            count: 0
+            count: 0,
         }
     }
 
     pub fn descriptors(&self) -> &[MemoryDescriptor] {
-        unsafe { from_raw_parts(self.buf, (self.buf_size/self.entry_size)-1) }
+        unsafe { from_raw_parts(self.buf, (self.buf_size / self.entry_size) - 1) }
     }
 }
 
@@ -42,7 +35,8 @@ impl Iterator for MemoryMap {
         if self.count > self.buf_size / self.entry_size {
             return None;
         }
-        let descriptor = (self.buf as usize + self.entry_size * self.count) as *mut MemoryDescriptor;
+        let descriptor =
+            (self.buf as usize + self.entry_size * self.count) as *mut MemoryDescriptor;
         self.count += 1;
         return Some(descriptor);
     }
@@ -50,8 +44,8 @@ impl Iterator for MemoryMap {
 
 pub fn is_available(ty: MemoryType) -> bool {
     ty == MemoryType::BOOT_SERVICES_CODE
-    || ty == MemoryType::BOOT_SERVICES_DATA
-    || ty == MemoryType::CONVENTIONAL
+        || ty == MemoryType::BOOT_SERVICES_DATA
+        || ty == MemoryType::CONVENTIONAL
 }
 
 //Graphics
@@ -90,12 +84,12 @@ impl FrameBufferInfo {
 /// thread-safe FrameBuffer used for Layer Manager
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct TSFrameBuffer {
-    fb: usize
+    fb: usize,
 }
 
 impl TSFrameBuffer {
     pub unsafe fn new(ptr: *mut u8) -> Self {
-        return Self {fb: ptr as usize}
+        return Self { fb: ptr as usize };
     }
 
     pub unsafe fn as_mut_ptr(&self) -> *mut u8 {
@@ -121,7 +115,9 @@ pub enum PixelFormat {
 }
 
 impl Default for PixelFormat {
-    fn default() -> Self { Self::Rgb }
+    fn default() -> Self {
+        Self::Rgb
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

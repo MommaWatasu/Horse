@@ -131,9 +131,10 @@ impl BitmapMemoryManager {
         }
 
         let start_id = start_frame.id();
-        let end_id = start_id.checked_add(n_frames)
+        let end_id = start_id
+            .checked_add(n_frames)
             .expect("set_bit_range: start_id + n_frames overflowed");
-        
+
         // Bounds checking
         if end_id > FRAME_COUNT {
             panic!(
@@ -141,12 +142,12 @@ impl BitmapMemoryManager {
                 end_id, FRAME_COUNT, start_id, n_frames
             );
         }
-        
+
         let start_line = start_id / BITS_PER_MAP_LINE;
         let end_line = (end_id - 1) / BITS_PER_MAP_LINE;
         let start_bit = start_id % BITS_PER_MAP_LINE;
         let end_bit = (end_id - 1) % BITS_PER_MAP_LINE;
-        
+
         // Additional bounds checking
         if start_line >= MAP_LINE_COUNT || end_line >= MAP_LINE_COUNT {
             panic!(
@@ -165,7 +166,7 @@ impl BitmapMemoryManager {
             }
         } else {
             // Bits span multiple map lines
-            
+
             // Handle the first partial line
             let first_mask = self.create_mask(start_bit, BITS_PER_MAP_LINE);
             if allocated {
@@ -192,10 +193,16 @@ impl BitmapMemoryManager {
     /// Create a bit mask for bits from start_bit (inclusive) to end_bit (exclusive)
     #[inline]
     fn create_mask(&self, start_bit: usize, end_bit: usize) -> MapLineType {
-        debug_assert!(start_bit < BITS_PER_MAP_LINE, "start_bit must be < BITS_PER_MAP_LINE");
-        debug_assert!(end_bit <= BITS_PER_MAP_LINE, "end_bit must be <= BITS_PER_MAP_LINE");
+        debug_assert!(
+            start_bit < BITS_PER_MAP_LINE,
+            "start_bit must be < BITS_PER_MAP_LINE"
+        );
+        debug_assert!(
+            end_bit <= BITS_PER_MAP_LINE,
+            "end_bit must be <= BITS_PER_MAP_LINE"
+        );
         debug_assert!(start_bit < end_bit, "start_bit must be < end_bit");
-        
+
         if end_bit >= BITS_PER_MAP_LINE {
             // All bits from start_bit to the end of the line
             !0 << start_bit

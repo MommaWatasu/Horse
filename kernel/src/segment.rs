@@ -9,11 +9,11 @@ static mut GDT: [SegmentDescriptor; 7] = [SegmentDescriptor::new(); 7];
 #[repr(C, packed)]
 pub struct TaskStateSegment {
     reserved0: u32,
-    pub rsp0: u64,      // Stack pointer for Ring 0
-    pub rsp1: u64,      // Stack pointer for Ring 1
-    pub rsp2: u64,      // Stack pointer for Ring 2
+    pub rsp0: u64, // Stack pointer for Ring 0
+    pub rsp1: u64, // Stack pointer for Ring 1
+    pub rsp2: u64, // Stack pointer for Ring 2
     reserved1: u64,
-    pub ist1: u64,      // Interrupt Stack Table 1
+    pub ist1: u64, // Interrupt Stack Table 1
     pub ist2: u64,
     pub ist3: u64,
     pub ist4: u64,
@@ -142,7 +142,7 @@ fn setup_data_segment(
 /// TSS descriptor in 64-bit mode is 16 bytes (two GDT entries)
 unsafe fn setup_tss_descriptor(gdt_index: usize, tss_addr: u64, tss_size: u32) {
     let limit = tss_size - 1;
-    
+
     // Lower 8 bytes of TSS descriptor
     GDT[gdt_index].data = 0;
     GDT[gdt_index].limit_low(limit as u16);
@@ -158,7 +158,7 @@ unsafe fn setup_tss_descriptor(gdt_index: usize, tss_addr: u64, tss_size: u32) {
     GDT[gdt_index].default_operation_size(0);
     GDT[gdt_index].granularity(0);
     GDT[gdt_index].base_high((tss_addr >> 24) as u8);
-    
+
     // Upper 8 bytes of TSS descriptor (contains high 32 bits of base address)
     GDT[gdt_index + 1].data = (tss_addr >> 32) & 0xFFFFFFFF;
 }
@@ -172,18 +172,18 @@ unsafe fn setup_segments() {
     // User segments (DPL=3)
     setup_code_segment(&mut GDT[3], DescriptorType::ExecuteRead, 3, 0, 0xfffff);
     setup_data_segment(&mut GDT[4], DescriptorType::ReadWrite, 3, 0, 0xfffff);
-    
+
     // Setup TSS
     // Set RSP0 to point to top of kernel stack (stack grows downward)
     let kernel_stack_top = &KERNEL_STACK.data as *const _ as u64 + KERNEL_STACK_SIZE as u64;
     TSS.rsp0 = kernel_stack_top;
     trace!("TSS RSP0 set to: {:#x}", kernel_stack_top);
-    
+
     // Setup TSS descriptor in GDT (indices 5 and 6)
     let tss_addr = &TSS as *const _ as u64;
     setup_tss_descriptor(5, tss_addr, size_of::<TaskStateSegment>() as u32);
     trace!("TSS address: {:#x}", tss_addr);
-    
+
     load_gdt(
         (size_of::<[SegmentDescriptor; 7]>()) as u16 - 1,
         &GDT[0] as *const SegmentDescriptor as usize,

@@ -48,7 +48,9 @@ pub mod prelude {
     pub use crate::fs::{close, exit, open, read, spawn, write, OpenFlags};
     pub use crate::io::{print, println, STDERR, STDIN, STDOUT};
     pub use crate::raw::{syscall0, syscall1, syscall2, syscall3, syscall4, syscall5, syscall6};
-    pub use crate::socket::{accept, bind, connect, listen, socket, SocketAddrUn, AF_UNIX, SOCK_DGRAM, SOCK_STREAM};
+    pub use crate::socket::{
+        accept, bind, connect, listen, socket, SocketAddrUn, AF_UNIX, SOCK_DGRAM, SOCK_STREAM,
+    };
     pub use horse_abi::ioctl::IoctlRequest;
 }
 

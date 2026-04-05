@@ -1,22 +1,19 @@
-use uefi::{
-    prelude::*,
-    data_types::CStr16,
-    fs::{
-        FileSystem,
-        Path,
-    },
-};
 use alloc::string::String;
+use uefi::{
+    data_types::CStr16,
+    fs::{FileSystem, Path},
+    prelude::*,
+};
 
 pub struct FileBuffer {
-    buffer: String
+    buffer: String,
 }
 
 impl FileBuffer {
     pub fn new() -> Self {
         return Self {
-            buffer: String::new()
-        }
+            buffer: String::new(),
+        };
     }
 
     pub fn write(&mut self, content: &str) {
@@ -28,12 +25,15 @@ impl FileBuffer {
     }
 
     pub fn flush(self, fs: &mut FileSystem, path: &CStr16) {
-        fs.write(Path::new(path), self.buffer.as_bytes()).expect("can't write file");
+        fs.write(Path::new(path), self.buffer.as_bytes())
+            .expect("can't write file");
     }
 }
 
 pub fn open_root(bt: &BootServices, handler: Handle) -> FileSystem<'_> {
-    let fs = bt.get_image_file_system(handler).expect("can't open filesystem protocol");
+    let fs = bt
+        .get_image_file_system(handler)
+        .expect("can't open filesystem protocol");
     fs
 }
 

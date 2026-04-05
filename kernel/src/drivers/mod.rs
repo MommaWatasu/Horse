@@ -1,6 +1,6 @@
 pub mod ata;
-pub mod dev;
 pub mod detect_dev;
+pub mod dev;
 pub mod fs;
 pub mod pci;
 pub mod timer;

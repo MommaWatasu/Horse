@@ -1,22 +1,13 @@
-use alloc::{
-    boxed::Box,
-    vec::Vec
-};
+use alloc::{boxed::Box, vec::Vec};
 use spin::Mutex;
 
 use crate::{
-    horse_lib::{
-        fd::Path,
-        storage::Storage,
-    },
-    drivers::ata::{
-        pata::IdeController,
-        vata::VataController
-    }
+    drivers::ata::{pata::IdeController, vata::VataController},
+    horse_lib::{fd::Path, storage::Storage},
 };
 
 pub enum DiskType {
-    Ide { controller: IdeController},
+    Ide { controller: IdeController },
     Vata { controller: VataController },
 }
 

@@ -1,21 +1,12 @@
-use alloc::{
-    boxed::Box,
-    vec::Vec
-};
+use alloc::{boxed::Box, vec::Vec};
 use spin::Mutex;
 
-use crate::{
-    error,
-    horse_lib::bytes::bytes2str,
-};
 use super::{
     core::{FileSystem, STORAGE_CONTROLLERS},
-    fat::core::{
-        BPB,
-        FAT,
-    },
-    gpt::GPT
+    fat::core::{BPB, FAT},
+    gpt::GPT,
 };
+use crate::{error, horse_lib::bytes::bytes2str};
 
 pub static mut FILESYSTEM_TABLE: Mutex<Vec<Box<dyn FileSystem>>> = Mutex::new(Vec::new());
 
@@ -28,22 +19,19 @@ pub fn initialize_filesystem() {
 
 pub fn initialize_storage(id: usize) {
     match GPT::new(id) {
-        Some(gpt) => {
-            initialize_gpt(gpt, id)
-        }
+        Some(gpt) => initialize_gpt(gpt, id),
         None => unsafe {
             match initialize_partition(id) {
-                Some(fs) => {
-                    FILESYSTEM_TABLE.lock().push(fs)
-                },
-                None => { error!("this partition has not supported file system") }
+                Some(fs) => FILESYSTEM_TABLE.lock().push(fs),
+                None => {
+                    error!("this partition has not supported file system")
+                }
             }
-        }
+        },
     }
 }
 
-fn initialize_gpt(_gpt: GPT, _id: usize) {
-}
+fn initialize_gpt(_gpt: GPT, _id: usize) {}
 
 fn initialize_partition(id: usize) -> Option<Box<dyn FileSystem>> {
     let mut buf = [0; 512];
@@ -51,9 +39,8 @@ fn initialize_partition(id: usize) -> Option<Box<dyn FileSystem>> {
     let bpb = unsafe { *(buf.as_mut_ptr() as *mut BPB) };
     let fsys = &bytes2str(&bpb.fil_sys_type);
     if &fsys[0..5] == "FAT32" {
-        return Some(Box::new(FAT::new(bpb, id)))
+        return Some(Box::new(FAT::new(bpb, id)));
     } else {
-        return None
+        return None;
     }
 }
-

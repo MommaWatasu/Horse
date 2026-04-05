@@ -115,8 +115,10 @@ impl FrameBuffer {
         let bpsl = Self::bytes_per_scan_line(self.stride, self.format);
 
         if dst_pos.y < src_pos.y {
-            let mut dst_buf: *mut u8 = Self::frame_addr_at(dst_pos, self.get_fb_mut_ptr(), self.stride, self.format);
-            let mut src_buf: *const u8 = Self::frame_addr_at(src_pos, self.get_fb_mut_ptr(), self.stride, self.format);
+            let mut dst_buf: *mut u8 =
+                Self::frame_addr_at(dst_pos, self.get_fb_mut_ptr(), self.stride, self.format);
+            let mut src_buf: *const u8 =
+                Self::frame_addr_at(src_pos, self.get_fb_mut_ptr(), self.stride, self.format);
 
             for _ in 0..size.y {
                 copy_nonoverlapping(src_buf, dst_buf, bpp * size.x);
@@ -124,10 +126,18 @@ impl FrameBuffer {
                 src_buf = src_buf.add(bpsl);
             }
         } else {
-            let mut dst_buf: *mut u8 =
-                Self::frame_addr_at(dst_pos + Coord::new(0, size.y - 1), self.get_fb_mut_ptr(), self.stride, self.format);
-            let mut src_buf: *const u8 =
-                Self::frame_addr_at(src_pos + Coord::new(0, size.y - 1), self.get_fb_mut_ptr(), self.stride, self.format);
+            let mut dst_buf: *mut u8 = Self::frame_addr_at(
+                dst_pos + Coord::new(0, size.y - 1),
+                self.get_fb_mut_ptr(),
+                self.stride,
+                self.format,
+            );
+            let mut src_buf: *const u8 = Self::frame_addr_at(
+                src_pos + Coord::new(0, size.y - 1),
+                self.get_fb_mut_ptr(),
+                self.stride,
+                self.format,
+            );
 
             for _ in 0..size.y {
                 copy_nonoverlapping(src_buf, dst_buf, bpp * size.x);
@@ -149,8 +159,12 @@ impl FrameBuffer {
         Self::bytes_per_pixel(format) * stride
     }
 
-    unsafe fn frame_addr_at(pos: Coord, fb: *mut u8, stride: usize, format: PixelFormat) -> *mut u8 {
-        fb
-            .add(Self::bytes_per_pixel(format) * (stride * pos.y + pos.x))
+    unsafe fn frame_addr_at(
+        pos: Coord,
+        fb: *mut u8,
+        stride: usize,
+        format: PixelFormat,
+    ) -> *mut u8 {
+        fb.add(Self::bytes_per_pixel(format) * (stride * pos.y + pos.x))
     }
 }

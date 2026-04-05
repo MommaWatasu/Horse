@@ -129,7 +129,8 @@ impl PageTableFlags {
     /// Kernel 2MB page
     pub const KERNEL_HUGE: Self = Self(Self::PRESENT.0 | Self::WRITABLE.0 | Self::HUGE_PAGE.0);
     /// User 2MB page
-    pub const USER_HUGE: Self = Self(Self::PRESENT.0 | Self::WRITABLE.0 | Self::USER_ACCESSIBLE.0 | Self::HUGE_PAGE.0);
+    pub const USER_HUGE: Self =
+        Self(Self::PRESENT.0 | Self::WRITABLE.0 | Self::USER_ACCESSIBLE.0 | Self::HUGE_PAGE.0);
 }
 
 /// A single page table entry
@@ -283,9 +284,10 @@ impl VirtAddr {
 
 // Static page tables for kernel identity mapping
 static mut KERNEL_PML4: PageTable = PageTable::new();
-static mut KERNEL_PDPT: PageTable = PageTable::new();       // For higher half (PML4[511])
-static mut KERNEL_PDPT_LOW: PageTable = PageTable::new();   // For identity mapping (PML4[0])
-static mut KERNEL_PD: [PageTable; PAGE_DIRECTORY_COUNT] = [const { PageTable::new() }; PAGE_DIRECTORY_COUNT];
+static mut KERNEL_PDPT: PageTable = PageTable::new(); // For higher half (PML4[511])
+static mut KERNEL_PDPT_LOW: PageTable = PageTable::new(); // For identity mapping (PML4[0])
+static mut KERNEL_PD: [PageTable; PAGE_DIRECTORY_COUNT] =
+    [const { PageTable::new() }; PAGE_DIRECTORY_COUNT];
 
 // Global page table manager
 pub static PAGE_TABLE_MANAGER: Mutex<PageTableManager> = Mutex::new(PageTableManager::new());
@@ -364,7 +366,7 @@ impl PageTableManager {
                 // Create a new PDPT for this user process
                 let user_pdpt_phys = self.allocate_page_table_phys()?;
                 let user_pdpt = phys_to_ptr::<PageTable>(user_pdpt_phys);
-                
+
                 // Copy entries from kernel's PDPT
                 let kernel_pdpt = phys_to_ptr::<PageTable>(kernel_pml4_0.addr());
                 for i in 0..PAGE_TABLE_ENTRIES {
@@ -373,7 +375,7 @@ impl PageTableManager {
                         // Create a new PD for this PDPT entry
                         let user_pd_phys = self.allocate_page_table_phys()?;
                         let user_pd = phys_to_ptr::<PageTable>(user_pd_phys);
-                        
+
                         // Copy PD entries from kernel
                         let kernel_pd = phys_to_ptr::<PageTable>(kernel_pdpt_entry.addr());
                         core::ptr::copy_nonoverlapping(
@@ -381,12 +383,12 @@ impl PageTableManager {
                             (*user_pd).entries.as_mut_ptr(),
                             PAGE_TABLE_ENTRIES,
                         );
-                        
+
                         // Set user PDPT entry to point to copied PD
                         (*user_pdpt).entries[i].set(user_pd_phys, kernel_pdpt_entry.flags());
                     }
                 }
-                
+
                 // Set user PML4[0] to point to new PDPT
                 (*pml4).entries[0].set(user_pdpt_phys, kernel_pml4_0.flags());
             }
@@ -413,7 +415,8 @@ impl PageTableManager {
         unsafe {
             // Get or create PDPT
             let pml4_ref = &mut *pml4;
-            let pdpt = self.get_or_create_table(&mut pml4_ref.entries[vaddr.pml4_index()], flags)?;
+            let pdpt =
+                self.get_or_create_table(&mut pml4_ref.entries[vaddr.pml4_index()], flags)?;
 
             // Get or create PD
             let pdpt_ref = &mut *pdpt;
@@ -422,7 +425,7 @@ impl PageTableManager {
             // Check if PD entry is a huge page - if so, we need to split it
             let pd_ref = &mut *pd;
             let pd_entry = &mut pd_ref.entries[vaddr.pd_index()];
-            
+
             let pt = if pd_entry.is_present() && pd_entry.is_huge() {
                 // Split the 2MB huge page into 512 x 4KB pages
                 self.split_huge_page(pd_entry, flags)?
@@ -449,40 +452,44 @@ impl PageTableManager {
         // Get the base physical address of the huge page
         let huge_page_phys = pd_entry.addr();
         let old_flags = pd_entry.flags();
-        
+
         // Allocate a new page table
-        let pt_phys = self.allocate_page_table_phys()
+        let pt_phys = self
+            .allocate_page_table_phys()
             .ok_or("Failed to allocate page table for splitting huge page")?;
         let pt = phys_to_ptr::<PageTable>(pt_phys);
-        
+
         // Fill the page table with 512 entries mapping the same physical region
         // Preserve the original flags but remove HUGE_PAGE and add USER_ACCESSIBLE if needed
         let base_flags = if flags.contains(PageTableFlags::USER_ACCESSIBLE) {
-            old_flags.union(PageTableFlags::USER_ACCESSIBLE).difference(PageTableFlags::HUGE_PAGE)
+            old_flags
+                .union(PageTableFlags::USER_ACCESSIBLE)
+                .difference(PageTableFlags::HUGE_PAGE)
         } else {
             old_flags.difference(PageTableFlags::HUGE_PAGE)
         };
-        
+
         for i in 0..PAGE_TABLE_ENTRIES {
             let page_phys = huge_page_phys + (i * PAGE_SIZE_4K) as u64;
             (*pt).entries[i].set(page_phys, base_flags);
         }
-        
+
         // Update the PD entry to point to the new page table
-        let table_flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE |
-            if flags.contains(PageTableFlags::USER_ACCESSIBLE) {
+        let table_flags = PageTableFlags::PRESENT
+            | PageTableFlags::WRITABLE
+            | if flags.contains(PageTableFlags::USER_ACCESSIBLE) {
                 PageTableFlags::USER_ACCESSIBLE
             } else {
                 PageTableFlags::empty()
             };
         pd_entry.set(pt_phys, table_flags);
-        
+
         // Flush TLB for the entire 2MB region
         let virt_base = huge_page_phys; // For identity mapping, virt == phys
         for i in 0..PAGE_TABLE_ENTRIES {
             invalidate_page(virt_base + (i * PAGE_SIZE_4K) as u64);
         }
-        
+
         Ok(pt)
     }
 
@@ -500,7 +507,8 @@ impl PageTableManager {
         unsafe {
             // Get or create PDPT
             let pml4_ref = &mut *pml4;
-            let pdpt = self.get_or_create_table(&mut pml4_ref.entries[vaddr.pml4_index()], flags)?;
+            let pdpt =
+                self.get_or_create_table(&mut pml4_ref.entries[vaddr.pml4_index()], flags)?;
 
             // Get or create PD
             let pdpt_ref = &mut *pdpt;
@@ -525,8 +533,8 @@ impl PageTableManager {
             // Table already exists - entry contains physical address
             // If we need USER_ACCESSIBLE and it's not set, update the entry
             let current_flags = entry.flags();
-            if flags.contains(PageTableFlags::USER_ACCESSIBLE) 
-                && !current_flags.contains(PageTableFlags::USER_ACCESSIBLE) 
+            if flags.contains(PageTableFlags::USER_ACCESSIBLE)
+                && !current_flags.contains(PageTableFlags::USER_ACCESSIBLE)
             {
                 // Add USER_ACCESSIBLE flag to existing entry
                 let new_flags = current_flags | PageTableFlags::USER_ACCESSIBLE;
@@ -537,13 +545,15 @@ impl PageTableManager {
             Ok(phys_to_ptr::<PageTable>(phys))
         } else {
             // Create new table - get physical address
-            let phys = self.allocate_page_table_phys()
+            let phys = self
+                .allocate_page_table_phys()
                 .ok_or("Failed to allocate page table")?;
 
             // Set entry to point to new table (store physical address)
             // Use USER_ACCESSIBLE flag if the mapping is for user space
-            let table_flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE |
-                if flags.contains(PageTableFlags::USER_ACCESSIBLE) {
+            let table_flags = PageTableFlags::PRESENT
+                | PageTableFlags::WRITABLE
+                | if flags.contains(PageTableFlags::USER_ACCESSIBLE) {
                     PageTableFlags::USER_ACCESSIBLE
                 } else {
                     PageTableFlags::empty()
@@ -745,7 +755,7 @@ extern "C" {
 /// Initialize the kernel page tables with higher half mapping
 /// This is called early in the boot process (after boot page tables are set up)
 /// The kernel is now running at virtual address KERNEL_BASE + physical_address
-/// 
+///
 /// For 0xFFFFFFFF80000000:
 /// - PML4 index = 511 (bits 39-47)
 /// - PDPT index = 510 (bits 30-38)
@@ -760,45 +770,36 @@ pub unsafe fn initialize() {
 
     // ===== Set up identity mapping (PML4[0]) for low addresses =====
     // This is needed to access bootloader-provided data (fb_config, memory_map, etc.)
-    (*pml4_ptr).entries[0].set(
-        virt_to_phys(pdpt_low_ptr as u64),
-        PageTableFlags::KERNEL_RW,
-    );
+    (*pml4_ptr).entries[0].set(virt_to_phys(pdpt_low_ptr as u64), PageTableFlags::KERNEL_RW);
 
     // Set up PDPT_LOW -> PD mappings for identity mapping (first 64GB)
     for i in 0..PAGE_DIRECTORY_COUNT {
         let pd_entry_ptr = addr_of_mut!((*pd_ptr)[i]);
-        (*pdpt_low_ptr).entries[i].set(
-            virt_to_phys(pd_entry_ptr as u64),
-            PageTableFlags::KERNEL_RW,
-        );
+        (*pdpt_low_ptr).entries[i]
+            .set(virt_to_phys(pd_entry_ptr as u64), PageTableFlags::KERNEL_RW);
     }
 
     // ===== Set up higher half mapping (PML4[511]) for kernel =====
     // Note: pml4_ptr, pdpt_ptr, pd_ptr are virtual addresses (linker placed them there)
     // Page table entries need physical addresses
-    (*pml4_ptr).entries[KERNEL_PML4_INDEX].set(
-        virt_to_phys(pdpt_ptr as u64),
-        PageTableFlags::KERNEL_RW,
-    );
+    (*pml4_ptr).entries[KERNEL_PML4_INDEX]
+        .set(virt_to_phys(pdpt_ptr as u64), PageTableFlags::KERNEL_RW);
 
     // Set up PDPT -> PD mappings and PD entries for 2MB pages
     // PDPT[510] and PDPT[511] map to our PD entries (2GB total for kernel space)
     // This maps physical memory starting at 0 to virtual KERNEL_BASE
-    // 
+    //
     // We have PAGE_DIRECTORY_COUNT (64) page directories, which can map 64GB
-    // But for the higher half kernel at 0xFFFFFFFF80000000, we only have 
+    // But for the higher half kernel at 0xFFFFFFFF80000000, we only have
     // PDPT entries 510 and 511 available (2GB of virtual address space)
     // So we limit to 2 PDPT entries
     let pdpt_entries_to_use = PAGE_DIRECTORY_COUNT.min(2); // Only 2 entries (510, 511) for top 2GB
-    
+
     for i in 0..pdpt_entries_to_use {
         let pdpt_index = PDPT_START_INDEX + i;
         let pd_entry_ptr = addr_of_mut!((*pd_ptr)[i]);
-        (*pdpt_ptr).entries[pdpt_index].set(
-            virt_to_phys(pd_entry_ptr as u64),
-            PageTableFlags::KERNEL_RW,
-        );
+        (*pdpt_ptr).entries[pdpt_index]
+            .set(virt_to_phys(pd_entry_ptr as u64), PageTableFlags::KERNEL_RW);
     }
 
     // Set up PD entries with 2MB huge pages
@@ -840,7 +841,8 @@ pub fn setup_user_page_table(
 
     // Create new PML4 with kernel mappings
     // Returns (physical_address, virtual_pointer)
-    let (pml4_phys, pml4) = manager.create_user_page_table()
+    let (pml4_phys, pml4) = manager
+        .create_user_page_table()
         .ok_or("Failed to create user page table")?;
 
     // Map program area: virtual load address → private physical frames.
@@ -853,12 +855,7 @@ pub fn setup_user_page_table(
 
     // Allocate and map user stack
     let stack_bottom = stack_top - stack_size as u64;
-    manager.allocate_and_map(
-        pml4,
-        stack_bottom,
-        stack_size,
-        PageTableFlags::USER_RW,
-    )?;
+    manager.allocate_and_map(pml4, stack_bottom, stack_size, PageTableFlags::USER_RW)?;
 
     // Return physical address for CR3
     Ok(pml4_phys)
@@ -945,10 +942,7 @@ pub fn handle_page_fault(error_code: u64) {
     let faulting_address = get_cr2();
     let error = PageFaultErrorCode::from_bits(error_code);
 
-    crate::error!(
-        "PAGE FAULT at address 0x{:016x}",
-        faulting_address
-    );
+    crate::error!("PAGE FAULT at address 0x{:016x}", faulting_address);
     crate::error!("Error code: {}", error);
     crate::error!("  Present: {}", error.is_present());
     crate::error!("  Write: {}", error.is_write());
@@ -964,7 +958,10 @@ pub fn handle_page_fault(error_code: u64) {
 
         if faulting_address >= extended_stack_bottom && faulting_address < USER_STACK_TOP {
             // This is a stack access - try to allocate the page
-            crate::info!("Attempting to handle stack page fault at 0x{:016x}", faulting_address);
+            crate::info!(
+                "Attempting to handle stack page fault at 0x{:016x}",
+                faulting_address
+            );
 
             let page_addr = faulting_address & !0xFFF; // Align to page boundary
 

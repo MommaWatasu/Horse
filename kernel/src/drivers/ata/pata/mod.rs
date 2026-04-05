@@ -2,10 +2,7 @@ mod definition;
 use definition::*;
 
 use crate::{
-    drivers::{
-        fs::core::StorageController,
-        pci::*,
-    },
+    drivers::{fs::core::StorageController, pci::*},
     error,
     horse_lib::{
         bytes::{bytes2str, negative},
@@ -220,7 +217,7 @@ impl IdeController {
         drive: usize,
         lba: u32,
         numsects: u8,
-        mut buf: u64
+        mut buf: u64,
     ) -> u8 {
         let lba_mode: u8;
         let dma: u8;
@@ -273,7 +270,9 @@ impl IdeController {
         dma = 0; // currently, we don't support DMA
 
         // Wait if the drive is busy
-        while self.ide_read(channel, Register::AtaRegCommandStatus as u16) & Status::AtaSrBsy as u8 != 0 {}
+        while self.ide_read(channel, Register::AtaRegCommandStatus as u16) & Status::AtaSrBsy as u8
+            != 0
+        {}
 
         // Select the drive from controller
         if lba_mode == 0 {
@@ -340,7 +339,7 @@ impl IdeController {
                         return err;
                     }
                     unsafe {
-                            asm!(
+                        asm!(
                             "mov dx, {port:x}",
                             "mov rdi, {buf}",
                             "mov ecx, 256",
@@ -400,10 +399,22 @@ impl Storage for IdeController {
         }
         let mut err = 0;
         if device.ata_type == InterfaceType::IdeAta as u16 {
-            err = self.ide_access(Directions::Read as u8, 0, lba, numsects, buf.as_mut_ptr() as u64);
+            err = self.ide_access(
+                Directions::Read as u8,
+                0,
+                lba,
+                numsects,
+                buf.as_mut_ptr() as u64,
+            );
         } else {
             for i in 0..numsects {
-                err = self.ide_access(Directions::Read as u8, 0, lba + i as u32, 1, buf.as_mut_ptr() as u64);
+                err = self.ide_access(
+                    Directions::Read as u8,
+                    0,
+                    lba + i as u32,
+                    1,
+                    buf.as_mut_ptr() as u64,
+                );
             }
         }
         return self.ide_print_error(0, err);
@@ -413,13 +424,21 @@ impl Storage for IdeController {
         if device.reserved == 0 {
             return 1;
         }
-        if lba * 512 + nbytes as u32 > device.size && device.ata_type == InterfaceType::IdeAta as u16 {
+        if lba * 512 + nbytes as u32 > device.size
+            && device.ata_type == InterfaceType::IdeAta as u16
+        {
             return 2;
         }
         let numsects: u8 = ((nbytes + 512) / 512 - 1).try_into().unwrap();
         let err;
         if device.ata_type == InterfaceType::IdeAta as u16 {
-            err = self.ide_access(Directions::Write as u8, 0, lba, numsects, buf.as_ptr() as u64);
+            err = self.ide_access(
+                Directions::Write as u8,
+                0,
+                lba,
+                numsects,
+                buf.as_ptr() as u64,
+            );
         } else {
             return 4; // Write Protected
         }

@@ -1,13 +1,10 @@
-use alloc::{
-    boxed::Box,
-    vec
-};
+use alloc::{boxed::Box, vec};
 
 pub struct RingBuffer {
     buf: Box<[u8]>,
     head: usize,
     tail: usize,
-    count: usize
+    count: usize,
 }
 
 impl RingBuffer {
@@ -17,11 +14,13 @@ impl RingBuffer {
             buf: vec![0u8; cap].into_boxed_slice(),
             head: 0,
             tail: 0,
-            count: 0
+            count: 0,
         }
     }
 
-    pub fn capacity(&self) -> usize { self.buf.len() } 
+    pub fn capacity(&self) -> usize {
+        self.buf.len()
+    }
 
     pub fn push(&mut self, data: &[u8]) -> usize {
         let space = self.capacity() - self.count;

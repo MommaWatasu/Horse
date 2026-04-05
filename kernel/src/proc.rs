@@ -1,33 +1,51 @@
-use alloc::sync::Arc;
-use alloc::{
-    collections::VecDeque,
-    vec::Vec,
-};
-use core::{arch::asm, mem::size_of};
-use spin::{
-    Mutex,
-    Once
-};
 use crate::drivers::dev::{
     stdin::StdinDevice,
-    stdout::{
-        StderrDevice,
-        StdoutDevice
-    }
+    stdout::{StderrDevice, StdoutDevice},
+};
+use alloc::sync::Arc;
+use alloc::{collections::VecDeque, vec::Vec};
+use core::{arch::asm, mem::size_of};
+use spin::{Mutex, Once};
+
+use crate::horse_lib::fd::*;
+use crate::{
+    drivers::timer::TIMER_MANAGER,
+    segment::{KERNEL_CS, KERNEL_SS, USER_CS, USER_SS},
 };
 
-use crate::{drivers::timer::TIMER_MANAGER, segment::{KERNEL_CS, KERNEL_SS, USER_CS, USER_SS}};
-use crate::horse_lib::fd::*;
-
-const DEFAULT_CONTEXT: ContextWrapper = ContextWrapper(ProcessContext { cr3: 0, rip: 0, rflags: 0, reserved1: 0, cs: 0, ss: 0, fs: 0, gs: 0, rax: 0, rbx: 0, rcx: 0, rdx: 0, rdi: 0, rsi: 0, rsp: 0, rbp: 0, r8: 0, r9: 0, r10: 0, r11: 0, r12: 0, r13: 0, r14: 0, r15: 0, fxsave_area: [0; 512] });
+const DEFAULT_CONTEXT: ContextWrapper = ContextWrapper(ProcessContext {
+    cr3: 0,
+    rip: 0,
+    rflags: 0,
+    reserved1: 0,
+    cs: 0,
+    ss: 0,
+    fs: 0,
+    gs: 0,
+    rax: 0,
+    rbx: 0,
+    rcx: 0,
+    rdx: 0,
+    rdi: 0,
+    rsi: 0,
+    rsp: 0,
+    rbp: 0,
+    r8: 0,
+    r9: 0,
+    r10: 0,
+    r11: 0,
+    r12: 0,
+    r13: 0,
+    r14: 0,
+    r15: 0,
+    fxsave_area: [0; 512],
+});
 pub static PROCESS_MANAGER: Mutex<Once<ProcessManager>> = Mutex::new(Once::new());
-
 
 extern "C" {
     pub fn switch_context(next_ctx: u64, current_ctx: u64);
     pub fn get_cr3() -> u64;
 }
-
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 #[repr(align(16))]
@@ -35,13 +53,13 @@ pub struct ContextWrapper(ProcessContext);
 
 impl ContextWrapper {
     pub fn unwrap(&mut self) -> &mut ProcessContext {
-        return &mut self.0
+        return &mut self.0;
     }
     pub fn as_ptr(&mut self) -> u64 {
-        return self.unwrap() as *mut ProcessContext as u64
+        return self.unwrap() as *mut ProcessContext as u64;
     }
     pub fn from_ptr(ptr: u64) -> ProcessContext {
-        return unsafe { *(ptr as *mut ProcessContext) }
+        return unsafe { *(ptr as *mut ProcessContext) };
     }
 }
 
@@ -72,13 +90,13 @@ pub struct ProcessContext {
     r13: u64,
     r14: u64,
     r15: u64,
-    pub fxsave_area: [u8; 512]
+    pub fxsave_area: [u8; 512],
 }
 
 pub struct ProcessManager {
     latest_id: usize,
     run_queue: VecDeque<Arc<Mutex<Process>>>,
-    pending_queue: Vec<Arc<Mutex<Process>>>
+    pending_queue: Vec<Arc<Mutex<Process>>>,
 }
 
 impl ProcessManager {
@@ -86,16 +104,16 @@ impl ProcessManager {
         let mut manager = Self {
             latest_id: 0,
             run_queue: VecDeque::new(),
-            pending_queue: Vec::new()
+            pending_queue: Vec::new(),
         };
         //kernel process
         let mut fd_table = FDTable::new();
-        fd_table.add(Arc::new(StdinDevice));  // fd 0
+        fd_table.add(Arc::new(StdinDevice)); // fd 0
         fd_table.add(Arc::new(StdoutDevice)); // fd 1
         fd_table.add(Arc::new(StderrDevice)); // fd 2
         manager.new_proc(&fd_table);
         manager.id_wake_up(1);
-        return manager
+        return manager;
     }
     pub fn new_proc(&mut self, parent_fd_table: &FDTable) -> Arc<Mutex<Process>> {
         self.latest_id += 1;
@@ -110,10 +128,14 @@ impl ProcessManager {
         let proc = Arc::new(Mutex::new(Process::new(self.latest_id)));
         proc.lock().fd_table = child_fd_table;
         self.pending_queue.push(proc.clone());
-        return proc
+        return proc;
     }
     pub fn wake_up(&mut self, proc: Arc<Mutex<Process>>) {
-        if let Some(idx) = self.pending_queue.iter().position(|x| Arc::ptr_eq(x, &proc)) {
+        if let Some(idx) = self
+            .pending_queue
+            .iter()
+            .position(|x| Arc::ptr_eq(x, &proc))
+        {
             self.run_queue.push_back(proc);
             self.pending_queue.remove(idx);
         }
@@ -200,11 +222,19 @@ impl ProcessManager {
 
     /// Get the ID of the current running process
     pub fn current_id(&self) -> usize {
-        self.run_queue.front().expect("failed to get current process").lock().id()
+        self.run_queue
+            .front()
+            .expect("failed to get current process")
+            .lock()
+            .id()
     }
 
     pub fn current_proc(&self) -> Arc<Mutex<Process>> {
-        (*self.run_queue.front().expect("failed to get current process")).clone()
+        (*self
+            .run_queue
+            .front()
+            .expect("failed to get current process"))
+        .clone()
     }
 
     /// Get the number of processes in the run queue
@@ -261,7 +291,10 @@ impl ProcessManager {
 
     /// Prepare to terminate current process and switch to next
     /// Returns (next_context_ptr, current_context_ptr) or None if no other processes
-    pub fn prepare_terminate(&mut self, _status: i32) -> (Option<Arc<Mutex<Process>>>, Option<(u64, u64, u64)>) {
+    pub fn prepare_terminate(
+        &mut self,
+        _status: i32,
+    ) -> (Option<Arc<Mutex<Process>>>, Option<(u64, u64, u64)>) {
         if self.run_queue.is_empty() {
             return (None, None);
         }
@@ -283,7 +316,10 @@ impl ProcessManager {
         let next_proc_ptr = next_lock.context().as_ptr();
         drop(next_lock);
 
-        (Some(current_proc), Some((next_proc_ptr, current_proc_ptr, next_kstack_top)))
+        (
+            Some(current_proc),
+            Some((next_proc_ptr, current_proc_ptr, next_kstack_top)),
+        )
     }
 }
 
@@ -302,7 +338,7 @@ pub struct Process {
     stack: Vec<u64>,
     kernel_stack: Vec<u8>,
     context: ContextWrapper,
-    pub fd_table: FDTable
+    pub fd_table: FDTable,
 }
 
 impl Process {
@@ -314,13 +350,15 @@ impl Process {
             stack: Vec::new(),
             kernel_stack,
             context: DEFAULT_CONTEXT,
-            fd_table: FDTable::DEFAULT_TABLE
+            fd_table: FDTable::DEFAULT_TABLE,
         }
     }
     pub fn kernel_stack_top(&self) -> u64 {
         self.kernel_stack.as_ptr() as u64 + self.kernel_stack.len() as u64
     }
-    pub fn id(&self) -> usize { self.id }
+    pub fn id(&self) -> usize {
+        self.id
+    }
     pub fn init_context(&mut self, f: fn()) {
         let stack_size = Self::DEFAULT_STACK_BYTES / size_of::<u64>();
         self.stack.resize(stack_size, 0);
@@ -352,10 +390,10 @@ impl Process {
 
         let ctx = self.context.unwrap();
         ctx.cr3 = cr3;
-        ctx.rflags = 0x202;  // IF=1, reserved bit 1=1
+        ctx.rflags = 0x202; // IF=1, reserved bit 1=1
         ctx.cs = USER_CS as u64;
         ctx.ss = USER_SS as u64;
-        ctx.rsp = user_stack & !0xFu64;  // 16-byte aligned
+        ctx.rsp = user_stack & !0xFu64; // 16-byte aligned
         ctx.rip = entry_point;
 
         // Initialize FPU state
@@ -365,7 +403,7 @@ impl Process {
     }
 
     pub fn context(&mut self) -> &mut ContextWrapper {
-        return &mut self.context
+        return &mut self.context;
     }
 }
 
@@ -374,7 +412,11 @@ pub fn initialize_process_manager() {
 
     unsafe {
         asm!("cli");
-        TIMER_MANAGER.lock().get_mut().unwrap().add_timer(2, -1, true);
+        TIMER_MANAGER
+            .lock()
+            .get_mut()
+            .unwrap()
+            .add_timer(2, -1, true);
         asm!("sti");
     }
 }

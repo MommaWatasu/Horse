@@ -9,7 +9,10 @@ pub struct Buffer {
 impl Buffer {
     pub fn new(size: usize, align: usize) -> Self {
         let buf = unsafe {
-            USB_ALLOC.lock().get_mut().unwrap()
+            USB_ALLOC
+                .lock()
+                .get_mut()
+                .unwrap()
                 .alloc(size, align, None)
                 .expect("no enough memory")
                 .as_mut()

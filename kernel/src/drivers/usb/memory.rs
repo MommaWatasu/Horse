@@ -4,10 +4,7 @@ use core::{
     mem::{align_of, size_of},
     ptr::{slice_from_raw_parts_mut, NonNull},
 };
-use spin::{
-    Once,
-    Mutex,
-};
+use spin::{Mutex, Once};
 
 const MEM_POOL_SIZE: usize = 4 * 1024 * 1024;
 pub static USB_ALLOC: Mutex<Once<USBAlloc<MEM_POOL_SIZE>>> = Mutex::new(Once::new());

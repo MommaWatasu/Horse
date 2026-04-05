@@ -9,7 +9,7 @@ pub unsafe fn inb(port: u16) -> u8 {
         out("al") result,
         options(nomem, nostack)
     );
-    return result
+    return result;
 }
 
 #[inline(always)]
@@ -21,7 +21,7 @@ pub unsafe fn inw(port: u16) -> u16 {
         out("ax") result,
         options(nomem, nostack)
     );
-    return result
+    return result;
 }
 
 #[inline(always)]
@@ -33,7 +33,7 @@ pub unsafe fn inl(port: u16) -> u32 {
         out("eax") result,
         options(nomem, nostack)
     );
-    return result
+    return result;
 }
 
 #[inline(always)]

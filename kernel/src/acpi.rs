@@ -1,4 +1,4 @@
-use crate::{error, fftimer::FFTimer, info, initialize_lapic_itmer, horse_lib::bytes::*};
+use crate::{error, fftimer::FFTimer, horse_lib::bytes::*, info, initialize_lapic_itmer};
 
 use alloc::vec::Vec;
 use core::{

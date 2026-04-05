@@ -10,45 +10,29 @@ use file::*;
 
 #[macro_use]
 extern crate alloc;
-use alloc::{
-    string::ToString,
-    vec::Vec
-};
+use alloc::{string::ToString, vec::Vec};
 extern crate libloader;
-use libloader::MemoryMap;
-use log::error;
-use goblin::elf;
 use core::{
     arch::asm,
     ffi::c_void,
-    mem::{
-        size_of,
-        transmute
-    },
+    mem::{size_of, transmute},
     ops::DerefMut,
     ptr::NonNull,
-    slice::from_raw_parts_mut
+    slice::from_raw_parts_mut,
 };
+use goblin::elf;
+use libloader::MemoryMap;
+use log::error;
 use uefi::{
+    fs::{FileSystem, Path},
     prelude::*,
-    fs::{
-        FileSystem,
-        Path
-    },
-    proto::{
-        console::gop::{GraphicsOutput, Mode},
-    },
+    proto::console::gop::{GraphicsOutput, Mode},
     table::{
-        Runtime,
         boot::{
-            self,
-            AllocateType,
-            EventType,
-            MemoryDescriptor,
-            OpenProtocolParams,
-            OpenProtocolAttributes,
-            Tpl,
+            self, AllocateType, EventType, MemoryDescriptor, OpenProtocolAttributes,
+            OpenProtocolParams, Tpl,
         },
+        Runtime,
     },
 };
 
@@ -62,13 +46,14 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
     let gop_handle = bt.get_handle_for_protocol::<GraphicsOutput>().unwrap();
     let mut protocol = unsafe {
         bt.open_protocol::<GraphicsOutput>(
-            OpenProtocolParams{
+            OpenProtocolParams {
                 handle: gop_handle,
                 agent: bt.image_handle(),
-                controller: None
+                controller: None,
             },
-            OpenProtocolAttributes::GetProtocol
-        ).expect("no gop")
+            OpenProtocolAttributes::GetProtocol,
+        )
+        .expect("no gop")
     };
     let gop = protocol.deref_mut();
 
@@ -78,7 +63,7 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
             EventType::SIGNAL_EXIT_BOOT_SERVICES,
             Tpl::NOTIFY,
             Some(exit_signal),
-            None
+            None,
         )
         .map(|_| ())
         .unwrap();
@@ -112,7 +97,8 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
             extern "sysv64" fn(
                 st: SystemTable<Runtime>,
                 fb_config: *mut FrameBufferConfig,
-                memmap: *const MemoryMap) -> (),
+                memmap: *const MemoryMap,
+            ) -> (),
         >(entry_point_addr as *const ())
     };
 
@@ -126,7 +112,9 @@ fn efi_main(handler: Handle, st: SystemTable<Boot>) -> Status {
 fn dump(file: &mut FileBuffer, bt: &BootServices) {
     let max_mmap_size = bt.memory_map_size().map_size + BUFFER_MARGIN;
     let mut mmap_buf = vec![0; max_mmap_size];
-    let memory_map = bt.memory_map(&mut mmap_buf).expect("failed to get memory map");
+    let memory_map = bt
+        .memory_map(&mut mmap_buf)
+        .expect("failed to get memory map");
     file.writeln("Index, Type, PhysicalStart, NumberOfPages, Attribute");
     for (i, d) in memory_map.entries().enumerate() {
         file.writeln(&format!(
@@ -142,7 +130,9 @@ fn dump(file: &mut FileBuffer, bt: &BootServices) {
 
 fn load_kernel(fs: &mut FileSystem, st: &SystemTable<Boot>) -> usize {
     //open kernel file
-    let buf = fs.read(Path::new(&cstr16!("horse-kernel"))).expect("failed to read kernel file");
+    let buf = fs
+        .read(Path::new(&cstr16!("horse-kernel")))
+        .expect("failed to read kernel file");
     let elf = elf::Elf::parse(&buf).expect("failed to parse ELF");
 
     //find kernel_start and kernel_end using physical addresses (p_paddr)
@@ -160,11 +150,13 @@ fn load_kernel(fs: &mut FileSystem, st: &SystemTable<Boot>) -> usize {
 
     //allocate pages for kernel file at physical addresses
     let n_of_pages = ((kernel_end - kernel_start + UEFI_PAGE_SIZE - 1) / UEFI_PAGE_SIZE) as usize;
-    st.boot_services().allocate_pages(
-        AllocateType::Address(kernel_start),
-        boot::MemoryType::LOADER_DATA,
-        n_of_pages.try_into().unwrap(),
-    ).expect("failed to allocate pages for kernel");
+    st.boot_services()
+        .allocate_pages(
+            AllocateType::Address(kernel_start),
+            boot::MemoryType::LOADER_DATA,
+            n_of_pages.try_into().unwrap(),
+        )
+        .expect("failed to allocate pages for kernel");
 
     //load kernel file to physical addresses
     for ph in elf.program_headers.iter() {
@@ -183,13 +175,15 @@ fn load_kernel(fs: &mut FileSystem, st: &SystemTable<Boot>) -> usize {
     // For higher-half kernels, we need to calculate the physical entry point
     // The ELF entry is a virtual address, we need to convert it to physical
     // entry_phys = entry_virt - (p_vaddr - p_paddr) of the first LOAD segment
-    let first_load = elf.program_headers.iter()
+    let first_load = elf
+        .program_headers
+        .iter()
         .find(|ph| ph.p_type == elf::program_header::PT_LOAD)
         .expect("No LOAD segment found");
     let virt_to_phys_offset = first_load.p_vaddr - first_load.p_paddr;
     let entry_phys = elf.entry - virt_to_phys_offset;
 
-    return entry_phys as usize
+    return entry_phys as usize;
 }
 
 #[allow(dead_code)]
@@ -211,7 +205,7 @@ fn set_gop_mode(gop: &mut GraphicsOutput) {
 
 fn exit_boot_services(st: SystemTable<Boot>) -> (SystemTable<Runtime>, MemoryMap) {
     let mmap_size = st.boot_services().memory_map_size();
-    let mut descriptors = Vec::with_capacity(mmap_size.map_size/mmap_size.entry_size);
+    let mut descriptors = Vec::with_capacity(mmap_size.map_size / mmap_size.entry_size);
     let (st, memory_map) = st.exit_boot_services();
 
     //make MemoryMap to send to kernel

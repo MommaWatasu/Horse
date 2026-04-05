@@ -1,9 +1,4 @@
-use crate::{
-    error,
-    graphics::Coord,
-    window::Window,
-    FrameBuffer, FrameBufferConfig,
-};
+use crate::{error, graphics::Coord, window::Window, FrameBuffer, FrameBufferConfig};
 use alloc::{sync::Arc, vec, vec::Vec};
 use spin::Mutex;
 
@@ -102,9 +97,7 @@ impl LayerManager {
     }
 
     pub fn move_absolute(&mut self, id: u32, new_position: Coord) -> Result<(), ()> {
-        self.find_layer(id)?
-            .lock()
-            .move_absolute(new_position);
+        self.find_layer(id)?.lock().move_absolute(new_position);
         Ok(())
     }
 

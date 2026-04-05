@@ -1,7 +1,4 @@
-use core::{
-    mem::size_of,
-    slice::from_raw_parts
-};
+use core::{mem::size_of, slice::from_raw_parts};
 
 use alloc::string::String;
 use spin::Once;
@@ -24,7 +21,7 @@ pub fn sum_bytes<T>(data: &T, len: usize) -> u8 {
     return sum;
 }
 
-fn make_crc_table() -> [u32; 256] { 
+fn make_crc_table() -> [u32; 256] {
     let mut c: u32;
     let mut crc_table = [0; 256];
     for n in 0..256 {
@@ -38,7 +35,7 @@ fn make_crc_table() -> [u32; 256] {
         }
         crc_table[n as usize] = c;
     }
-    return crc_table
+    return crc_table;
 }
 
 pub fn update_crc<T>(crc: u32, data: &T) -> u32 {
@@ -50,11 +47,11 @@ pub fn update_crc<T>(crc: u32, data: &T) -> u32 {
     for &byte in buf {
         c = CRC_TABLE.get().unwrap()[(c ^ byte as u32) as usize & 0xff] ^ (c >> 8);
     }
-    return c ^ 0xffffffff
+    return c ^ 0xffffffff;
 }
 
 pub fn crc<T>(data: &T) -> u32 {
-    return update_crc(0, data)
+    return update_crc(0, data);
 }
 
 pub fn negative(x: u32) -> u32 {
@@ -66,17 +63,17 @@ pub fn negative(x: u32) -> u32 {
 }
 
 pub fn bytes2u32(bytes: &[u8]) -> u32 {
-    let mut r= 0;
+    let mut r = 0;
     for i in 0..4 {
         r += (bytes[i] as u32) << (i * 4);
     }
-    return r
+    return r;
 }
 
 pub fn bytes2u64(bytes: &[u8]) -> u64 {
-    let mut r= 0;
+    let mut r = 0;
     for i in 0..8 {
         r |= (bytes[i] as u64) << (i * 4);
     }
-    return r
+    return r;
 }

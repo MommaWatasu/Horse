@@ -52,7 +52,11 @@ pub fn ioctl(fd: Fd, request: u64, arg: u64) -> Result<()> {
 /// * `Err(e)` - Error on failure
 pub fn fb_get_vscreeninfo(fd: Fd) -> Result<FbVarScreenInfo> {
     let mut info = unsafe { core::mem::zeroed::<FbVarScreenInfo>() };
-    ioctl(fd, FBIOGET_VSCREENINFO, &mut info as *mut FbVarScreenInfo as u64)?;
+    ioctl(
+        fd,
+        FBIOGET_VSCREENINFO,
+        &mut info as *mut FbVarScreenInfo as u64,
+    )?;
     Ok(info)
 }
 
@@ -65,7 +69,11 @@ pub fn fb_get_vscreeninfo(fd: Fd) -> Result<FbVarScreenInfo> {
 /// * `fd` - File descriptor for a framebuffer device
 /// * `info` - Desired variable screen parameters
 pub fn fb_put_vscreeninfo(fd: Fd, info: &FbVarScreenInfo) -> Result<()> {
-    ioctl(fd, FBIOPUT_VSCREENINFO, info as *const FbVarScreenInfo as u64)
+    ioctl(
+        fd,
+        FBIOPUT_VSCREENINFO,
+        info as *const FbVarScreenInfo as u64,
+    )
 }
 
 /// Read the fixed screen info from a framebuffer device
@@ -80,6 +88,10 @@ pub fn fb_put_vscreeninfo(fd: Fd, info: &FbVarScreenInfo) -> Result<()> {
 /// * `Err(e)` - Error on failure
 pub fn fb_get_fscreeninfo(fd: Fd) -> Result<FbFixScreenInfo> {
     let mut info = unsafe { core::mem::zeroed::<FbFixScreenInfo>() };
-    ioctl(fd, FBIOGET_FSCREENINFO, &mut info as *mut FbFixScreenInfo as u64)?;
+    ioctl(
+        fd,
+        FBIOGET_FSCREENINFO,
+        &mut info as *mut FbFixScreenInfo as u64,
+    )?;
     Ok(info)
 }

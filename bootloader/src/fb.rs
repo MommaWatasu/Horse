@@ -12,7 +12,7 @@ pub struct FrameBufferConfig {
     fb: *mut u8,
     stride: usize,
     resolution: (usize, usize),
-    format: PixelFormat
+    format: PixelFormat,
 }
 
 impl FrameBufferConfig {
@@ -21,7 +21,7 @@ impl FrameBufferConfig {
             fb: fb.as_mut_ptr(),
             stride: mi.stride(),
             resolution: mi.resolution(),
-            format: mi.pixel_format()
-        }
+            format: mi.pixel_format(),
+        };
     }
 }

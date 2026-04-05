@@ -36,11 +36,8 @@ pub mod window;
 use acpi::*;
 use console::Console;
 use drivers::{
-    detect_dev::initialize_pci_devices,
-    fs::init::initialize_filesystem,
-    pci::*,
-    timer::*,
-    usb::{classdriver::mouse::MOUSE_CURSOR, memory::*},
+    detect_dev::initialize_pci_devices, fs::init::initialize_filesystem, pci::*, timer::*,
+    usb::memory::*,
 };
 use framebuffer::*;
 use graphics::*;
@@ -49,7 +46,6 @@ use layer::*;
 use log::*;
 use memory_allocator::KernelMemoryAllocator;
 use memory_manager::*;
-use mouse::{draw_mouse_cursor, MOUSE_CURSOR_HEIGHT, MOUSE_CURSOR_WIDTH, MOUSE_TRANSPARENT_COLOR};
 use proc::{initialize_process_manager, PROCESS_MANAGER};
 use queue::ArrayQueue;
 use status::StatusCode;

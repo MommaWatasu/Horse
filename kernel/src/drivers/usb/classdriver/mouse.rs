@@ -4,13 +4,10 @@ use crate::{
         endpoint::{EndpointConfig, EndpointId},
         setupdata::SetupData,
     },
-    graphics::{
-        Coord,
-        RAW_GRAPHICS
-    },
+    graphics::{Coord, RAW_GRAPHICS},
     mouse::*,
     status::Result,
-    trace, PixelColor, StatusCode
+    trace, PixelColor, StatusCode,
 };
 use core::ptr::NonNull;
 use spin::Mutex;

@@ -1,8 +1,4 @@
-use crate::{
-    horse_lib::fd::FileDescriptor,
-    console::Console,
-    layer::LAYER_MANAGER,
-};
+use crate::{console::Console, horse_lib::fd::FileDescriptor, layer::LAYER_MANAGER};
 
 fn write_to_console(buf: &[u8]) -> isize {
     if let Ok(s) = core::str::from_utf8(buf) {
