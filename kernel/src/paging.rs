@@ -7,10 +7,11 @@
 //! - PT (Page Table) - 4 KB per entry
 
 use core::ops::{Index, IndexMut};
-use core::ptr::addr_of_mut;
+use core::ptr::{addr_of_mut, write_bytes};
 use spin::Mutex;
 
 use crate::memory_manager::{frame_manager_instance, FrameID};
+use crate::PROCESS_MANAGER;
 
 // Page sizes
 pub const PAGE_SIZE_4K: usize = 4096;
@@ -47,6 +48,11 @@ pub const fn virt_to_phys(virt: u64) -> u64 {
 #[inline]
 pub fn phys_to_ptr<T>(phys: u64) -> *mut T {
     phys_to_virt(phys) as *mut T
+}
+
+#[inline]
+pub fn align_up(addr: u64, align: u64) -> u64 {
+    (addr + align - 1) & !(align - 1)
 }
 
 /// Page table entry flags
@@ -134,7 +140,7 @@ impl PageTableFlags {
 }
 
 /// A single page table entry
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct PageTableEntry(u64);
 
@@ -235,6 +241,7 @@ impl IndexMut<usize> for PageTable {
 }
 
 /// Virtual address helper functions
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VirtAddr(u64);
 
 impl VirtAddr {
@@ -934,6 +941,43 @@ pub fn get_cr2() -> u64 {
         core::arch::asm!("mov {}, cr2", out(reg) cr2, options(nostack, preserves_flags));
         cr2
     }
+}
+
+pub fn check_vmarea(fault_addr: u64) -> bool {
+    let pm_once = PROCESS_MANAGER.lock();
+    let current_proc = pm_once.get().expect("No current process").current_proc();
+    drop(pm_once); // Release lock before locking memory manager
+
+    let proc_guard = current_proc.lock();
+
+    let Some(area) = proc_guard.vm_areas.find(VirtAddr::new(fault_addr)) else {
+        // Normal page fault, not in any vm area - this is an error
+        return false;
+    };
+
+    let flags = area.flags;
+    let pml4 = proc_guard.page_table();
+
+    let phys = frame_manager_instance()
+        .allocate(1)
+        .expect("Failed to allocate frame for page fault handling")
+        .phys_addr() as u64;
+
+    unsafe {
+        write_bytes(phys as *mut u8, 0, PAGE_SIZE_4K);
+    }
+
+    let page_addr = VirtAddr::new(fault_addr).align_down_4k().as_u64();
+    PAGE_TABLE_MANAGER
+        .lock()
+        .map_4k(
+            pml4,
+            page_addr,
+            phys,
+            PageTableFlags::from_bits(flags.bits() | PageTableFlags::USER_RW.bits()),
+        )
+        .expect("Failed to map page for page fault handling");
+    true
 }
 
 /// Page fault handler

@@ -10,5 +10,6 @@
 pub mod error;
 pub mod fb;
 pub mod ioctl;
+pub mod mm;
 pub mod socket;
 pub mod syscall;

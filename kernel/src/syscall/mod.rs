@@ -12,13 +12,15 @@
 //! - R9:  arg6
 //! - Return value in RAX
 
-use crate::socket::SocketAddrUn;
-use horse_abi::syscall::SyscallNum;
 use self::fs::{sys_close, sys_ioctl, sys_open, sys_read, sys_write};
+use self::mm::{sys_brk, sys_mmap};
 use self::net::{sys_accept, sys_bind, sys_connect, sys_listen, sys_socket};
 use self::proc::{sys_exit, sys_spawn};
+use crate::socket::SocketAddrUn;
+use horse_abi::syscall::SyscallNum;
 
 pub mod fs;
+pub mod mm;
 pub mod net;
 pub mod proc;
 pub mod user_mem;
@@ -33,6 +35,7 @@ pub enum SyscallError {
     NoEntry = -2,       // ENOENT
     IoError = -5,       // EIO
     InvalidFd = -9,     // EBADF
+    NoMem = -12,        // ENOMEM
     InvalidArg = -22,   // EINVAL
     NotSocket = -88,    // ENOTSOCK
     OpNotSupp = -95,    // EOPNOTSUPP
@@ -97,6 +100,15 @@ pub fn syscall_handler(args: &SyscallArgs) -> isize {
             args.arg1 as *const u8, // path
             args.arg2,              // path_len
         ),
+        SyscallNum::Mmap => sys_mmap(
+            args.arg1 as u64, // addr
+            args.arg2 as u64, // len
+            args.arg3 as u64, // prot
+            args.arg4 as u64, // flags
+            args.arg5 as i64, // fd
+            args.arg6 as u64, // offset
+        ),
+        SyscallNum::Brk => sys_brk(args.arg1 as u64), // addr
     }
 }
 

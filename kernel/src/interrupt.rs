@@ -169,6 +169,13 @@ pub extern "x86-interrupt" fn handler_page_fault(
     error_code: PageFaultErrorCode,
 ) {
     let faulting_address = paging::get_cr2();
+
+    if paging::check_vmarea(faulting_address) {
+        // The page fault is due to an access to a valid vm area that just hasn't been mapped yet.
+        // Handle it by mapping the page and returning to the faulting instruction.
+        return;
+    }
+
     print_exception_with_code("PAGE FAULT (#PF, vec 14)", &stack_frame, error_code.bits());
     debugcon_println!("  Faulting address: {:#018x}", faulting_address);
     debugcon_println!(

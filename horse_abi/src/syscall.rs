@@ -12,6 +12,10 @@ pub enum SyscallNum {
     Open = 2,
     /// Close a file descriptor
     Close = 3,
+    /// Map or unmap regions of a process's virtual address space
+    Mmap = 9,
+    /// Change data segment size
+    Brk = 12,
     /// Create a socket
     Socket = 41,
     /// Connect a socket to an address
@@ -39,6 +43,8 @@ impl TryFrom<usize> for SyscallNum {
             1 => Ok(Self::Write),
             2 => Ok(Self::Open),
             3 => Ok(Self::Close),
+            9 => Ok(Self::Mmap),
+            12 => Ok(Self::Brk),
             41 => Ok(Self::Socket),
             42 => Ok(Self::Connect),
             43 => Ok(Self::Accept),

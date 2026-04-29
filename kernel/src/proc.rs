@@ -1,6 +1,11 @@
-use crate::drivers::dev::{
-    stdin::StdinDevice,
-    stdout::{StderrDevice, StdoutDevice},
+use crate::paging::{PageTable, VirtAddr};
+use crate::{
+    drivers::dev::{
+        stdin::StdinDevice,
+        stdout::{StderrDevice, StdoutDevice},
+    },
+    paging::PageTableFlags,
+    syscall::mm::{VmArea, VmAreaList, VmAreaType},
 };
 use alloc::sync::Arc;
 use alloc::{collections::VecDeque, vec::Vec};
@@ -335,8 +340,13 @@ const KERNEL_STACK_PER_PROC: usize = 64 * 1024; // 64KB per-process kernel stack
 
 pub struct Process {
     id: usize,
+    cr3: u64,
     stack: Vec<u64>,
     kernel_stack: Vec<u8>,
+    pub user_stack_bottom: Option<u64>,
+    heap_start: Option<VirtAddr>,
+    pub brk: Option<VirtAddr>,
+    pub vm_areas: VmAreaList,
     context: ContextWrapper,
     pub fd_table: FDTable,
 }
@@ -347,8 +357,13 @@ impl Process {
         let kernel_stack = alloc::vec![0u8; KERNEL_STACK_PER_PROC];
         Self {
             id,
+            cr3: 0,
             stack: Vec::new(),
             kernel_stack,
+            user_stack_bottom: None,
+            heap_start: None,
+            brk: None,
+            vm_areas: VmAreaList::new(),
             context: DEFAULT_CONTEXT,
             fd_table: FDTable::DEFAULT_TABLE,
         }
@@ -366,6 +381,7 @@ impl Process {
 
         let ctx = self.context.unwrap();
         ctx.cr3 = unsafe { get_cr3() };
+        self.cr3 = ctx.cr3;
         ctx.rflags = 0x202;
         ctx.cs = KERNEL_CS as u64;
         ctx.ss = KERNEL_SS as u64;
@@ -390,10 +406,12 @@ impl Process {
 
         let ctx = self.context.unwrap();
         ctx.cr3 = cr3;
+        self.cr3 = cr3;
         ctx.rflags = 0x202; // IF=1, reserved bit 1=1
         ctx.cs = USER_CS as u64;
         ctx.ss = USER_SS as u64;
         ctx.rsp = user_stack & !0xFu64; // 16-byte aligned
+        self.user_stack_bottom = Some(ctx.rsp);
         ctx.rip = entry_point;
 
         // Initialize FPU state
@@ -402,8 +420,27 @@ impl Process {
         ctx.fxsave_area[27] = 0x1;
     }
 
+    pub fn initialize_heap(&mut self, heap_start: VirtAddr) {
+        self.heap_start = Some(heap_start);
+        self.brk = Some(heap_start);
+
+        self.vm_areas.insert(VmArea {
+            start: heap_start,
+            end: heap_start,
+            flags: PageTableFlags::PRESENT
+                | PageTableFlags::WRITABLE
+                | PageTableFlags::USER_ACCESSIBLE
+                | PageTableFlags::NO_EXECUTE,
+            area_type: VmAreaType::AnonymousPrivate,
+        });
+    }
+
     pub fn context(&mut self) -> &mut ContextWrapper {
         return &mut self.context;
+    }
+
+    pub fn page_table(&self) -> &mut PageTable {
+        unsafe { &mut *(self.cr3 as *mut PageTable) }
     }
 }
 

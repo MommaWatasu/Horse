@@ -1,7 +1,8 @@
-use super::SyscallError;
 use super::user_mem::copy_from_user;
+use super::SyscallError;
 use crate::drivers::fs::init::FILESYSTEM_TABLE;
 use crate::horse_lib::fd::{FDTable, Path};
+use crate::paging::VirtAddr;
 use crate::proc::{do_switch_context, PROCESS_MANAGER};
 use alloc::vec;
 
@@ -100,6 +101,8 @@ pub fn sys_spawn(path_ptr: *const u8, path_len: usize) -> isize {
         parent_fds.add(f);
     }
 
+    let heap_start = VirtAddr::new(program.load_base + program.load_size as u64).align_up_4k();
+
     // Create the child process, initialize its context, and put it on the run queue
     let new_id = {
         let mut proc_manager = PROCESS_MANAGER.lock();
@@ -110,6 +113,7 @@ pub fn sys_spawn(path_ptr: *const u8, path_len: usize) -> isize {
         let new_id = {
             let mut p = proc.lock();
             p.init_user_context(program.entry_point, program.stack_pointer, program.cr3);
+            p.initialize_heap(heap_start);
             p.id()
         };
         manager.wake_up(proc);
