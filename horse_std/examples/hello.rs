@@ -1,13 +1,13 @@
 //! Hello World example for Horse OS
 //!
-//! This is a minimal example showing how to use horse_syscall
+//! This is a minimal example showing how to use horse_std
 //! to write a "Hello, World!" program.
 
 #![no_std]
 #![no_main]
 
 use core::panic::PanicInfo;
-use horse_syscall::prelude::*;
+use horse_std::prelude::*;
 
 /// Entry point for the application
 #[no_mangle]
@@ -16,7 +16,7 @@ pub extern "C" fn _start() -> ! {
     let _ = write(STDOUT, b"Hello from Horse OS!\n");
 
     // Using the print! macro (requires core::fmt::Write)
-    // horse_syscall::println!("Hello, {}!", "World");
+    // horse_std::println!("Hello, {}!", "World");
 
     // Infinite loop (we don't have exit syscall yet)
     loop {}

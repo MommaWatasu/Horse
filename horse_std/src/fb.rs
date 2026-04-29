@@ -5,8 +5,8 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use horse_syscall::fb::{fb_get_vscreeninfo, fb_put_vscreeninfo, fb_get_fscreeninfo};
-//! use horse_syscall::fs::{open, OpenFlags};
+//! use horse_std::fb::{fb_get_vscreeninfo, fb_put_vscreeninfo, fb_get_fscreeninfo};
+//! use horse_std::fs::{open, OpenFlags};
 //!
 //! let fd = open("/dev/fb0", OpenFlags::RDWR).unwrap();
 //! let vinfo = fb_get_vscreeninfo(fd).unwrap();

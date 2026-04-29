@@ -5,7 +5,7 @@ edition = "2021"
 description = "Example user-space program for Horse OS"
 
 [dependencies]
-horse_syscall = { path = "../horse_syscall" }
+horse_std = { path = "../horse_syscall" }
 
 [profile.dev]
 panic = "abort"

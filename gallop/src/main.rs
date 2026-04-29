@@ -7,8 +7,8 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use horse_syscall::prelude::*;
-use horse_syscall::{eprintln, println};
+use horse_std::prelude::*;
+use horse_std::{eprintln, println};
 
 // ── test helpers ────────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-//! # horse_syscall
+//! # horse_std
 //!
 //! System call wrapper library for Horse OS user-space applications.
 //!
@@ -11,7 +11,7 @@
 //! #![no_std]
 //! #![no_main]
 //!
-//! use horse_syscall::prelude::*;
+//! use horse_std::prelude::*;
 //!
 //! #[no_mangle]
 //! pub extern "C" fn _start() -> ! {
@@ -30,14 +30,16 @@
 
 #![no_std]
 
+pub mod alloc;
 pub mod error;
 pub mod fb;
 pub mod fs;
 pub mod io;
+pub mod mm;
 pub mod raw;
 pub mod socket;
 
-/// Prelude module - import everything you need with `use horse_syscall::prelude::*`
+/// Prelude module - import everything you need with `use horse_std::prelude::*`
 pub mod prelude {
     pub use crate::error::{Error, Result};
     pub use crate::fb::{
@@ -47,6 +49,7 @@ pub mod prelude {
     };
     pub use crate::fs::{close, exit, open, read, spawn, write, OpenFlags};
     pub use crate::io::{print, println, STDERR, STDIN, STDOUT};
+    pub use crate::mm::{brk, mmap, MapFlags, Prot};
     pub use crate::raw::{syscall0, syscall1, syscall2, syscall3, syscall4, syscall5, syscall6};
     pub use crate::socket::{
         accept, bind, connect, listen, socket, SocketAddrUn, AF_UNIX, SOCK_DGRAM, SOCK_STREAM,

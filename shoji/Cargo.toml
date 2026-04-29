@@ -5,7 +5,7 @@ edition = "2021"
 description = "DisplayServer for Horse OS"
 
 [dependencies]
-horse_syscall = { path = "../horse_syscall" }
+horse_std = { path = "../horse_syscall" }
 
 [profile.dev]
 panic = "abort"

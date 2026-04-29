@@ -81,7 +81,7 @@ pub fn stderr() -> Stderr {
 /// # Example
 ///
 /// ```rust,ignore
-/// use horse_syscall::io::print;
+/// use horse_std::io::print;
 ///
 /// print("Hello, World!");
 /// ```
@@ -94,7 +94,7 @@ pub fn print(s: &str) {
 /// # Example
 ///
 /// ```rust,ignore
-/// use horse_syscall::io::println;
+/// use horse_std::io::println;
 ///
 /// println("Hello, World!");
 /// ```
@@ -110,7 +110,7 @@ pub fn println(s: &str) {
 /// # Example
 ///
 /// ```rust,ignore
-/// use horse_syscall::print;
+/// use horse_std::print;
 ///
 /// print!("Hello, {}!", "World");
 /// ```
@@ -129,7 +129,7 @@ macro_rules! print {
 /// # Example
 ///
 /// ```rust,ignore
-/// use horse_syscall::println;
+/// use horse_std::println;
 ///
 /// println!("Hello, {}!", "World");
 /// ```
@@ -149,7 +149,7 @@ macro_rules! println {
 /// # Example
 ///
 /// ```rust,ignore
-/// use horse_syscall::eprint;
+/// use horse_std::eprint;
 ///
 /// eprint!("Error: {}", msg);
 /// ```
@@ -166,7 +166,7 @@ macro_rules! eprint {
 /// # Example
 ///
 /// ```rust,ignore
-/// use horse_syscall::eprintln;
+/// use horse_std::eprintln;
 ///
 /// eprintln!("Error: {}", msg);
 /// ```

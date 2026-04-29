@@ -6,8 +6,8 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use horse_syscall::fs::File;
-use horse_syscall::prelude::*;
+use horse_std::fs::File;
+use horse_std::prelude::*;
 
 /// Entry point for the application
 #[no_mangle]

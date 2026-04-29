@@ -2,8 +2,8 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use horse_syscall::prelude::*;
-use horse_syscall::println;
+use horse_std::prelude::*;
+use horse_std::println;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum PixelFormat {

@@ -87,7 +87,7 @@ impl core::ops::BitOrAssign for OpenFlags {
 /// # Example
 ///
 /// ```rust,ignore
-/// use horse_syscall::fs::{open, OpenFlags};
+/// use horse_std::fs::{open, OpenFlags};
 ///
 /// let fd = open("/test.txt", OpenFlags::RDONLY)?;
 /// ```
@@ -147,7 +147,7 @@ pub unsafe fn open_cstr(path: *const u8, flags: OpenFlags) -> Result<Fd> {
 /// # Example
 ///
 /// ```rust,ignore
-/// use horse_syscall::fs::read;
+/// use horse_std::fs::read;
 ///
 /// let mut buf = [0u8; 256];
 /// let n = read(fd, &mut buf)?;
@@ -179,7 +179,7 @@ pub fn read(fd: Fd, buf: &mut [u8]) -> Result<usize> {
 /// # Example
 ///
 /// ```rust,ignore
-/// use horse_syscall::fs::write;
+/// use horse_std::fs::write;
 ///
 /// let n = write(fd, b"Hello, World!\n")?;
 /// ```
@@ -209,7 +209,7 @@ pub fn write(fd: Fd, buf: &[u8]) -> Result<usize> {
 /// # Example
 ///
 /// ```rust,ignore
-/// use horse_syscall::fs::close;
+/// use horse_std::fs::close;
 ///
 /// close(fd)?;
 /// ```
