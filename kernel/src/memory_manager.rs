@@ -41,6 +41,7 @@ pub struct BitmapMemoryManager {
     alloc_map: [MapLineType; MAP_LINE_COUNT],
     range_begin: FrameID,
     range_end: FrameID,
+    next_free_hint: FrameID,
 }
 
 unsafe impl Sync for BitmapMemoryManager {}
@@ -51,6 +52,7 @@ impl BitmapMemoryManager {
             alloc_map: [0; MAP_LINE_COUNT],
             range_begin: FrameID::MIN,
             range_end: FrameID::MAX,
+            next_free_hint: FrameID::MIN,
         }
     }
 
@@ -81,13 +83,22 @@ impl BitmapMemoryManager {
     }
 
     pub fn allocate(&mut self, n_frames: usize) -> Result<FrameID, StatusCode> {
-        let mut start_frame_id = self.range_begin.id();
+        let mut start_frame_id = self.next_free_hint.id().max(self.range_begin.id());
+        let mut search_end = self.range_end.id();
         let mut i: usize;
         loop {
             i = 0;
             while i < n_frames {
-                if start_frame_id + i >= self.range_end.id() {
-                    return Err(StatusCode::NoEnoughMemory);
+                if start_frame_id + i >= search_end {
+                    if search_end == self.range_end.id() {
+                        return Err(StatusCode::NoEnoughMemory);
+                    } else {
+                        // start search from the range_begin
+                        start_frame_id = self.range_begin.id() - 1;
+                        search_end = self.next_free_hint.id() - 1;
+                        i = 0;
+                        break;
+                    }
                 }
                 if self.get_bit(FrameID::new(start_frame_id + i)) {
                     break;
@@ -96,6 +107,7 @@ impl BitmapMemoryManager {
             }
             if i == n_frames {
                 self.mark_allocated(FrameID::new(start_frame_id), n_frames);
+                self.next_free_hint = FrameID::new(start_frame_id + n_frames);
                 return Ok(FrameID::new(start_frame_id));
             }
             start_frame_id += i + 1;
