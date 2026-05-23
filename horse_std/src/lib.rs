@@ -41,6 +41,7 @@ pub mod socket;
 
 /// Prelude module - import everything you need with `use horse_std::prelude::*`
 pub mod prelude {
+    pub use crate::alloc::BumpAllocator;
     pub use crate::error::{Error, Result};
     pub use crate::fb::{
         fb_get_fscreeninfo, fb_get_vscreeninfo, fb_put_vscreeninfo, ioctl, FbBitfield,
@@ -57,5 +58,6 @@ pub mod prelude {
     pub use horse_abi::ioctl::IoctlRequest;
 }
 
+pub use alloc::BumpAllocator;
 pub use error::{Error, Result};
 pub use fs::OpenFlags;

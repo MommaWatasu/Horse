@@ -12,6 +12,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 horse_abi = { path = "../horse_abi" }
+spin = { version = "0.9.8", default-features = false, features = ["mutex", "spin_mutex"] }
 
 [features]
 default = []

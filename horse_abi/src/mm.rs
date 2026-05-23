@@ -1,12 +1,12 @@
 pub enum Prot {
-    ProtNone = 0,
-    ProtRead = 1,
-    ProtWrite = 2,
-    ProtExec = 4,
+    None = 0,
+    Read = 1,
+    Write = 2,
+    Exec = 4,
 }
 
 pub enum MapFlags {
-    MapShared = 1,
-    MapPrivate = 2,
-    MapAnonymous = 4,
+    Shared = 1,
+    Private = 2,
+    Anonymous = 4,
 }
