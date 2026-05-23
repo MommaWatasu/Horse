@@ -81,10 +81,10 @@ struct LFNEntry {
 
 impl LFNEntry {
     pub fn ord(&self) -> usize {
-        return (self.ord ^ 0x40) as usize;
+        return (self.ord & 0x3F) as usize;
     }
     pub fn is_end(&self) -> bool {
-        return (self.ord & 0x40) != 1;
+        return (self.ord & 0x40) != 0;
     }
     pub fn get_name(&self) -> [u8; 26] {
         let mut name = [0u8; 26];
@@ -92,6 +92,27 @@ impl LFNEntry {
         name[10..22].copy_from_slice(&self.name2);
         name[22..26].copy_from_slice(&self.name3);
         return name;
+    }
+    pub fn get_name_str(&self) -> String {
+        let raw = self.get_name();
+        let mut s = String::new();
+        let mut i = 0;
+        while i + 1 < raw.len() {
+            let lo = raw[i];
+            let hi = raw[i + 1];
+            if lo == 0x00 && hi == 0x00 {
+                break;
+            }
+            if lo == 0xFF && hi == 0xFF {
+                break;
+            }
+            let codepoint = lo as u16 | ((hi as u16) << 8);
+            if let Some(c) = char::from_u32(codepoint as u32) {
+                s.push(c);
+            }
+            i += 2;
+        }
+        s
     }
 }
 
@@ -190,10 +211,11 @@ impl FAT {
                     let lfn_entry = unsafe { *(entry_ptr as *const LFNEntry) };
                     if lfn_entry.is_end() {
                         lfn = String::new();
-                    } else if lfn_entry.ord() == 1 {
+                    }
+                    if lfn_entry.ord() == 1 {
                         lfn_flag = true;
                     }
-                    lfn = format!("{}{}", bytes2str(&lfn_entry.get_name()), lfn);
+                    lfn = format!("{}{}", lfn_entry.get_name_str(), lfn);
                     continue;
                 // Volumen ID
                 } else if entry.attr & 0x08 != 0 {

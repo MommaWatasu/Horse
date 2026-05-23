@@ -1,24 +1,31 @@
 use crate::{console::Console, horse_lib::fd::FileDescriptor, layer::LAYER_MANAGER};
+use x86_64::instructions::interrupts;
 
 fn write_to_console(buf: &[u8]) -> isize {
-    if let Ok(s) = core::str::from_utf8(buf) {
-        let mut console = Console::instance();
-        if let Some(ref mut con) = *console {
-            con.put_string(s);
-        }
-    } else {
-        let mut console = Console::instance();
-        if let Some(ref mut con) = *console {
-            for &byte in buf {
-                let mut char_buf = [0u8; 4];
-                let c = byte as char;
-                if let Some(s) = c.encode_utf8(&mut char_buf).get(..c.len_utf8()) {
-                    con.put_string(s);
+    // Disable interrupts while holding RAW_CONSOLE and LAYER_MANAGER to prevent
+    // the LAPIC timer from switching contexts mid-write. Without this, a context
+    // switch while RAW_CONSOLE is locked causes a spin-lock deadlock: the new
+    // context calls _print() which tries to acquire the already-held RAW_CONSOLE.
+    interrupts::without_interrupts(|| {
+        if let Ok(s) = core::str::from_utf8(buf) {
+            let mut console = Console::instance();
+            if let Some(ref mut con) = *console {
+                con.put_string(s);
+            }
+        } else {
+            let mut console = Console::instance();
+            if let Some(ref mut con) = *console {
+                for &byte in buf {
+                    let mut char_buf = [0u8; 4];
+                    let c = byte as char;
+                    if let Some(s) = c.encode_utf8(&mut char_buf).get(..c.len_utf8()) {
+                        con.put_string(s);
+                    }
                 }
             }
         }
-    }
-    LAYER_MANAGER.lock().as_mut().unwrap().draw();
+        LAYER_MANAGER.lock().as_mut().unwrap().draw();
+    });
     buf.len() as isize
 }
 

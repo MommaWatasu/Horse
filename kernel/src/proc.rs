@@ -371,6 +371,16 @@ impl Process {
     pub fn kernel_stack_top(&self) -> u64 {
         self.kernel_stack.as_ptr() as u64 + self.kernel_stack.len() as u64
     }
+    /// Page-aligned [start, end) covering the per-process kernel stack.
+    /// Reserved in the user's vm_areas so sys_mmap can't overwrite the user-PT
+    /// entry that maps the kernel stack during interrupt entry.
+    pub fn kernel_stack_range(&self) -> (VirtAddr, VirtAddr) {
+        let raw_start = self.kernel_stack.as_ptr() as u64;
+        let raw_end = raw_start + self.kernel_stack.len() as u64;
+        let start = raw_start & !0xFFFu64;
+        let end = (raw_end + 0xFFF) & !0xFFFu64;
+        (VirtAddr::new(start), VirtAddr::new(end))
+    }
     pub fn id(&self) -> usize {
         self.id
     }
@@ -410,7 +420,10 @@ impl Process {
         ctx.rflags = 0x202; // IF=1, reserved bit 1=1
         ctx.cs = USER_CS as u64;
         ctx.ss = USER_SS as u64;
-        ctx.rsp = user_stack & !0xFu64; // 16-byte aligned
+        // SysV x86-64 ABI: at function entry RSP ≡ 8 mod 16 (post-call alignment).
+        // Subtract 8 so the user's `_start` sees an ABI-compliant stack pointer
+        // and the compiler's 16-byte-aligned SSE stack offsets actually land on 16.
+        ctx.rsp = (user_stack & !0xFu64) - 8;
         self.user_stack_bottom = Some(ctx.rsp);
         ctx.rip = entry_point;
 
@@ -432,6 +445,14 @@ impl Process {
                 | PageTableFlags::USER_ACCESSIBLE
                 | PageTableFlags::NO_EXECUTE,
             area_type: VmAreaType::AnonymousPrivate,
+        });
+
+        let (kstack_start, kstack_end) = self.kernel_stack_range();
+        self.vm_areas.insert(VmArea {
+            start: kstack_start,
+            end: kstack_end,
+            flags: PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+            area_type: VmAreaType::Reserved,
         });
     }
 
