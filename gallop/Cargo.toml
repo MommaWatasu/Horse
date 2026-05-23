@@ -5,12 +5,12 @@ edition = "2021"
 description = "Example user-space program for Horse OS"
 
 [dependencies]
-horse_std = { path = "../horse_syscall" }
+horse_std = { path = "../horse_std" }
 
 [profile.dev]
 panic = "abort"
 
 [profile.release]
 panic = "abort"
-opt-level = "z"      # Optimize for size
-lto = true           # Link-time optimization
+opt-level = "z" # Optimize for size
+lto = true      # Link-time optimization

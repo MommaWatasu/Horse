@@ -1,9 +1,13 @@
 #![no_std]
 #![no_main]
-
-use core::panic::PanicInfo;
+#![feature(alloc_error_handler)]
 use horse_std::prelude::*;
 use horse_std::println;
+mod runtime;
+extern crate alloc;
+
+use alloc::vec;
+use unpng::decode;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum PixelFormat {
@@ -58,7 +62,7 @@ pub extern "C" fn _start() -> ! {
     // 512 pixels * 4 bytes/pixel = 2048 bytes (safe on stack).
     // Magenta (R=255, G=0, B=255) is visible regardless of format byte order.
     const PIXELS: usize = 1920 * 1080;
-    let mut pixel_buf = [0u8; PIXELS * 4];
+    let mut pixel_buf = vec![0u8; PIXELS * 4];
     for i in 0..PIXELS {
         let base = i * 4;
         match format {
@@ -104,24 +108,43 @@ pub extern "C" fn _start() -> ! {
         IoctlRequest::FbIoGetVScreeninfo as u64,
         &mut fb_info as *mut _ as u64,
     )
-    .expect("ioctl get resolution");
-    let _ = write(fd, &pixel_buf);
+    .expect("ioctl set resolution");
+    let _ = write(fd, &pixel_buf[..]);
 
+    // load image and write to fb
+    let png_fd = open("assets/HorseOS_wallpaper.png", OpenFlags::RDONLY).expect("open png");
+    let mut png_buf = vec![0u8; 3 * 1024 * 1024]; // 3MB buffer for PNG data
+    let png_len = read(png_fd, png_buf.as_mut_slice()).expect("read png");
+    let (_header, image) = decode(&png_buf[..png_len]).expect("decode png");
+    let _ = close(png_fd);
+
+    for i in 0..PIXELS {
+        let base = i * 4;
+        match format {
+            PixelFormat::Rgb => {
+                pixel_buf[base] = image[3 * i + 0]; // R
+                pixel_buf[base + 1] = image[3 * i + 1]; // G
+                pixel_buf[base + 2] = image[3 * i + 2]; // B
+                                                        // [base+3] padding stays 0
+            }
+            PixelFormat::Bgr => {
+                pixel_buf[base] = image[3 * i + 2]; // B
+                pixel_buf[base + 1] = image[3 * i + 1]; // G
+                pixel_buf[base + 2] = image[3 * i + 0]; // R
+                                                        // [base+3] padding stays 0
+            }
+            _ => {
+                pixel_buf[base] = image[3 * i + 0];
+                pixel_buf[base + 1] = image[3 * i + 1];
+                pixel_buf[base + 2] = image[3 * i + 2];
+                // [base+3] padding stays 0
+            }
+        }
+    }
+    let _ = write(fd, pixel_buf.as_slice());
+
+    let _ = close(png_fd);
     let _ = close(fd);
 
     exit(0);
-}
-
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    let _ = write(STDERR, b"PANIC: ");
-    if let Some(location) = info.location() {
-        let _ = write(STDERR, location.file().as_bytes());
-    } else {
-        let _ = write(STDERR, b"unknown location");
-    }
-    let _ = write(STDERR, b"\n");
-    loop {
-        core::hint::spin_loop();
-    }
 }

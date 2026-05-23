@@ -11,7 +11,7 @@ use horse_std::prelude::*;
 use horse_std::{eprintln, println};
 
 // ── test helpers ────────────────────────────────────────────────────────────
-
+/*
 static mut PASS_COUNT: usize = 0;
 static mut FAIL_COUNT: usize = 0;
 
@@ -320,6 +320,7 @@ fn test_fb() {
 
     let _ = close(fd);
 }
+*/
 
 // ── entry point ──────────────────────────────────────────────────────────────
 

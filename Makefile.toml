@@ -28,6 +28,7 @@ EFI_FILE=./dev-tools/horse-bootloader.efi
 ANOTHER_FILE=kernel/horse-kernel
 GALLOP_FILE=./dev-tools/gallop
 SHOJI_FILE=./dev-tools/shoji
+WALLPAPER_FILE=./assets/HorseOS_wallpaper.png
 
 if [ ! -f $EFI_FILE ]
 then
@@ -51,6 +52,8 @@ fi
 
 sudo cp $GALLOP_FILE $MOUNT_POINT/
 sudo cp $SHOJI_FILE $MOUNT_POINT/
+sudo mkdir -p $MOUNT_POINT/assets
+sudo cp $WALLPAPER_FILE $MOUNT_POINT/assets/
 
 sleep 0.5
 sudo umount $MOUNT_POINT
