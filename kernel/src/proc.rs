@@ -61,7 +61,10 @@ impl ContextWrapper {
         return &mut self.0;
     }
     pub fn as_ptr(&mut self) -> u64 {
-        return self.unwrap() as *mut ProcessContext as u64;
+        // Return the higher-half (PML4[511]) alias of the context. switch_context
+        // reads the *next* context after loading that process's CR3, which (for a
+        // user process) has no low identity map — only the shared higher half.
+        return crate::paging::phys_to_virt(self.unwrap() as *mut ProcessContext as u64);
     }
     pub fn from_ptr(ptr: u64) -> ProcessContext {
         return unsafe { *(ptr as *mut ProcessContext) };
@@ -369,17 +372,13 @@ impl Process {
         }
     }
     pub fn kernel_stack_top(&self) -> u64 {
-        self.kernel_stack.as_ptr() as u64 + self.kernel_stack.len() as u64
-    }
-    /// Page-aligned [start, end) covering the per-process kernel stack.
-    /// Reserved in the user's vm_areas so sys_mmap can't overwrite the user-PT
-    /// entry that maps the kernel stack during interrupt entry.
-    pub fn kernel_stack_range(&self) -> (VirtAddr, VirtAddr) {
-        let raw_start = self.kernel_stack.as_ptr() as u64;
-        let raw_end = raw_start + self.kernel_stack.len() as u64;
-        let start = raw_start & !0xFFFu64;
-        let end = (raw_end + 0xFFF) & !0xFFFu64;
-        (VirtAddr::new(start), VirtAddr::new(end))
+        // Higher-half (PML4[511]) alias. TSS.rsp0 is loaded by the CPU and the
+        // interrupt trap frame is pushed *before* the handler can switch CR3, so
+        // the kernel stack must be reachable under the active user page table,
+        // which only maps the shared higher half (not the low identity region).
+        crate::paging::phys_to_virt(
+            self.kernel_stack.as_ptr() as u64 + self.kernel_stack.len() as u64,
+        )
     }
     pub fn id(&self) -> usize {
         self.id
@@ -445,14 +444,6 @@ impl Process {
                 | PageTableFlags::USER_ACCESSIBLE
                 | PageTableFlags::NO_EXECUTE,
             area_type: VmAreaType::AnonymousPrivate,
-        });
-
-        let (kstack_start, kstack_end) = self.kernel_stack_range();
-        self.vm_areas.insert(VmArea {
-            start: kstack_start,
-            end: kstack_end,
-            flags: PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-            area_type: VmAreaType::Reserved,
         });
     }
 

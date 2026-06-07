@@ -364,42 +364,6 @@ impl PageTableManager {
             // Copy kernel mappings from kernel page table
             let kernel_pml4 = core::ptr::addr_of!(KERNEL_PML4);
 
-            // For PML4[0] (low addresses where user programs live), we need to create
-            // a COPY of the page table hierarchy, not just copy the pointer.
-            // This is because we may need to modify entries (e.g., split huge pages)
-            // without affecting the kernel's page tables.
-            let kernel_pml4_0 = (*kernel_pml4).entries[0];
-            if kernel_pml4_0.is_present() {
-                // Create a new PDPT for this user process
-                let user_pdpt_phys = self.allocate_page_table_phys()?;
-                let user_pdpt = phys_to_ptr::<PageTable>(user_pdpt_phys);
-
-                // Copy entries from kernel's PDPT
-                let kernel_pdpt = phys_to_ptr::<PageTable>(kernel_pml4_0.addr());
-                for i in 0..PAGE_TABLE_ENTRIES {
-                    let kernel_pdpt_entry = (*kernel_pdpt).entries[i];
-                    if kernel_pdpt_entry.is_present() {
-                        // Create a new PD for this PDPT entry
-                        let user_pd_phys = self.allocate_page_table_phys()?;
-                        let user_pd = phys_to_ptr::<PageTable>(user_pd_phys);
-
-                        // Copy PD entries from kernel
-                        let kernel_pd = phys_to_ptr::<PageTable>(kernel_pdpt_entry.addr());
-                        core::ptr::copy_nonoverlapping(
-                            (*kernel_pd).entries.as_ptr(),
-                            (*user_pd).entries.as_mut_ptr(),
-                            PAGE_TABLE_ENTRIES,
-                        );
-
-                        // Set user PDPT entry to point to copied PD
-                        (*user_pdpt).entries[i].set(user_pd_phys, kernel_pdpt_entry.flags());
-                    }
-                }
-
-                // Set user PML4[0] to point to new PDPT
-                (*pml4).entries[0].set(user_pdpt_phys, kernel_pml4_0.flags());
-            }
-
             // Copy higher half kernel mappings (PML4[511])
             // This ensures kernel code/data is accessible when switching to kernel mode
             // We can share this directly since user code won't modify kernel mappings
@@ -968,14 +932,12 @@ pub fn check_vmarea(fault_addr: u64) -> bool {
     }
 
     let page_addr = VirtAddr::new(fault_addr).align_down_4k().as_u64();
+    let flags = PageTableFlags::from_bits(
+        flags.bits() | PageTableFlags::USER_RW.bits() | PageTableFlags::PRESENT.bits(),
+    );
     PAGE_TABLE_MANAGER
         .lock()
-        .map_4k(
-            pml4,
-            page_addr,
-            phys,
-            PageTableFlags::from_bits(flags.bits() | PageTableFlags::USER_RW.bits()),
-        )
+        .map_4k(pml4, page_addr, phys, flags)
         .expect("Failed to map page for page fault handling");
     true
 }
